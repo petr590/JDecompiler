@@ -516,7 +516,7 @@ namespace Operations {
 				return " else ";
 			}
 
-			virtual string getFrontSeparator(const ClassInfo& classinfo) const override {
+			virtual inline string getFrontSeparator(const ClassInfo& classinfo) const override {
 				return EMPTY_STRING;
 			}
 	};
@@ -536,7 +536,7 @@ namespace Operations {
 				return "if(" + condition->toString(environment) + ") ";
 			}
 
-			virtual string getBackSeparator(const ClassInfo& classinfo) const override {
+			virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
 				return elseScope == nullptr ? this->Scope::getBackSeparator(classinfo) : EMPTY_STRING;
 			}
 	};

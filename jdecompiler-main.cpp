@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <set>
+#include <map>
 #include "jdecompiler.h"
 #include "jdecompiler-util.cpp"
 #include "jdecompiler-const-pool.cpp"
@@ -106,11 +107,11 @@ namespace JDecompiler {
 			return this->toString(environment);
 		}
 
-		virtual string getFrontSeparator(const ClassInfo& classinfo) const {
+		virtual inline string getFrontSeparator(const ClassInfo& classinfo) const {
 			return classinfo.getIndent();
 		}
 
-		virtual string getBackSeparator(const ClassInfo& classinfo) const {
+		virtual inline string getBackSeparator(const ClassInfo& classinfo) const {
 			return ";\n";
 		}
 
@@ -353,7 +354,7 @@ namespace JDecompiler {
 				return str + environment.classinfo.getIndent() + "}";
 			}
 
-			virtual string getBackSeparator(const ClassInfo& classinfo) const override {
+			virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
 				return "\n";
 			}
 
@@ -373,9 +374,10 @@ namespace JDecompiler {
 	};
 
 
-	static string getNameByType(const Type* const type) {
+	static string getRawNameByType(const Type* const type, bool& unchecked) {
 		if(type->isPrimitive()) {
-			if(type == BYTE || type == BOOLEAN) return "b";
+			if(type == BOOLEAN) return "bool";
+			if(type == BYTE) return "b";
 			if(type == CHAR) return "c";
 			if(type == SHORT) return "s";
 			if(type == INT) return "n";
@@ -384,13 +386,15 @@ namespace JDecompiler {
 			if(type == DOUBLE) return "d";
 		}
 		if(const ClassType* classType = dynamic_cast<const ClassType*>(type)) {
-			if(*classType == JavaSE::java::lang::Byte || *type == JavaSE::java::lang::Boolean) return "b";
-			if(*classType == JavaSE::java::lang::Character) return "c";
-			if(*classType == JavaSE::java::lang::Short) return "s";
-			if(*classType == JavaSE::java::lang::Integer) return "n";
-			if(*classType == JavaSE::java::lang::Long) return "l";
-			if(*classType == JavaSE::java::lang::Float) return "f";
-			if(*classType == JavaSE::java::lang::Double) return "d";
+			if(classType->simpleName == "Boolean") return "bool";
+			if(classType->simpleName == "Byte") return "b";
+			if(classType->simpleName == "Character") return "ch";
+			if(classType->simpleName == "Short") return "sh";
+			if(classType->simpleName == "Integer") return "n";
+			if(classType->simpleName == "Long") return "l";
+			if(classType->simpleName == "Float") return "f";
+			if(classType->simpleName == "Double") return "d";
+			unchecked = true;
 			return toLowerCamelCase(classType->simpleName);
 		}
 		if(const ArrayType* arrayType = dynamic_cast<const ArrayType*>(type)) {
@@ -399,6 +403,34 @@ namespace JDecompiler {
 			return toLowerCamelCase(arrayType->memberType->name) + "Array";
 		}
 		return "o";
+	}
+
+
+	static string getNameByType(const Type* const type) {
+		bool unchecked = false;
+
+		const string name = getRawNameByType(type, unchecked);
+		if(unchecked) {
+			static map<const char*, const char*> keywords {
+				{"boolean", "bool"}, {"byte", "b"}, {"char", "ch"}, {"short", "sh"}, {"int", "n"}, {"long", "l"},
+				{"float", "f"}, {"double", "d"}, {"void", "v"},
+				{"public", "pub"}, {"protected", "prot"}, {"private", "priv"}, {"static", "stat"}, {"final", "f"}, {"abstract", "abs"},
+				{"transient", "trans"}, {"volatile", "vol"}, {"native", "nat"}, {"synchronized", "sync"},
+				{"class", "clazz"}, {"interface", "interf"}, {"enum", "en"}, {"this", "t"}, {"super", "s"}, {"extends", "ext"}, {"implements", "impl"},
+				{"import", "imp"}, {"package", "pack"}, {"instanceof", "inst"}, {"new", "n"},
+				{"if", "cond"}, {"else", "el"}, {"while", "whl"}, {"do", "d"}, {"for", "f"}, {"switch", "sw"}, {"case", "cs"}, {"default", "def"},
+				{"break", "brk"}, {"continue", "cont"}, {"return", "ret"},
+				{"try", "tr"}, {"catch", "c"}, {"finally", "f"}, {"throw", "thr"}, {"throws", "thrs"}, {"assert", "assrt"},
+				{"true", "tr"}, {"false", "fls"}, {"null", "nll"},
+				{"strictfp", "strict"}, {"const", "cnst"}, {"goto", "gt"}
+			};
+
+			for(auto& keyword : keywords)
+				if(name == keyword.first)
+					return keyword.second;
+		}
+
+		return name;
 	}
 
 

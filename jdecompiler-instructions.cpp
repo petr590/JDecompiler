@@ -471,7 +471,7 @@ namespace Instructions {
 			if(offset == 0) return new EmptyInfiniteLoopScope(environment);
 
 			const IfScope* ifScope = dynamic_cast<const IfScope*>(environment.getCurrentScope());
-			cout << "goto " << typeid(*environment.getCurrentScope()->parentScope).name() << endl;
+			//cout << "goto " << typeid(*environment.getCurrentScope()->parentScope).name() << endl;
 			if(ifScope && environment.index == ifScope->to) {
 				if(offset > 0)
 					return new ElseScope(environment, min(environment.bytecode.posToIndex(offset + environment.pos), ifScope->parentScope->to) - 1, ifScope);

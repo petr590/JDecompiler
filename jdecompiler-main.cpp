@@ -10,25 +10,25 @@
 
 #define CLASS_SIGNATURE 0xCAFEBABE
 
-#define ACC_VISIBLE      0x0000 // class, field, method
-#define ACC_PUBLIC       0x0001 // class, field, method
-#define ACC_PRIVATE      0x0002 // class, field, method
-#define ACC_PROTECTED    0x0004 // class, field, method
-#define ACC_STATIC       0x0008 // nested class, field, method
-#define ACC_FINAL        0x0010 // class, field, method
+#define ACC_VISIBLE	  0x0000 // class, field, method
+#define ACC_PUBLIC	   0x0001 // class, field, method
+#define ACC_PRIVATE	  0x0002 // class, field, method
+#define ACC_PROTECTED	0x0004 // class, field, method
+#define ACC_STATIC	   0x0008 // nested class, field, method
+#define ACC_FINAL		0x0010 // class, field, method
 #define ACC_SYNCHRONIZED 0x0020 // method, block
-#define ACC_SUPER        0x0020 // class (deprecated)
-#define ACC_VOLATILE     0x0040 // field
-#define ACC_BRIDGE       0x0040 // method
-#define ACC_TRANSIENT    0x0080 // field
-#define ACC_VARARGS      0x0080 // args
-#define ACC_NATIVE       0x0100 // method
-#define ACC_INTERFACE    0x0200 // class
-#define ACC_ABSTRACT     0x0400 // class, method
-#define ACC_STRICT       0x0800 // class, non-abstract method
-#define ACC_SYNTHETIC    0x1000 // method
+#define ACC_SUPER		0x0020 // class (deprecated)
+#define ACC_VOLATILE	 0x0040 // field
+#define ACC_BRIDGE	   0x0040 // method
+#define ACC_TRANSIENT	0x0080 // field
+#define ACC_VARARGS	  0x0080 // args
+#define ACC_NATIVE	   0x0100 // method
+#define ACC_INTERFACE	0x0200 // class
+#define ACC_ABSTRACT	 0x0400 // class, method
+#define ACC_STRICT	   0x0800 // class, non-abstract method
+#define ACC_SYNTHETIC	0x1000 // method
 #define ACC_ANNOTATION   0x2000 // class
-#define ACC_ENUM         0x4000 // class
+#define ACC_ENUM		 0x4000 // class
 
 using namespace std;
 
@@ -104,6 +104,14 @@ namespace JDecompiler {
 			if(this->priority < priority || this->priority == priority && getAssociativityByPriority(this->priority) != associativity)
 				return '(' + this->toString(environment) + ')';
 			return this->toString(environment);
+		}
+
+		virtual string getFrontSeparator(const ClassInfo& classinfo) const {
+			return classinfo.getIndent();
+		}
+
+		virtual string getBackSeparator(const ClassInfo& classinfo) const {
+			return ";\n";
 		}
 
 		private: static Associativity getAssociativityByPriority(uint16_t priority) {
@@ -332,7 +340,7 @@ namespace JDecompiler {
 				const size_t baseSize = str.size();
 
 				for(const Operation* operation : code) {
-					str += environment.classinfo.getIndent() + operation->toString(environment) + (dynamic_cast<const Scope*>(operation) ? "\n" : ";\n");
+					str += operation->getFrontSeparator(environment.classinfo) + operation->toString(environment) + operation->getBackSeparator(environment.classinfo);
 				}
 
 				environment.classinfo.reduceIndent();
@@ -343,6 +351,10 @@ namespace JDecompiler {
 				}
 
 				return str + environment.classinfo.getIndent() + "}";
+			}
+
+			virtual string getBackSeparator(const ClassInfo& classinfo) const override {
+				return "\n";
 			}
 
 			virtual string getHeader(const CodeEnvironment& environment) const {
@@ -513,7 +525,7 @@ namespace JDecompiler {
 				const int argumentsCount = descriptor->arguments.size();
 				for(int i = 0; i < argumentsCount; i++) {
 					scope->addVariable(descriptor->arguments[i], getNameByType(descriptor->arguments[i]));
-        }
+		}
 			}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
@@ -733,7 +745,7 @@ namespace JDecompiler {
 			}
 
 			string toString() {
-				const ClassInfo classinfo = ClassInfo(thisType, superType, modifiers, "    ");
+				const ClassInfo classinfo = ClassInfo(thisType, superType, modifiers, "	");
 				return toString(classinfo);
 			}
 

@@ -503,14 +503,41 @@ namespace Operations {
 	};
 
 
+	struct IfScope;
+
+
+	struct ElseScope: Scope {
+		protected: const IfScope* const ifScope;
+
+		public:
+			ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope);
+
+			virtual string getHeader(const CodeEnvironment& environment) const override {
+				return " else ";
+			}
+
+			virtual string getFrontSeparator(const ClassInfo& classinfo) const override {
+				return EMPTY_STRING;
+			}
+	};
+
+
 	struct IfScope: Scope {
 		protected: const CompareOperation* const condition;
+
+		private: mutable const ElseScope* elseScope = nullptr;
+
+		friend ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope);
 
 		public:
 			IfScope(const CodeEnvironment& environment, const int16_t offset, const CompareOperation* condition): Scope(environment.index, environment.bytecode.posToIndex(offset + environment.pos) - 1, environment.getCurrentScope()), condition(condition) {}
 
 			virtual string getHeader(const CodeEnvironment& environment) const override {
 				return "if(" + condition->toString(environment) + ") ";
+			}
+
+			virtual string getBackSeparator(const ClassInfo& classinfo) const override {
+				return elseScope == nullptr ? this->Scope::getBackSeparator(classinfo) : EMPTY_STRING;
 			}
 	};
 
@@ -528,16 +555,9 @@ namespace Operations {
 	};
 
 
-	struct ElseScope: Scope {
-		protected: const IfScope* const ifScope;
-
-		public:
-			ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope): Scope(environment.index, to, ifScope->parentScope), ifScope(ifScope) {}
-
-			virtual string getHeader(const CodeEnvironment& environment) const override {
-				return "else ";
-			}
-	};
+	ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope): Scope(environment.index, to, ifScope->parentScope), ifScope(ifScope) {
+		ifScope->elseScope = this;
+	}
 
 
 

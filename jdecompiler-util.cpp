@@ -13,10 +13,11 @@ using namespace std;
 
 static const string EMPTY_STRING = string();
 
-static string hex(uint64_t n, short length = 8) {
+template<uint16_t length>
+static string hex(uint64_t n) {
 	static string digits = "0123456789ABCDEF";
 
-	char* str = new char[length + 1];
+	char str[length + 1];
 	str[length] = '\0';
 
 	for(int i = length; i-- > 0; ) {
@@ -27,126 +28,20 @@ static string hex(uint64_t n, short length = 8) {
 	return str;
 }
 
-static string hex(int8_t n) {
-	return hex(n, 2);
-}
-
-static string hex(uint8_t n) {
-	return hex(n, 2);
-}
-
-static string hex(int16_t n) {
-	return hex(n, 4);
-}
-
-static string hex(uint16_t n) {
-	return hex(n, 4);
-}
-
-static string hex(int32_t n) {
-	return hex(n, 8);
-}
-
-static string hex(uint32_t n) {
-	return hex(n, 16);
-}
-
 static string hex(uint64_t n) {
-	return hex(n, 16);
-}
+	if(n == 0) return "0";
 
+	static string digits = "0123456789ABCDEF";
+	string str;
 
-static string toLowerCamelCase(const string& str) {
-	string result;
-	const size_t strlength = str.size();
-
-	size_t i = 0;
-	for(char c = str[0]; i < strlength && c >= 'A' && c <= 'Z'; c = str[++i])
-		result += tolower(c);
-	while(i < strlength)
-		result += str[i++];
-
-	return result;
-}
-
-
-static const char* repeatString(const char* str, uint16_t count) {
-	const uint16_t
-			strlength = strlen(str),
-			resultlength = strlength * count;
-
-	char* result = strncpy(new char[resultlength + 1], str, resultlength + 1);
-
-	for(uint16_t i = 0; i < resultlength; i++)
-		result[i] = str[i % strlength];
-	result[resultlength] = '\0';
-
-	return result;
-}
-
-
-static inline bool isLetterOrDigit(char c) {
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_';
-}
-
-
-template<typename T>
-static string join(const vector<T>& array, const function<string(T)> func, const string separator = ", ") {
-	string result = EMPTY_STRING;
-	const uint32_t size = array.size();
-
-	if(size > 0) {
-		uint32_t i = 0;
-		while(true) {
-			result += func(array[i]);
-			if(++i == size) break;
-			result += separator;
-		}
+	while(n != 0) {
+		str += digits[n & 0xF];
+		n >>= 4;
 	}
 
-	return result;
+	return str;
 }
 
-
-template<typename T>
-static string join(const vector<T>& array, const function<string(T, uint32_t)> func, const string separator = ", ") {
-	string result = EMPTY_STRING;
-	const uint32_t size = array.size();
-
-	if(size > 0) {
-		uint32_t i = 0;
-		while(true) {
-			result += func(array[i], i);
-			if(++i == size) break;
-			result += separator;
-		}
-	}
-
-	return result;
-}
-
-
-template<typename T>
-static string rjoin(const vector<T>& array, const function<string(T)> func, const string separator = ", ") {
-	string result = EMPTY_STRING;
-	uint32_t i = array.size();
-
-	if(i > 0) {
-		while(true) {
-			i--;
-			result += func(array[i]);
-			if(i == 0) break;
-			result += separator;
-		}
-	}
-
-	return result;
-}
-
-
-/*static string join(const vector<string>& array, string separator = ", ") {
-	return join<string>(array, [](string s) -> string { return s; }, separator);
-}*/
 
 
 
@@ -211,7 +106,7 @@ class ClassFormatException: public DecompilationException {
 
 class IllegalModifersException: public DecompilationException {
 	public:
-		IllegalModifersException(uint16_t modifiers) : DecompilationException("0x" + hex(modifiers, 4)) {}
+		IllegalModifersException(uint16_t modifiers) : DecompilationException("0x" + hex<4>(modifiers)) {}
 };
 
 class IllegalMethodDescriptorException: public DecompilationException {
@@ -237,6 +132,115 @@ class IllegalAttributeException: public ClassFormatException {
 		IllegalAttributeException(const char* message): ClassFormatException(message) {}
 		IllegalAttributeException(string message): ClassFormatException(message) {}
 };
+
+
+
+static string toLowerCamelCase(const string& str) {
+	string result;
+	const size_t strlength = str.size();
+
+	size_t i = 0;
+	for(char c = str[0]; i < strlength && c >= 'A' && c <= 'Z'; c = str[++i])
+		result += tolower(c);
+	while(i < strlength)
+		result += str[i++];
+
+	return result;
+}
+
+
+static const char* repeatString(const char* str, uint16_t count) {
+	const uint16_t
+			strlength = strlen(str),
+			resultlength = strlength * count;
+
+	char* result = strncpy(new char[resultlength + 1], str, resultlength + 1);
+
+	for(uint16_t i = 0; i < resultlength; i++)
+		result[i] = str[i % strlength];
+	result[resultlength] = '\0';
+
+	return result;
+}
+
+
+static inline bool isLetterOrDigit(char c) {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+
+template<typename T>
+static string join(const vector<T>& array, const function<string(T)> func, const string separator = ", ") {
+	string result = EMPTY_STRING;
+	const uint32_t size = array.size();
+
+	if(size > 0) {
+		uint32_t i = 0;
+		while(true) {
+			result += func(array[i]);
+			if(++i == size) break;
+			result += separator;
+		}
+	}
+
+	return result;
+}
+
+
+template<typename T>
+static string join(const vector<T>& array, const function<string(T, uint32_t)> func, const string separator = ", ") {
+	string result = EMPTY_STRING;
+	const uint32_t size = array.size();
+
+	if(size > 0) {
+		uint32_t i = 0;
+		while(true) {
+			result += func(array[i], i);
+			if(++i == size) break;
+			result += separator;
+		}
+	}
+
+	return result;
+}
+
+
+template<typename T>
+static string rjoin(const vector<T>& array, const function<string(T)> func, const string separator = ", ") {
+	string result = EMPTY_STRING;
+	uint32_t i = array.size();
+
+	if(i > 0) {
+		while(true) {
+			i--;
+			result += func(array[i]);
+			if(i == 0) break;
+			result += separator;
+		}
+	}
+
+	return result;
+}
+
+
+static string char32ToString(char32_t ch) {
+	if(ch >> 24)
+		return { (char)(ch >> 24), (char)(ch >> 16), (char)(ch >> 8), (char)ch };
+	if(ch >> 16)
+		return { (char)(ch >> 16), (char)(ch >>  8), (char)ch };
+	if(ch >> 8)
+		return { (char)(ch >>  8), (char)ch };
+	return { (char)ch };
+}
+
+
+static string encodeUtf8(char32_t c) {
+	if(c < 0x80)    return { (char)c };
+	if(c < 0x800)   return { (char)((c >> 6 & 0x1F) | 0xC0), (char)((c & 0x3F) | 0x80) };
+	if(c < 0x10000) return { (char)((c >> 12 & 0xF) | 0xE0), (char)((c >> 6 & 0x3F) | 0x80), (char)((c & 0x3F) | 0x80) };
+	if(c < 0x20000) return { (char)((c >> 18 & 0x7) | 0xF0), (char)((c >> 12 & 0x3F) | 0x80), (char)((c >> 6 & 0x3F) | 0x80), (char)((c & 0x3F) | 0x80) };
+	throw Exception("Illegal char code U+" + hex(c));
+}
 
 
 /*

@@ -226,18 +226,18 @@ namespace JDecompiler {
 			case 0xFE: return "IMPDEP1";
 			case 0xFF: return "IMPDEP2";*/
 			default:
-				throw IllegalOpcodeException("0x" + hex(current(), 2));
+				throw IllegalOpcodeException("0x" + hex<2>(current()));
 		}
 	}
 
-	static string decompileCode(const Method* method, const CodeAttribute* attribute, Scope* scope, const ClassInfo& classinfo) {
+	static string decompileCode(const ConstantPool& constPool, const CodeAttribute* attribute, Scope* scope, const ClassInfo& classinfo) {
 		using namespace Operations;
 		using namespace Instructions;
 
 		//cout << "decompileCode" << endl; // DEBUG
 		Bytecode bytecode = Bytecode(attribute->codeLength, attribute->code);
 
-		CodeEnvironment environment = CodeEnvironment(bytecode, method, scope, attribute->codeLength, attribute->maxLocals, classinfo);
+		CodeEnvironment environment = CodeEnvironment(bytecode, constPool, scope, attribute->codeLength, attribute->maxLocals, classinfo);
 
 		while(bytecode.available()) {
 			bytecode.nextInstruction();

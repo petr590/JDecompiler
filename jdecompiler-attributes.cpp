@@ -49,7 +49,7 @@ struct Attributes: vector<const Attribute*> {
 		return get<T>() != nullptr;
 	}
 
-	Attributes(BinaryInputStream* instream, const ConstantPool* constPool, uint16_t attributeCount);
+	Attributes(BinaryInputStream* instream, const ConstantPool& constPool, uint16_t attributeCount);
 };
 
 
@@ -62,7 +62,7 @@ template<typename T>
 struct ConstantValueAttribute: Attribute {
 	const ConstValueConstant<T>* const value;
 
-	ConstantValueAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool* constPool): Attribute("ConstantValue", length), value(constPool->get<ConstValueConstant<T>>(instream->readShort())) {
+	ConstantValueAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool& constPool): Attribute("ConstantValue", length), value(constPool.get<ConstValueConstant<T>>(instream->readShort())) {
 		if(length != 2) throw IllegalAttributeException("Length of ConstantValue attribute must be 2");
 	}
 };
@@ -72,10 +72,10 @@ struct CodeAttribute: Attribute {
 		const uint16_t startPos, endPos, handlerPos;
 		const ClassConstant* const catchType;
 
-		ExceptionAttribute(BinaryInputStream* instream, const ConstantPool* constPool): startPos(instream->readShort()), endPos(instream->readShort()), handlerPos(instream->readShort()), catchType(constPool->get<ClassConstant>(instream->readShort())) {}
+		ExceptionAttribute(BinaryInputStream* instream, const ConstantPool& constPool): startPos(instream->readShort()), endPos(instream->readShort()), handlerPos(instream->readShort()), catchType(constPool.get<ClassConstant>(instream->readShort())) {}
 	};
 
-	static vector<ExceptionAttribute*> readExceptionTable(BinaryInputStream* instream, const ConstantPool* constPool, uint16_t length) {
+	static vector<ExceptionAttribute*> readExceptionTable(BinaryInputStream* instream, const ConstantPool& constPool, uint16_t length) {
 		vector<ExceptionAttribute*> exceptionTable;
 		exceptionTable.reserve(length);
 
@@ -93,7 +93,7 @@ struct CodeAttribute: Attribute {
 	vector<ExceptionAttribute*> exceptionTable;
 	const Attributes* attributes;
 
-	CodeAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool* constPool): Attribute("Code", length), maxStack(instream->readShort()), maxLocals(instream->readShort()), codeLength(instream->readInt()), code(instream->readBytes(codeLength)), exceptionTableLength(instream->readShort()), exceptionTable(readExceptionTable(instream, constPool, exceptionTableLength)), attributes(new Attributes(instream, constPool, instream->readShort())) {}
+	CodeAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool& constPool): Attribute("Code", length), maxStack(instream->readShort()), maxLocals(instream->readShort()), codeLength(instream->readInt()), code(instream->readBytes(codeLength)), exceptionTableLength(instream->readShort()), exceptionTable(readExceptionTable(instream, constPool, exceptionTableLength)), attributes(new Attributes(instream, constPool, instream->readShort())) {}
 };
 
 
@@ -108,7 +108,7 @@ struct Annotation: Stringified {
 					T value;
 
 					ConstValue(const ConstValueConstant<ConstT>* constant): value(constant->value) {}
-					ConstValue(BinaryInputStream* instream, const ConstantPool* constPool): ConstValue(constPool->get<ConstValueConstant<ConstT>>(instream->readShort())) {}
+					ConstValue(BinaryInputStream* instream, const ConstantPool& constPool): ConstValue(constPool.get<ConstValueConstant<ConstT>>(instream->readShort())) {}
 
 					virtual string toString(const ClassInfo& classinfo) const override {
 						return primitiveToString(value);
@@ -147,7 +147,7 @@ struct Annotation: Stringified {
 				struct AnnotationValue: Value {
 					const Annotation* const annotation;
 
-					AnnotationValue(BinaryInputStream* instream, const ConstantPool* constPool): annotation(new Annotation(instream, constPool)) {}
+					AnnotationValue(BinaryInputStream* instream, const ConstantPool& constPool): annotation(new Annotation(instream, constPool)) {}
 
 					virtual string toString(const ClassInfo& classinfo) const override {
 						return annotation->toString(classinfo);
@@ -158,7 +158,7 @@ struct Annotation: Stringified {
 					const uint16_t length;
 					vector<const Value*> elements;
 
-					ArrayValue(BinaryInputStream* instream, const ConstantPool* constPool): length(instream->readShort()) {
+					ArrayValue(BinaryInputStream* instream, const ConstantPool& constPool): length(instream->readShort()) {
 						elements.reserve(length);
 						for(uint16_t i = 0; i < length; i++)
 							elements.push_back(getValue(instream, constPool, instream->readByte()));
@@ -173,19 +173,19 @@ struct Annotation: Stringified {
 				const string name;
 				const uint8_t typeTag;
 				const Value* value;
-				Element(BinaryInputStream* instream, const ConstantPool* constPool): name(*constPool->get<Utf8Constant>(instream->readShort())), typeTag(instream->readByte()), value(getValue(instream, constPool, typeTag)) {}
+				Element(BinaryInputStream* instream, const ConstantPool& constPool): name(*constPool.get<Utf8Constant>(instream->readShort())), typeTag(instream->readByte()), value(getValue(instream, constPool, typeTag)) {}
 
-			private: static inline const Value* getValue(BinaryInputStream* instream, const ConstantPool* constPool, uint8_t typeTag) {
+			private: static inline const Value* getValue(BinaryInputStream* instream, const ConstantPool& constPool, uint8_t typeTag) {
 				switch(typeTag) {
-					case 'B': case 'S': case 'I': return new IntegerValue(constPool->get<IntegerConstant>(instream->readShort()));
+					case 'B': case 'S': case 'I': return new IntegerValue(constPool.get<IntegerConstant>(instream->readShort()));
 					case 'C': return new CharValue(instream, constPool);
 					case 'F': return new FloatValue(instream, constPool);
 					case 'J': return new LongValue(instream, constPool);
 					case 'D': return new DoubleValue(instream, constPool);
 					case 'Z': return new BooleanValue(instream, constPool);
 					case 's': return new StringValue(instream, constPool);
-					case 'e': return new EnumValue(new ClassType(*constPool->get<Utf8Constant>(instream->readShort())), *constPool->get<Utf8Constant>(instream->readShort()));
-					case 'c': return new ClassValue(parseReferenceType(*constPool->get<ClassConstant>(instream->readShort())->name));
+					case 'e': return new EnumValue(new ClassType(*constPool.get<Utf8Constant>(instream->readShort())), *constPool.get<Utf8Constant>(instream->readShort()));
+					case 'c': return new ClassValue(parseReferenceType(*constPool.get<ClassConstant>(instream->readShort())->name));
 					case '@': return new AnnotationValue(instream, constPool);
 					case '[': return new ArrayValue(instream, constPool);
 					default:
@@ -199,7 +199,7 @@ struct Annotation: Stringified {
 		const uint16_t elementCount;
 		vector<const Element*> elements;
 
-		Annotation(BinaryInputStream* instream, const ConstantPool* constPool): type(getAnnotationType(*constPool->get<Utf8Constant>(instream->readShort()))), elementCount(instream->readShort()) {
+		Annotation(BinaryInputStream* instream, const ConstantPool& constPool): type(getAnnotationType(*constPool.get<Utf8Constant>(instream->readShort()))), elementCount(instream->readShort()) {
 			elements.reserve(elementCount);
 			for(int i = 0; i < elementCount; i++)
 				elements.push_back(new Element(instream, constPool));
@@ -222,7 +222,7 @@ struct AnnotationsAttribute: Attribute, Stringified {
 	const uint16_t annotationsCount;
 	vector<const Annotation*> annotations;
 
-	AnnotationsAttribute(string& name, uint32_t length, BinaryInputStream* instream, const ConstantPool* constPool): Attribute(name, length), annotationsCount(instream->readShort()) {
+	AnnotationsAttribute(string& name, uint32_t length, BinaryInputStream* instream, const ConstantPool& constPool): Attribute(name, length), annotationsCount(instream->readShort()) {
 		annotations.reserve(annotationsCount);
 		for(int i = 0; i < annotationsCount; i++)
 			annotations.push_back(new Annotation(instream, constPool));
@@ -247,9 +247,9 @@ struct XXXAttribute: Attribute {
 struct ExceptionsAttribute: Attribute {
 	vector<const ClassConstant*> exceptions;
 
-	ExceptionsAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool* constPool): Attribute("Exceptions", length) {
+	ExceptionsAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool& constPool): Attribute("Exceptions", length) {
 		for(uint16_t i = instream->readShort(); i > 0; i--)
-			exceptions.push_back(constPool->get<const ClassConstant>(instream->readShort()));
+			exceptions.push_back(constPool.get<const ClassConstant>(instream->readShort()));
 	}
 };
 
@@ -269,17 +269,17 @@ struct ClassSignature {
 /*struct SignatureAttribute: Attribute {
 	const ClassSignature* classSignature;
 
-	SignatureAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool* constPool): Attribute("Signature", length), classSignature(new ClassSignature(constPool->get<Utf8Constant>(instream->readShort()))) {
+	SignatureAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool& constPool): Attribute("Signature", length), classSignature(new ClassSignature(constPool.get<Utf8Constant>(instream->readShort()))) {
 		if(length != 2) throw IllegalAttributeException("Length of Signature attribute must be 2");
 	}
 };*/
 
 
-Attributes::Attributes(BinaryInputStream* instream, const ConstantPool* constPool, uint16_t attributeCount) {
+Attributes::Attributes(BinaryInputStream* instream, const ConstantPool& constPool, uint16_t attributeCount) {
 	this->reserve(attributeCount);
 
 	for(uint16_t i = 0; i < attributeCount; i++) {
-		string name = constPool->get<Utf8Constant>(instream->readShort())->bytes;
+		string name = constPool.get<Utf8Constant>(instream->readShort())->bytes;
 		const uint32_t length = instream->readInt();
 		const streampos pos = instream->getPos() + (streampos)length;
 		const Attribute* attribute;

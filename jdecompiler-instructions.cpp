@@ -69,32 +69,27 @@ namespace Instructions {
 	struct IPushInstruction: Instruction {
 		protected: const T value;
 
-		public: IPushInstruction(T value): value(value) {}
+		public:
+			IPushInstruction(T value): value(value) {}
+
+			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new IPushOperation<T>(value); }
 	};
 
-	struct BIPushInstruction: IPushInstruction<int8_t> {
-		BIPushInstruction(int8_t value): IPushInstruction(value) {}
+	using BIPushInstruction = IPushInstruction<int8_t>;
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new BIPushOperation(value); }
-	};
-
-	struct SIPushInstruction: IPushInstruction<int16_t> {
-		SIPushInstruction(int16_t value): IPushInstruction(value) {}
-
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new SIPushOperation(value); }
-	};
+	using SIPushInstruction = IPushInstruction<int16_t>;
 
 
 	struct LdcInstruction: InstructionWithIndex {
 		LdcInstruction(uint16_t index): InstructionWithIndex(index) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new LdcOperation(environment.constPool, environment.classinfo, index); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new LdcOperation(environment, index); }
 	};
 
 	struct Ldc2Instruction: InstructionWithIndex {
 		Ldc2Instruction(uint16_t index): InstructionWithIndex(index) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new Ldc2Operation(environment.constPool, environment.classinfo, index); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new Ldc2Operation(environment, index); }
 	};
 
 
@@ -262,75 +257,57 @@ namespace Instructions {
 	}
 
 
+	template<char32_t operation, uint16_t priority>
 	struct OperatorInstruction: Instruction {
 		protected:
 			const Type *const type;
-			const string stringOperation;
-			const uint16_t priority;
 
-		public: OperatorInstruction(uint16_t typeCode, const string stringOperation, uint16_t priority): type(getTypeByCode(typeCode)), stringOperation(stringOperation), priority(priority) {}
-	};
-
-	struct BinaryOperatorInstruction: OperatorInstruction {
-		BinaryOperatorInstruction(uint16_t typeCode, const string stringOperation, uint16_t priority): OperatorInstruction(typeCode, stringOperation, priority) {}
-
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new BinaryOperatorOperation(type, environment, stringOperation, priority); }
-	};
-
-	struct UnaryOperatorInstruction: OperatorInstruction {
-		UnaryOperatorInstruction(uint16_t typeCode, const string stringOperation, uint16_t priority): OperatorInstruction(typeCode, stringOperation, priority) {}
-
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new UnaryOperatorOperation(type, environment, stringOperation, priority); }
+		public: OperatorInstruction(uint16_t typeCode): type(getTypeByCode(typeCode)) {}
 	};
 
 
-	struct AddOperatorInstruction: BinaryOperatorInstruction {
-		AddOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, "+", 11) {}
+	template<char32_t operation, uint16_t priority>
+	struct BinaryOperatorInstruction: OperatorInstruction<operation, priority> {
+		BinaryOperatorInstruction(uint16_t typeCode): OperatorInstruction<operation, priority>(typeCode) {}
+
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+			return new BinaryOperatorOperation(OperatorInstruction<operation, priority>::type, environment, operation, priority);
+		}
 	};
 
-	struct SubOperatorInstruction: BinaryOperatorInstruction {
-		SubOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, "-", 11) {}
+
+	template<char32_t operation, uint16_t priority>
+	struct UnaryOperatorInstruction: OperatorInstruction<operation, priority> {
+		UnaryOperatorInstruction(uint16_t typeCode): OperatorInstruction<operation, priority>(typeCode) {}
+
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+			return new UnaryOperatorOperation(OperatorInstruction<operation, priority>::type, environment, operation, priority);
+		}
 	};
 
-	struct MulOperatorInstruction: BinaryOperatorInstruction {
-		MulOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, "*", 12) {}
-	};
+	using AddOperatorInstruction = BinaryOperatorInstruction<'+', 11>;
 
-	struct DivOperatorInstruction: BinaryOperatorInstruction {
-		DivOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, "/", 12) {}
-	};
+	using SubOperatorInstruction = BinaryOperatorInstruction<'-', 11>;
 
-	struct RemOperatorInstruction: BinaryOperatorInstruction {
-		RemOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, "%", 12) {}
-	};
+	using MulOperatorInstruction = BinaryOperatorInstruction<'*', 12>;
 
-	struct NegOperatorInstruction: UnaryOperatorInstruction {
-		NegOperatorInstruction(uint16_t typeCode): UnaryOperatorInstruction(typeCode, "-", 13) {}
-	};
+	using DivOperatorInstruction = BinaryOperatorInstruction<'/', 12>;
 
-	struct ShiftLeftOperatorInstruction: BinaryOperatorInstruction {
-		ShiftLeftOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, "<<", 10) {}
-	};
+	using RemOperatorInstruction = BinaryOperatorInstruction<'%', 12>;
 
-	struct ShiftRightOperatorInstruction: BinaryOperatorInstruction {
-		ShiftRightOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, ">>", 10) {}
-	};
+	using NegOperatorInstruction = UnaryOperatorInstruction<'-', 13>;
 
-	struct UShiftRightOperatorInstruction: BinaryOperatorInstruction {
-		UShiftRightOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, ">>>", 10) {}
-	};
+	using ShiftLeftOperatorInstruction = BinaryOperatorInstruction<'<<', 10>;
 
-	struct AndOperatorInstruction: BinaryOperatorInstruction {
-		AndOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, "&", 7) {}
-	};
+	using ShiftRightOperatorInstruction = BinaryOperatorInstruction<'>>', 10>;
 
-	struct OrOperatorInstruction: BinaryOperatorInstruction {
-		OrOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, "|", 5) {}
-	};
+	using UShiftRightOperatorInstruction = BinaryOperatorInstruction<'>>>', 10>;
 
-	struct XorOperatorInstruction: BinaryOperatorInstruction {
-		XorOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction(typeCode, "^", 6) {}
-	};
+	using AndOperatorInstruction = BinaryOperatorInstruction<'&', 7>;
+
+	using OrOperatorInstruction = BinaryOperatorInstruction<'|', 5>;
+
+	using XorOperatorInstruction = BinaryOperatorInstruction<'^', 6>;
 
 
 
@@ -344,8 +321,9 @@ namespace Instructions {
 
 
 	struct CastInstruction: Instruction {
-		protected: const Type *const type;
-		const bool reqiured;
+		protected:
+			const Type *const type;
+			const bool reqiured;
 
 		public: CastInstruction(const Type* type, bool reqiured): type(type), reqiured(reqiured) {}
 
@@ -491,7 +469,7 @@ namespace Instructions {
 			LookupswitchInstruction(int32_t defaultOffset, map<int32_t, int32_t> offsetTable): defaultOffset(defaultOffset), offsetTable(offsetTable) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-			return new LookupswitchScope(environment, defaultOffset, offsetTable);
+			return new SwitchScope(environment, defaultOffset, offsetTable);
 		}
 	};
 

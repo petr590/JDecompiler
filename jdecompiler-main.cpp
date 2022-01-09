@@ -43,11 +43,12 @@ namespace JDecompiler {
 	struct ClassInfo {
 		public:
 			const ClassType * const type, * const superType;
+			const ConstantPool& constPool;
 			const uint16_t modifiers;
 
 			set<string> *const imports;
 
-			ClassInfo(const ClassType* type, const ClassType* superType, const uint16_t modifiers, const char* baseIndent): type(type), superType(superType), modifiers(modifiers), imports(new set<string>()), baseIndent(baseIndent) {}
+			ClassInfo(const ClassType* type, const ClassType* superType, const ConstantPool& constPool, const uint16_t modifiers, const char* baseIndent): type(type), superType(superType), constPool(constPool), modifiers(modifiers), imports(new set<string>()), baseIndent(baseIndent) {}
 
 		private:
 			const char* const baseIndent;
@@ -102,7 +103,7 @@ namespace JDecompiler {
 		virtual const Type* getReturnType() const = 0;
 
 		string toString(const CodeEnvironment& environment, uint16_t priority, const Associativity& associativity) const {
-			if(this->priority < priority || this->priority == priority && getAssociativityByPriority(this->priority) != associativity)
+			if(this->priority < priority || (this->priority == priority && getAssociativityByPriority(this->priority) != associativity))
 				return '(' + this->toString(environment) + ')';
 			return this->toString(environment);
 		}
@@ -274,7 +275,7 @@ namespace JDecompiler {
 		public:
 			const Bytecode& bytecode;
 			const Method* method;
-			const ConstantPool* constPool;
+			const ConstantPool& constPool;
 			Stack* stack;
 			Scope *scope, *currentScope;
 			const ClassInfo& classinfo;
@@ -283,7 +284,7 @@ namespace JDecompiler {
 		private: vector<Scope*> scopes;
 
 		public:
-			CodeEnvironment(const Bytecode& bytecode, const Method* method, Scope* scope, uint32_t codeLength, uint16_t maxLocals, const ClassInfo& classinfo);
+			CodeEnvironment(const Bytecode& bytecode, const ConstantPool& constPool, Scope* scope, uint32_t codeLength, uint16_t maxLocals, const ClassInfo& classinfo);
 
 			void checkCurrentScope();
 
@@ -436,23 +437,17 @@ namespace JDecompiler {
 
 	// --------------------------------------------------
 
-	struct ClassEntry: Stringified {
-		const ConstantPool *constPool;
 
-		ClassEntry(ConstantPool* constPool): constPool(constPool) {}
-	};
-
-
-	struct Field: ClassEntry {
+	struct Field: Stringified {
 		const uint16_t modifiers;
 		string name;
 		const Type* descriptor;
 		Attributes* attributes;
 
 		public:
-			Field(ConstantPool* constPool, BinaryInputStream* instream): ClassEntry(constPool), modifiers(instream->readShort()),
-					name(constPool->get<Utf8Constant>(instream->readShort())->bytes),
-					descriptor(parseType(constPool->get<Utf8Constant>(instream->readShort())->bytes)), attributes(new Attributes(instream, constPool, instream->readShort())) {}
+			Field(const ConstantPool& constPool, BinaryInputStream* instream): modifiers(instream->readShort()),
+					name(constPool.get<Utf8Constant>(instream->readShort())->bytes),
+					descriptor(parseType(constPool.get<Utf8Constant>(instream->readShort())->bytes)), attributes(new Attributes(instream, constPool, instream->readShort())) {}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
 				return modifiersToString(modifiers) + " " + descriptor->toString(classinfo) + " " + name;
@@ -537,7 +532,7 @@ namespace JDecompiler {
 	};
 
 
-	struct Method: ClassEntry {
+	struct Method: Stringified {
 		const uint16_t modifiers;
 		const MethodDescriptor* const descriptor;
 		const Attributes* const attributes;
@@ -547,7 +542,7 @@ namespace JDecompiler {
 			Scope* scope;
 
 		public:
-			Method(ConstantPool* constPool, BinaryInputStream* instream, const Type* thisType): ClassEntry(constPool), modifiers(instream->readShort()), descriptor(new MethodDescriptor(constPool->get<Utf8Constant>(instream->readShort())->bytes, constPool->get<Utf8Constant>(instream->readShort())->bytes)), attributes(new Attributes(instream, constPool, instream->readShort())), codeAttribute(attributes->get<CodeAttribute>()), scope(nullptr) {
+			Method(const ConstantPool& constPool, BinaryInputStream* instream, const Type* thisType): modifiers(instream->readShort()), descriptor(new MethodDescriptor(constPool.get<Utf8Constant>(instream->readShort())->bytes, constPool.get<Utf8Constant>(instream->readShort())->bytes)), attributes(new Attributes(instream, constPool, instream->readShort())), codeAttribute(attributes->get<CodeAttribute>()), scope(nullptr) {
 				const bool hasCodeAttribute = codeAttribute != nullptr;
 
 				scope = new Scope(0, hasCodeAttribute ? codeAttribute->codeLength : 0, hasCodeAttribute ? 0 : descriptor->arguments.size());
@@ -557,7 +552,7 @@ namespace JDecompiler {
 				const int argumentsCount = descriptor->arguments.size();
 				for(int i = 0; i < argumentsCount; i++) {
 					scope->addVariable(descriptor->arguments[i], getNameByType(descriptor->arguments[i]));
-		}
+				}
 			}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
@@ -578,7 +573,7 @@ namespace JDecompiler {
 				if(attributes->has<const ExceptionsAttribute>())
 					str += " throws " + join<const ClassConstant*>(attributes->get<const ExceptionsAttribute>()->exceptions, [classinfo](const ClassConstant* clazz) { return ClassType(*clazz->name).toString(classinfo); });
 
-				str += (codeAttribute == nullptr ? ";" : " " + decompileCode(this, codeAttribute, scope, classinfo));
+				str += (codeAttribute == nullptr ? ";" : " " + decompileCode(classinfo.constPool, codeAttribute, scope, classinfo));
 				return str;
 			}
 
@@ -614,17 +609,20 @@ namespace JDecompiler {
 	};
 
 
-	struct Class: ClassEntry {
-		const ClassType *thisType, *superType;
-		uint16_t modifiers;
-		uint16_t interfacesCount;
-		vector<const ClassType*> interfaces;
-		vector<Field*> fields;
-		vector<Method*> methods;
-		Attributes* attributes;
+	struct Class: Stringified {
+		public:
+			const ClassType *thisType, *superType;
+			uint16_t modifiers;
+			uint16_t interfacesCount;
+			vector<const ClassType*> interfaces;
+			vector<Field*> fields;
+			vector<Method*> methods;
+			Attributes* attributes;
+
+		private: const ConstantPool* constPool;
 
 		public:
-			Class(BinaryInputStream* instream): ClassEntry(nullptr), thisType(nullptr), superType(nullptr) {
+			Class(BinaryInputStream* instream) {
 				if(instream->readInt() != CLASS_SIGNATURE)
 					throw ClassFormatException("Wrong class signature");
 
@@ -632,12 +630,12 @@ namespace JDecompiler {
 						majorVersion = instream->readShort(),
 						minorVersion = instream->readShort();
 
-				//cout << "Version: " << majorVersion << "." << minorVersion << endl;
+				cout << "/* Java version: " << majorVersion << "." << minorVersion << " */" << endl;
 
 				const uint16_t constPoolSize = instream->readShort();
 
-				ConstantPool* constPool = new ConstantPool(constPoolSize);
-				this->constPool = constPool;
+				this->constPool = new ConstantPool(constPoolSize);
+				const ConstantPool& constPool = *this->constPool;
 
 				for(uint16_t i = 1; i < constPoolSize; i++) {
 					uint8_t constType = instream->readByte();
@@ -645,70 +643,70 @@ namespace JDecompiler {
 					switch(constType) {
 						case  1: {
 							uint16_t size = instream->readShort();
-							(*constPool)[i] = new Utf8Constant(constPool, size, instream->readBytes(size));
+							constPool[i] = new Utf8Constant(constPool, size, instream->readBytes(size));
 							break;
 						}
 						case  3:
-							(*constPool)[i] = new IntegerConstant(constPool, instream->readInt());
+							constPool[i] = new IntegerConstant(constPool, instream->readInt());
 							break;
 						case  4:
-							(*constPool)[i] = new FloatConstant(constPool, instream->readFloat());
+							constPool[i] = new FloatConstant(constPool, instream->readFloat());
 							break;
 						case  5:
-							(*constPool)[i] = new LongConstant(constPool, instream->readLong());
+							constPool[i] = new LongConstant(constPool, instream->readLong());
 							i++; // Long and Double constants have historically held two positions in the pool
 							break;
 						case  6:
-							(*constPool)[i] = new DoubleConstant(constPool, instream->readDouble());
+							constPool[i] = new DoubleConstant(constPool, instream->readDouble());
 							i++;
 							break;
 						case  7:
-							(*constPool)[i] = new ClassConstant(constPool, instream->readShort());
+							constPool[i] = new ClassConstant(constPool, instream->readShort());
 							break;
 						case  8:
-							(*constPool)[i] = new StringConstant(constPool, instream->readShort());
+							constPool[i] = new StringConstant(constPool, instream->readShort());
 							break;
 						case  9:
-							(*constPool)[i] = new FieldrefConstant(constPool, instream->readShort(), instream->readShort());
+							constPool[i] = new FieldrefConstant(constPool, instream->readShort(), instream->readShort());
 							break;
 						case 10:
-							(*constPool)[i] = new MethodrefConstant(constPool, instream->readShort(), instream->readShort());
+							constPool[i] = new MethodrefConstant(constPool, instream->readShort(), instream->readShort());
 							break;
 						case 11:
-							(*constPool)[i] = new InterfaceMethodrefConstant(constPool, instream->readShort(), instream->readShort());
+							constPool[i] = new InterfaceMethodrefConstant(constPool, instream->readShort(), instream->readShort());
 							break;
 						case 12:
-							(*constPool)[i] = new NameAndTypeConstant(constPool, instream->readShort(), instream->readShort());
+							constPool[i] = new NameAndTypeConstant(constPool, instream->readShort(), instream->readShort());
 							break;
 						case 15:
-							(*constPool)[i] = new MethodHandleConstant(constPool, instream->readByte(), instream->readShort());
+							constPool[i] = new MethodHandleConstant(constPool, instream->readByte(), instream->readShort());
 							break;
 						case 16:
-							(*constPool)[i] = new MethodTypeConstant(constPool, instream->readShort());
+							constPool[i] = new MethodTypeConstant(constPool, instream->readShort());
 							break;
 						case 18:
-							(*constPool)[i] = new InvokeDynamicConstant(constPool, instream->readShort(), instream->readShort());
+							constPool[i] = new InvokeDynamicConstant(constPool, instream->readShort(), instream->readShort());
 							break;
 						default:
-							throw ClassFormatException("Illegal constant type 0x" + hex(constType, 2) + " at pos 0x" + hex((int32_t)instream->getPos()));
+							throw ClassFormatException("Illegal constant type 0x" + hex<2>(constType) + " at pos 0x" + hex((int32_t)instream->getPos()));
 					};
 				}
 
 				for(uint16_t i = 1; i < constPoolSize; i++) {
-					Constant* constant = (*constPool)[i];
+					Constant* constant = constPool[i];
 					if(constant != nullptr)
 						constant->init();
 				}
 
 				modifiers = instream->readShort();
 
-				thisType = new ClassType(*constPool->get<ClassConstant>(instream->readShort())->name);
-				superType = new ClassType(*constPool->get<ClassConstant>(instream->readShort())->name);
+				thisType = new ClassType(*constPool.get<ClassConstant>(instream->readShort())->name);
+				superType = new ClassType(*constPool.get<ClassConstant>(instream->readShort())->name);
 
 				interfacesCount = instream->readShort();
 				interfaces.reserve(interfacesCount);
 				for(uint16_t i = 0; i < interfacesCount; i++) {
-					string name = *constPool->get<ClassConstant>(instream->readShort())->name;
+					string name = *constPool.get<ClassConstant>(instream->readShort())->name;
 					if(modifiers & ACC_ANNOTATION && name == "java/lang/annotation/Annotation") continue;
 					interfaces[i] = new ClassType(name);
 				}
@@ -777,7 +775,7 @@ namespace JDecompiler {
 			}
 
 			string toString() {
-				const ClassInfo classinfo = ClassInfo(thisType, superType, modifiers, "    ");
+				const ClassInfo classinfo = ClassInfo(thisType, superType, *constPool, modifiers, "    ");
 				return toString(classinfo);
 			}
 
@@ -819,7 +817,7 @@ namespace JDecompiler {
 
 	// --------------------------------------------------
 
-	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const Method* method, Scope* scope, uint32_t codeLength, uint16_t maxLocals, const ClassInfo& classinfo): bytecode(bytecode), constPool(method->constPool), stack(new Stack()), scope(scope), currentScope(scope), classinfo(classinfo) {
+	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ConstantPool& constPool, Scope* scope, uint32_t codeLength, uint16_t maxLocals, const ClassInfo& classinfo): bytecode(bytecode), constPool(constPool), stack(new Stack()), scope(scope), currentScope(scope), classinfo(classinfo) {
 		for(int i = scope->getVariablesCount(); i < maxLocals; i++)
 			scope->addVariable(ANY_OBJECT /*TODO*/, "x");
 

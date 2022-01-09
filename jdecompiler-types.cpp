@@ -101,13 +101,13 @@ static const ClassType
 
 struct ArrayType: ReferenceType {
 	public:
-		uint16_t nestingLevel = 0;
 		const Type *memberType, *elementType;
+		uint16_t nestingLevel = 0;
 
 	private: string braces = EMPTY_STRING;
 
 	public:
-		ArrayType(const string name): ReferenceType(EMPTY_STRING, EMPTY_STRING) {
+		ArrayType(const string name) {
 			int i = 0;
 			for(char c = name[0]; c == '['; c = name[++i]) {
 				nestingLevel++;

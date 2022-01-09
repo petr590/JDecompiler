@@ -370,23 +370,23 @@ namespace JDecompiler {
 		return value ? "true" : "false";
 	}
 
-	static string primitiveToString(uint8_t num) {
+	static string primitiveToString(char16_t c) {
+		return "'" + (c < 0x20 ? "\\u" + hex<4>(c) : encodeUtf8(c)) + "'";
+	}
+
+	static string primitiveToString(int8_t num) { // byte
 		return to_string(num);
 	}
 
-	static string primitiveToString(int8_t num) {
+	static string primitiveToString(int16_t num) { // short
 		return to_string(num);
 	}
 
-	static string primitiveToString(int16_t num) {
+	static string primitiveToString(int32_t num) { // int
 		return to_string(num);
 	}
 
-	static string primitiveToString(int32_t num) {
-		return to_string(num);
-	}
-
-	static string primitiveToString(int64_t num) {
+	static string primitiveToString(int64_t num) { // long
 		return to_string(num) + "L";
 	}
 

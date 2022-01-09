@@ -69,8 +69,6 @@ namespace JDecompiler {
 
 	//struct AnnotationsAttribute;
 
-	static Attributes* readAttributes(BinaryInputStream* instream, const ConstantPool* constPool, uint16_t attributeCount);
-
 
 	// jdecompiler-main
 
@@ -102,7 +100,7 @@ namespace JDecompiler {
 
 	static const Type* parseReturnType(const char* encodedName);
 
-	static const ReferenceType* parseReferenceType(const char* encodedName);
+	static const ReferenceType* parseReferenceType(const string& encodedName);
 
 	static string getNameByType(const Type* const type);
 

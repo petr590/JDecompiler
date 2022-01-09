@@ -86,6 +86,7 @@ namespace JDecompiler {
 		}
 
 		string toLiteral() const {
+			#define checkLength(n) if(i + n >= length) throw Exception("Unexpected end of the string")
 			const char* bytes = value->bytes;
 			const uint32_t length = strlen(bytes);
 			string str = "\"";
@@ -102,14 +103,16 @@ namespace JDecompiler {
 					case '\\': str += "\\\\"; break;
 					default:
 						if((ch & 0xE0) == 0xC0) {
+							checkLength(1);
 							ch = (ch << 8) | (bytes[++i] & 0xFF);
 							code = (ch & 0x1F00) >> 2 | (ch & 0x3F);
 						} else if((ch & 0xF0) == 0xE0) {
-							if((ch & 0xFF) == 0xED) {
-								ch = 0x10000 | (bytes[++i] & 0xF) << 16 | (bytes[++i] & 0x3F) << 10 | (bytes[i+=2] & 0x0F) << 6 | (bytes[++i] & 0x3F);
-								str += encodeUtf8(ch);
+							if(ch == 0xED) {
+								checkLength(5);
+								str += encodeUtf8(0x10000 | (bytes[++i] & 0xF) << 16 | (bytes[++i] & 0x3F) << 10 | (bytes[i+=2] & 0xF) << 6 | (bytes[++i] & 0x3F));
 								continue;
 							}
+							checkLength(2);
 							ch = (ch << 16) | (bytes[++i] & 0xFF) << 8 | (bytes[++i] & 0xFF);
 							code = (ch & 0xF0000) >> 4 | (ch & 0x3F00) >> 2 | (ch & 0x3F);
 						}

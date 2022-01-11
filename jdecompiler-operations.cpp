@@ -86,6 +86,8 @@ namespace Operations {
 
 
 	struct AbstractLdcOperation: Operation {
+		#define THROW_ILLEGAL_CONSTANT_TYPE_EXCEPTION throw IllegalStateException("Illegal constant type " + (int)type)
+
 		protected:
 			uint16_t index;
 			const Constant* const value;
@@ -95,44 +97,83 @@ namespace Operations {
 	};
 
 	struct LdcOperation: AbstractLdcOperation {
+		private:
+			enum class ConstantType {
+				STRING, CLASS, INTEGER, FLOAT, METHOD_TYPE, METHOD_HANDLE
+			};
+
+			const ConstantType type;
+
+			ConstantType getConstantType() {
+				if(safe_cast<const StringConstant*>(value)) return ConstantType::STRING;
+				if(safe_cast<const ClassConstant*>(value)) return ConstantType::CLASS;
+				if(safe_cast<const IntegerConstant*>(value)) return ConstantType::INTEGER;
+				if(safe_cast<const FloatConstant*>(value)) return ConstantType::FLOAT;
+				if(safe_cast<const MethodTypeConstant*>(value)) return ConstantType::METHOD_TYPE;
+				if(safe_cast<const MethodHandleConstant*>(value)) return ConstantType::METHOD_HANDLE;
+				throw IllegalStateException("Illegal constant pointer 0x" + hex(index) +
+						": expected String, Class, Integer, Float, MethodType or MethodHandle constant");
+			}
+
 		public:
-			LdcOperation(const CodeEnvironment& environment, uint16_t index): AbstractLdcOperation(environment, index) {}
+			LdcOperation(const CodeEnvironment& environment, uint16_t index): AbstractLdcOperation(environment, index), type(getConstantType()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				if(const StringConstant* s = dynamic_cast<const StringConstant*>(value)) return (string)s->toLiteral();
-				if(const ClassConstant* c = dynamic_cast<const ClassConstant*>(value)) return parseReferenceType(*c->name)->toString(environment.classinfo) + ".class";
-				if(const IntegerConstant* i = dynamic_cast<const IntegerConstant*>(value)) return primitiveToString(i->value);
-				if(const FloatConstant* f = dynamic_cast<const FloatConstant*>(value)) return primitiveToString(f->value);
-				if(dynamic_cast<const MethodTypeConstant*>(value)) throw Exception("Unsupported constant type MethodType");
-				if(dynamic_cast<const MethodHandleConstant*>(value)) throw Exception("Unsupported constant type MethodHadle");
-				throw IllegalConstantPointerException("0x" + hex(index));
+				switch(type) {
+					case ConstantType::STRING: return safe_cast<const StringConstant*>(value)->toLiteral();
+					case ConstantType::CLASS: return parseReferenceType(*safe_cast<const ClassConstant*>(value)->name)->toString(environment.classinfo) + ".class";
+					case ConstantType::INTEGER: return primitiveToString(safe_cast<const IntegerConstant*>(value)->value);
+					case ConstantType::FLOAT: return primitiveToString(safe_cast<const FloatConstant*>(value)->value);
+					case ConstantType::METHOD_TYPE: throw Exception("MethodType: Unsupported toString operation");
+					case ConstantType::METHOD_HANDLE: throw Exception("MethodHadle: Unsupported toString operation");
+					default: THROW_ILLEGAL_CONSTANT_TYPE_EXCEPTION;
+				}
 			}
 
 			virtual const Type* getReturnType() const override {
-				if(dynamic_cast<const StringConstant*>(value)) return STRING;
-				if(dynamic_cast<const ClassConstant*>(value)) return CLASS;
-				if(dynamic_cast<const IntegerConstant*>(value)) return INT;
-				if(dynamic_cast<const FloatConstant*>(value)) return FLOAT;
-				if(dynamic_cast<const MethodTypeConstant*>(value)) throw Exception("Unsupported constant type MethodType");
-				if(dynamic_cast<const MethodHandleConstant*>(value)) throw Exception("Unsupported constant type MethodHadle");
-				throw IllegalConstantPointerException("0x" + hex(index));
+				switch(type) {
+					case ConstantType::STRING: return STRING;
+					case ConstantType::CLASS: return CLASS;
+					case ConstantType::INTEGER: return INT;
+					case ConstantType::FLOAT: return FLOAT;
+					case ConstantType::METHOD_TYPE: throw Exception("MethodHadle: Unsupported getReturnType operation");
+					case ConstantType::METHOD_HANDLE: throw Exception("MethodHadle: Unsupported getReturnType operation");
+					default: THROW_ILLEGAL_CONSTANT_TYPE_EXCEPTION;
+				}
 			}
 	};
 
 	struct Ldc2Operation: AbstractLdcOperation {
+		private:
+			enum class ConstantType {
+				LONG, DOUBLE
+			};
+
+			ConstantType getConstantType() {
+				if(safe_cast<const LongConstant*>(value)) return ConstantType::LONG;
+				if(safe_cast<const DoubleConstant*>(value)) return ConstantType::DOUBLE;
+				throw IllegalStateException("Illegal constant pointer 0x" + hex(index) + ": expected Long or Double constant");
+			}
+
+			const ConstantType type;
+
 		public:
-			Ldc2Operation(const CodeEnvironment& environment, uint16_t index): AbstractLdcOperation(environment, index) {}
+			Ldc2Operation(const CodeEnvironment& environment, uint16_t index): AbstractLdcOperation(environment, index), type(getConstantType()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				if(const LongConstant* l = dynamic_cast<const LongConstant*>(value)) return primitiveToString(l->value);
-				if(const DoubleConstant* d = dynamic_cast<const DoubleConstant*>(value)) return primitiveToString(d->value);
-				throw IllegalConstantPointerException("0x" + hex(index));
+				switch(type) {
+					case ConstantType::LONG: return primitiveToString(safe_cast<const LongConstant*>(value)->value);
+					case ConstantType::DOUBLE: return primitiveToString(safe_cast<const DoubleConstant*>(value)->value);
+					default: THROW_ILLEGAL_CONSTANT_TYPE_EXCEPTION;
+				}
 			}
 
 			virtual const Type* getReturnType() const override {
-				if(dynamic_cast<const LongConstant*>(value)) return LONG;
-				if(dynamic_cast<const DoubleConstant*>(value)) return DOUBLE;
-				throw IllegalConstantPointerException("0x" + hex(index));
+				switch(type) {
+					case ConstantType::LONG: return LONG;
+					case ConstantType::DOUBLE: return DOUBLE;
+					default: THROW_ILLEGAL_CONSTANT_TYPE_EXCEPTION;
+				}
 			}
 	};
 
@@ -199,7 +240,7 @@ namespace Operations {
 	};
 
 	struct AALoadOperation: ArrayLoadOperation {
-		AALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(dynamic_cast<const ArrayType*>(environment.stack->lookup(1)->getReturnType())->memberType, environment) {} // TOCHECK
+		AALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(safe_cast<const ArrayType*>(environment.stack->lookup(1)->getReturnType())->memberType, environment) {} // TOCHECK
 	};
 
 	struct BALoadOperation: ArrayLoadOperation {
@@ -278,7 +319,7 @@ namespace Operations {
 	};
 
 	struct AAStoreOperation: ArrayStoreOperation {
-		AAStoreOperation(const CodeEnvironment& environment): ArrayStoreOperation(dynamic_cast<const ArrayType*>(environment.stack->top()->getReturnType())->memberType, environment) {} // TOCHECK
+		AAStoreOperation(const CodeEnvironment& environment): ArrayStoreOperation(safe_cast<const ArrayType*>(environment.stack->top()->getReturnType())->memberType, environment) {} // TOCHECK
 	};
 
 	struct BAStoreOperation: ArrayStoreOperation {

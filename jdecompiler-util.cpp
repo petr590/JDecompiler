@@ -43,15 +43,22 @@ static string hex(uint64_t n) {
 }
 
 
+template<class T, class B>
+T safe_cast(B o) {
+	T t = dynamic_cast<T>(o);
+	if(t == nullptr && o != nullptr)
+		throw bad_cast();
+	return t;
+}
 
 
 class Exception: public exception {
 	string message;
 
 	public:
-		Exception() : message("") {}
-		Exception(const char* message) : message(message) {}
-		Exception(string message) : message(message) {}
+		Exception() {}
+		Exception(const char* message): message(message) {}
+		Exception(string message): message(message) {}
 
 		virtual const char* what() const noexcept override {
 			return message.c_str();
@@ -63,6 +70,12 @@ class IndexOutOfBoundsException: public Exception {
 	public:
 		IndexOutOfBoundsException(const char* message): Exception(message) {}
 		IndexOutOfBoundsException(string message): Exception(message) {}
+};
+
+class IllegalStateException: public Exception {
+	public:
+		IllegalStateException(const char* message): Exception(message) {}
+		IllegalStateException(string message): Exception(message) {}
 };
 
 class DynamicCastException: public Exception {
@@ -131,6 +144,18 @@ class IllegalAttributeException: public ClassFormatException {
 	public:
 		IllegalAttributeException(const char* message): ClassFormatException(message) {}
 		IllegalAttributeException(string message): ClassFormatException(message) {}
+};
+
+class IOException: public Exception {
+	public:
+		IOException(const char* message): Exception(message) {}
+		IOException(string message): Exception(message) {}
+		IOException(): Exception() {}
+};
+
+class EOFException: public IOException {
+	public:
+		EOFException(): IOException() {}
 };
 
 
@@ -235,11 +260,13 @@ static string char32ToString(char32_t ch) {
 
 
 static string encodeUtf8(char32_t c) {
-	if(c < 0x80)    return { (char)c };
-	if(c < 0x800)   return { (char)((c >> 6 & 0x1F) | 0xC0), (char)((c & 0x3F) | 0x80) };
-	if(c < 0x10000) return { (char)((c >> 12 & 0xF) | 0xE0), (char)((c >> 6 & 0x3F) | 0x80), (char)((c & 0x3F) | 0x80) };
-	if(c < 0x20000) return { (char)((c >> 18 & 0x7) | 0xF0), (char)((c >> 12 & 0x3F) | 0x80), (char)((c >> 6 & 0x3F) | 0x80), (char)((c & 0x3F) | 0x80) };
-	throw Exception("Illegal char code U+" + hex(c));
+	if(c < 0x80)       return { (char)c }; // 0xxxxxxx
+	if(c < 0x800)      return { (char)((c >> 6 & 0x1F) | 0xC0), (char)((c & 0x3F) | 0x80) }; // 110xxxxx 10xxxxxx
+	if(c < 0x10000)    return { (char)((c >> 12 & 0xF) | 0xE0), (char)((c >> 6 & 0x3F) | 0x80), (char)((c & 0x3F) | 0x80) }; // 1110xxxx 10xxxxxx 10xxxxxx
+	if(c < 0x200000)   return { (char)((c >> 18 & 0x7) | 0xF0), (char)((c >> 12 & 0x3F) | 0x80), (char)((c >> 6 & 0x3F) | 0x80), (char)((c & 0x3F) | 0x80) }; // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+	if(c < 0x4000000)  return { (char)((c >> 24 & 0x3) | 0xF8), (char)((c >> 18 & 0x3F) | 0x80), (char)((c >> 12 & 0x3F) | 0x80), (char)((c >> 6 & 0x3F) | 0x80), (char)((c & 0x3F) | 0x80) }; // 111110xx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx
+	if(c < 0x80000000) return { (char)((c >> 30 & 0x1) | 0xFC), (char)((c >> 24 & 0x3F) | 0x80), (char)((c >> 18 & 0x3F) | 0x80), (char)((c >> 12 & 0x3F) | 0x80), (char)((c >> 6 & 0x3F) | 0x80), (char)((c & 0x3F) | 0x80) }; // 1111110x 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx
+    throw Exception("Invalid code point U+" + hex(c));
 }
 
 
@@ -263,6 +290,8 @@ class BinaryInputStream {
 				max = min((streampos)4096, (streampos)(end - infile.tellg()));
 				infile.read(*&buffer, max);
 			}
+			if(pos >= end)
+				throw EOFException();
 		}
 
 		unsigned short next() { // reads only one byte; returns not char because type expansion for unsigned is same as for signed types
@@ -273,6 +302,8 @@ class BinaryInputStream {
 
 	public:
 		BinaryInputStream(const string path): infile(path, ios::binary | ios::in) {
+			if(!infile.good())
+				throw IOException("Cannnot open the file '" + path + "'");
 			infile.seekg(0, ios::end);
 			end = infile.tellg();
 			infile.seekg(0, ios::beg);
@@ -334,29 +365,28 @@ namespace JDecompiler {
 
 	class FormatString {
 		private:
-			string str = string();
-
+			string str;
 
 		public:
-			FormatString(): str(string()) {}
+			FormatString() {}
 			FormatString(string str): str(str) {}
 
 
 			FormatString operator+(const char* str) const {
-				return FormatString(this->str + (this->str == "" ? str : " " + (string)str));
-			}
-
-			FormatString* operator+=(const char* str) {
-				this->str += (this->str == "" ? str : " " + (string)str);
-				return this;
+				return FormatString(this->str + (this->str.empty() || *str == '\0' ? str : " " + (string)str));
 			}
 
 			FormatString operator+(string str) const {
-				return FormatString(this->str + (this->str == "" ? str : " " + str));
+				return FormatString(this->str + (this->str.empty() || str.empty() ? str : " " + str));
+			}
+
+			FormatString* operator+=(const char* str) {
+				this->str += (this->str.empty() || *str == '\0' ? str : " " + (string)str);
+				return this;
 			}
 
 			FormatString* operator+=(string str) {
-				this->str += (this->str == "" ? str : " " + str);
+				this->str += (this->str.empty() || str.empty() ? str : " " + str);
 				return this;
 			}
 
@@ -387,14 +417,14 @@ namespace JDecompiler {
 	}
 
 	static string primitiveToString(int64_t num) { // long
-		return to_string(num) + "L";
+		return to_string(num) + "l";
 	}
 
 	static string primitiveToString(float num) {
 		if(isnan(num)) return "Float.NaN";
 		if(!isfinite(num)) return num > 0 ? "Float.POSITIVE_INFINITY" : "Float.NEGATIVE_INFINITY";
 		ostringstream out;
-		out << num << 'F';
+		out << num << 'f';
 		return out.str();
 	}
 

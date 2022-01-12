@@ -431,17 +431,17 @@ namespace Operations {
 	};
 
 
+	template<bool required>
 	struct CastOperation: ReturnableOperation<> {
 		protected:
 			const Operation* const operation;
 			const Type* const type;
-			const bool reqiured;
 
 		public:
-			CastOperation(const CodeEnvironment& environment, const Type* type, bool reqiured): ReturnableOperation(type), operation(environment.stack->pop()), type(type), reqiured(reqiured) {}
+			CastOperation(const CodeEnvironment& environment, const Type* type): ReturnableOperation(type), operation(environment.stack->pop()), type(type) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return reqiured ? "(" + type->name + ")" + operation->toString(environment, priority, LEFT) : operation->toString(environment);
+				return required ? "(" + type->name + ")" + operation->toString(environment, priority, LEFT) : operation->toString(environment);
 			}
 	};
 
@@ -738,29 +738,34 @@ namespace Operations {
 	};
 
 
-	struct InvokeNonStaticOperation: Operation {
+	struct InvokeOperation: Operation {
 		protected:
-			const Operation* objectOperation;
 			const MethodDescriptor* const methodDescriptor;
 			vector<const Operation*> arguments;
 
-
-			InvokeNonStaticOperation(const CodeEnvironment& environment, const MethodDescriptor* methodDescriptor): methodDescriptor(methodDescriptor) {
+			InvokeOperation(const CodeEnvironment& environment, const MethodDescriptor* methodDescriptor): methodDescriptor(methodDescriptor) {
 				for(int i = methodDescriptor->arguments.size(); i > 0; i--)
 					arguments.push_back(environment.stack->pop());
-
-				objectOperation = environment.stack->pop();
 			}
+
+			virtual const Type* getReturnType() const override {
+				return methodDescriptor->returnType;
+			}
+	};
+
+
+	struct InvokeNonStaticOperation: InvokeOperation {
+		protected:
+			const Operation* const objectOperation;
+
+			InvokeNonStaticOperation(const CodeEnvironment& environment, const MethodDescriptor* methodDescriptor):
+				InvokeOperation(environment, methodDescriptor), objectOperation(environment.stack->pop()) {}
 
 			InvokeNonStaticOperation(const CodeEnvironment& environment, uint16_t index): InvokeNonStaticOperation(environment, new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)) {}
 
 		public:
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return objectOperation->toString(environment, priority, LEFT) + "." + methodDescriptor->name + "(" + rjoin<const Operation*>(arguments, [environment](const Operation* operation) { return operation->toString(environment); }) + ")";
-			}
-
-			virtual const Type* getReturnType() const override {
-				return methodDescriptor->returnType;
 			}
 	};
 
@@ -793,25 +798,17 @@ namespace Operations {
 	};
 
 
-	struct InvokestaticOperation: Operation {
+	struct InvokestaticOperation: InvokeOperation {
 		protected:
 			const ClassType* const clazz;
-			const MethodDescriptor* const methodDescriptor;
-			vector<const Operation*> arguments;
 
 		public:
-			InvokestaticOperation(const CodeEnvironment& environment, uint16_t index): clazz(new ClassType(*environment.constPool.get<MethodrefConstant>(index)->clazz->name)), methodDescriptor(new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)) {
-				for(int i = methodDescriptor->arguments.size(); i > 0; i--)
-					arguments.push_back(environment.stack->pop());
-			}
+			InvokestaticOperation(const CodeEnvironment& environment, uint16_t index):
+				clazz(new ClassType(*environment.constPool.get<MethodrefConstant>(index)->clazz->name)), InvokeOperation(environment, new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return clazz->toString(environment.classinfo) + "." + methodDescriptor->name + "(" +
 						rjoin<const Operation*>(arguments, [environment](const Operation* operation) { return operation->toString(environment); }) + ")";
-			}
-
-			virtual const Type* getReturnType() const override {
-				return methodDescriptor->returnType;
 			}
 	};
 
@@ -943,6 +940,17 @@ namespace Operations {
 	struct IfNonNullScope: IfScope {
 		public: IfNonNullScope(const CodeEnvironment& environment, int16_t offset): IfScope(environment, offset, new CompareWithNullOperation(environment, CompareType::NOT_EQUALS)) {}
 	};
+
+
+
+	struct InvokedynamicOperation: InvokeOperation {
+		InvokedynamicOperation(const CodeEnvironment& environment, uint16_t index): InvokeOperation(environment, new MethodDescriptor(environment.constPool.get<InvokeDynamicConstant>(index)->nameAndType)) {}
+
+			virtual string toString(const CodeEnvironment& environment) const {
+				return "INVOKEDYNAMIC";
+			}
+	};
+
 
 
 	static IConstOperation

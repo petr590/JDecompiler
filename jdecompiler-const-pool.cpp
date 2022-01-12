@@ -11,11 +11,7 @@ using namespace std;
 
 namespace JDecompiler {
 	struct Constant {
-		const ConstantPool& constPool;
-
-		Constant(const ConstantPool& constPool): constPool(constPool) {};
-
-		virtual void init() {};
+		virtual void init(const ConstantPool& constPool) {};
 	};
 
 
@@ -50,7 +46,7 @@ namespace JDecompiler {
 		const uint16_t length;
 		const char* bytes;
 
-		Utf8Constant(const ConstantPool& constPool, uint16_t length, const char* bytes): Constant(constPool), length(length), bytes(bytes) {}
+		Utf8Constant(uint16_t length, const char* bytes): length(length), bytes(bytes) {}
 
 		operator string() const {
 			return string(bytes, length);
@@ -61,9 +57,9 @@ namespace JDecompiler {
 		const uint16_t nameRef;
 		const Utf8Constant* name;
 
-		ClassConstant(const ConstantPool& constPool, uint16_t nameRef): Constant(constPool), nameRef(nameRef) {}
+		ClassConstant(uint16_t nameRef): nameRef(nameRef) {}
 
-		virtual void init() override {
+		virtual void init(const ConstantPool& constPool) override {
 			name = constPool.get<Utf8Constant>(nameRef);
 		}
 	};
@@ -72,16 +68,16 @@ namespace JDecompiler {
 	template<typename T>
 	struct ConstValueConstant: Constant {
 		T value;
-		ConstValueConstant(const ConstantPool& constPool, T value): Constant(constPool), value(value) {}
+		ConstValueConstant(T value): value(value) {}
 	};
 
 
 	struct StringConstant: ConstValueConstant<const Utf8Constant*> {
 		const uint16_t valueRef;
 
-		StringConstant(const ConstantPool& constPool, uint16_t valueRef): ConstValueConstant(constPool, nullptr), valueRef(valueRef) {}
+		StringConstant(uint16_t valueRef): ConstValueConstant(nullptr), valueRef(valueRef) {}
 
-		virtual void init() override {
+		virtual void init(const ConstantPool& constPool) override {
 			value = constPool.get<Utf8Constant>(valueRef);
 		}
 
@@ -137,9 +133,9 @@ namespace JDecompiler {
 		const Utf8Constant* name;
 		const Utf8Constant* descriptor;
 
-		NameAndTypeConstant(const ConstantPool& constPool, uint16_t nameRef, uint16_t descriptorRef): Constant(constPool), nameRef(nameRef), descriptorRef(descriptorRef) {}
+		NameAndTypeConstant(uint16_t nameRef, uint16_t descriptorRef): nameRef(nameRef), descriptorRef(descriptorRef) {}
 
-		virtual void init() override {
+		virtual void init(const ConstantPool& constPool) override {
 			name = constPool.get<Utf8Constant>(nameRef);
 			descriptor = constPool.get<Utf8Constant>(descriptorRef);
 		}
@@ -151,44 +147,71 @@ namespace JDecompiler {
 		const ClassConstant* clazz;
 		const NameAndTypeConstant* nameAndType;
 
-		ReferenceConstant(const ConstantPool& constPool, uint16_t classRef, uint16_t nameAndTypeRef): Constant(constPool), classRef(classRef), nameAndTypeRef(nameAndTypeRef) {}
+		ReferenceConstant(uint16_t classRef, uint16_t nameAndTypeRef): classRef(classRef), nameAndTypeRef(nameAndTypeRef) {}
 
-		virtual void init() override {
+		virtual void init(const ConstantPool& constPool) override {
 			clazz = constPool.get<ClassConstant>(classRef);
 			nameAndType = constPool.get<NameAndTypeConstant>(nameAndTypeRef);
 		}
 	};
 
 	struct FieldrefConstant: ReferenceConstant {
-		FieldrefConstant(const ConstantPool& constPool, uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(constPool, classRef, nameAndTypeRef) {}
+		FieldrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(classRef, nameAndTypeRef) {}
 	};
 
 	struct MethodrefConstant: ReferenceConstant {
-		MethodrefConstant(const ConstantPool& constPool, uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(constPool, classRef, nameAndTypeRef) {}
+		MethodrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(classRef, nameAndTypeRef) {}
 	};
 
 	struct InterfaceMethodrefConstant: ReferenceConstant {
-		InterfaceMethodrefConstant(const ConstantPool& constPool, uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(constPool, classRef, nameAndTypeRef) {}
+		InterfaceMethodrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(classRef, nameAndTypeRef) {}
 	};
+
 
 	struct MethodHandleConstant: Constant {
-		const uint8_t refKind;
-		const uint16_t refRef;
+		enum class ReferenceKind {
+			GETFIELD = 1, GETSTATIC, PUTFIELD, PUTSTATIC, INVOKEVIRTUAL, INVOKESTATIC, INVOKESPECIAL, NEWINVOKESPECIAL, INVOKEINTERFACE
+		};
 
-		MethodHandleConstant(const ConstantPool& constPool, uint16_t refKind, uint16_t refRef): Constant(constPool), refKind(refKind), refRef(refRef) {}
+		const ReferenceKind referenceKind;
+		const uint16_t referenceRef;
+
+		const ReferenceConstant* reference;
+
+		MethodHandleConstant(uint8_t referenceKind, uint16_t referenceRef): referenceKind((ReferenceKind)referenceKind), referenceRef(referenceRef) {
+			if(referenceKind < 1 || referenceKind > 9)
+				throw IllegalStateException("referenceKind is " + to_string(referenceKind) + ", must be in the range 1 to 9");
+		}
+
+		virtual void init(const ConstantPool& constPool) override {
+			reference = constPool.get<ReferenceConstant>(referenceRef);
+		}
 	};
+
 
 	struct MethodTypeConstant: Constant {
 		const uint16_t descriptorRef;
 
-		MethodTypeConstant(const ConstantPool& constPool, uint16_t descriptorRef): Constant(constPool), descriptorRef(descriptorRef) {}
+		const Utf8Constant* descriptor;
+
+		MethodTypeConstant(uint16_t descriptorRef): descriptorRef(descriptorRef) {}
+
+		virtual void init(const ConstantPool& constPool) override {
+			descriptor = constPool.get<Utf8Constant>(descriptorRef);
+		}
 	};
 
 	struct InvokeDynamicConstant: Constant {
 		const uint16_t bootstrapMethodAttrRef;
 		const uint16_t nameAndTypeRef;
 
-		InvokeDynamicConstant(const ConstantPool& constPool, uint16_t bootstrapMethodAttrRef, uint16_t nameAndTypeRef): Constant(constPool), bootstrapMethodAttrRef(bootstrapMethodAttrRef), nameAndTypeRef(nameAndTypeRef) {}
+		const NameAndTypeConstant* nameAndType;
+
+		InvokeDynamicConstant(uint16_t bootstrapMethodAttrRef, uint16_t nameAndTypeRef): bootstrapMethodAttrRef(bootstrapMethodAttrRef), nameAndTypeRef(nameAndTypeRef) {}
+
+		virtual void init(const ConstantPool& constPool) override {
+			nameAndType = constPool.get<NameAndTypeConstant>(nameAndTypeRef);
+		}
 	};
 }
 

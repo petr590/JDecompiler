@@ -320,14 +320,14 @@ namespace Instructions {
 	};
 
 
+	template<bool required>
 	struct CastInstruction: Instruction {
 		protected:
 			const Type *const type;
-			const bool reqiured;
 
-		public: CastInstruction(const Type* type, bool reqiured): type(type), reqiured(reqiured) {}
+		public: CastInstruction(const Type* type): type(type) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new CastOperation(environment, type, reqiured); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new CastOperation<required>(environment, type); }
 	};
 
 
@@ -557,6 +557,15 @@ namespace Instructions {
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
 			return new InvokeinterfaceOperation(environment, index);
+		}
+	};
+
+
+	struct InvokedynamicInstruction: InvokeInstruction {
+		InvokedynamicInstruction(uint16_t index): InvokeInstruction(index) {}
+
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+			return new InvokedynamicOperation(environment, index);
 		}
 	};
 

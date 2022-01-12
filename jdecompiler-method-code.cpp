@@ -130,21 +130,21 @@ namespace JDecompiler {
 			case 0x80: case 0x81: return new OrOperatorInstruction(current() & 1);
 			case 0x82: case 0x83: return new XorOperatorInstruction(current() & 1);
 			case 0x84: return new IIncInstruction(nextByte(), nextByte());
-			case 0x85: return new CastInstruction(LONG, false); // int -> long
-			case 0x86: return new CastInstruction(FLOAT, false); // int -> float
-			case 0x87: return new CastInstruction(DOUBLE, false); // int -> double
-			case 0x88: return new CastInstruction(INT, true); // long -> int
-			case 0x89: return new CastInstruction(FLOAT, false); // long -> float
-			case 0x8A: return new CastInstruction(DOUBLE, false); // long -> double
-			case 0x8B: return new CastInstruction(INT, true); // float -> int
-			case 0x8C: return new CastInstruction(LONG, true); // float -> long
-			case 0x8D: return new CastInstruction(DOUBLE, false); // float -> double
-			case 0x8E: return new CastInstruction(INT, true); // double -> int
-			case 0x8F: return new CastInstruction(LONG, true); // double -> long
-			case 0x90: return new CastInstruction(FLOAT, true); // double -> float
-			case 0x91: return new CastInstruction(BYTE, true); // int -> byte
-			case 0x92: return new CastInstruction(CHAR, true); // int -> char
-			case 0x93: return new CastInstruction(SHORT, true); // int -> short
+			case 0x85: return new CastInstruction<false>(LONG); // int -> long
+			case 0x86: return new CastInstruction<false>(FLOAT); // int -> float
+			case 0x87: return new CastInstruction<false>(DOUBLE); // int -> double
+			case 0x88: return new CastInstruction<true>(INT); // long -> int
+			case 0x89: return new CastInstruction<false>(FLOAT); // long -> float
+			case 0x8A: return new CastInstruction<false>(DOUBLE); // long -> double
+			case 0x8B: return new CastInstruction<true>(INT); // float -> int
+			case 0x8C: return new CastInstruction<true>(LONG); // float -> long
+			case 0x8D: return new CastInstruction<false>(DOUBLE); // float -> double
+			case 0x8E: return new CastInstruction<true>(INT); // double -> int
+			case 0x8F: return new CastInstruction<true>(LONG); // double -> long
+			case 0x90: return new CastInstruction<true>(FLOAT); // double -> float
+			case 0x91: return new CastInstruction<true>(BYTE); // int -> byte
+			case 0x92: return new CastInstruction<true>(CHAR); // int -> char
+			case 0x93: return new CastInstruction<true>(SHORT); // int -> short
 			case 0x94: return new LCmpInstruction();
 			case 0x95: return new FCmpInstruction();
 			case 0x96: return new FCmpInstruction();
@@ -188,11 +188,15 @@ namespace JDecompiler {
 			case 0xB7: return new InvokespecialInstruction(nextShort());
 			case 0xB8: return new InvokestaticInstruction(nextShort());
 			case 0xB9: {
-				Instruction* const instruction = new InvokeinterfaceInstruction(nextShort());
+				Instruction* instruction = new InvokeinterfaceInstruction(nextShort());
 				nextShort();
 				return instruction;
 			}
-			//case 0xBA: i+=4; return "INVOKEDYNAMIC";
+			case 0xBA: {
+				Instruction* instruction = new InvokedynamicInstruction(nextShort());
+				nextShort();
+				return instruction;
+			}
 			case 0xBB: return new NewInstruction(nextShort());
 			case 0xBC: return new NewArrayInstruction(nextByte());
 			case 0xBD: return new ANewArrayInstruction(nextShort());

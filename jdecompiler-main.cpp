@@ -643,49 +643,49 @@ namespace JDecompiler {
 					switch(constType) {
 						case  1: {
 							uint16_t size = instream->readShort();
-							constPool[i] = new Utf8Constant(constPool, size, instream->readBytes(size));
+							constPool[i] = new Utf8Constant(size, instream->readBytes(size));
 							break;
 						}
 						case  3:
-							constPool[i] = new IntegerConstant(constPool, instream->readInt());
+							constPool[i] = new IntegerConstant(instream->readInt());
 							break;
 						case  4:
-							constPool[i] = new FloatConstant(constPool, instream->readFloat());
+							constPool[i] = new FloatConstant(instream->readFloat());
 							break;
 						case  5:
-							constPool[i] = new LongConstant(constPool, instream->readLong());
+							constPool[i] = new LongConstant(instream->readLong());
 							i++; // Long and Double constants have historically held two positions in the pool
 							break;
 						case  6:
-							constPool[i] = new DoubleConstant(constPool, instream->readDouble());
+							constPool[i] = new DoubleConstant(instream->readDouble());
 							i++;
 							break;
 						case  7:
-							constPool[i] = new ClassConstant(constPool, instream->readShort());
+							constPool[i] = new ClassConstant(instream->readShort());
 							break;
 						case  8:
-							constPool[i] = new StringConstant(constPool, instream->readShort());
+							constPool[i] = new StringConstant(instream->readShort());
 							break;
 						case  9:
-							constPool[i] = new FieldrefConstant(constPool, instream->readShort(), instream->readShort());
+							constPool[i] = new FieldrefConstant(instream->readShort(), instream->readShort());
 							break;
 						case 10:
-							constPool[i] = new MethodrefConstant(constPool, instream->readShort(), instream->readShort());
+							constPool[i] = new MethodrefConstant(instream->readShort(), instream->readShort());
 							break;
 						case 11:
-							constPool[i] = new InterfaceMethodrefConstant(constPool, instream->readShort(), instream->readShort());
+							constPool[i] = new InterfaceMethodrefConstant(instream->readShort(), instream->readShort());
 							break;
 						case 12:
-							constPool[i] = new NameAndTypeConstant(constPool, instream->readShort(), instream->readShort());
+							constPool[i] = new NameAndTypeConstant(instream->readShort(), instream->readShort());
 							break;
 						case 15:
-							constPool[i] = new MethodHandleConstant(constPool, instream->readByte(), instream->readShort());
+							constPool[i] = new MethodHandleConstant(instream->readByte(), instream->readShort());
 							break;
 						case 16:
-							constPool[i] = new MethodTypeConstant(constPool, instream->readShort());
+							constPool[i] = new MethodTypeConstant(instream->readShort());
 							break;
 						case 18:
-							constPool[i] = new InvokeDynamicConstant(constPool, instream->readShort(), instream->readShort());
+							constPool[i] = new InvokeDynamicConstant(instream->readShort(), instream->readShort());
 							break;
 						default:
 							throw ClassFormatException("Illegal constant type 0x" + hex<2>(constType) + " at pos 0x" + hex((int32_t)instream->getPos()));
@@ -695,7 +695,7 @@ namespace JDecompiler {
 				for(uint16_t i = 1; i < constPoolSize; i++) {
 					Constant* constant = constPool[i];
 					if(constant != nullptr)
-						constant->init();
+						constant->init(constPool);
 				}
 
 				modifiers = instream->readShort();

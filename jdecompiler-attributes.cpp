@@ -173,7 +173,7 @@ struct Annotation: Stringified {
 				const string name;
 				const uint8_t typeTag;
 				const Value* value;
-				Element(BinaryInputStream* instream, const ConstantPool& constPool): name(*constPool.get<Utf8Constant>(instream->readShort())), typeTag(instream->readByte()), value(getValue(instream, constPool, typeTag)) {}
+				Element(BinaryInputStream* instream, const ConstantPool& constPool): name(constPool.getUtf8Constant(instream->readShort())), typeTag(instream->readByte()), value(getValue(instream, constPool, typeTag)) {}
 
 			private: static inline const Value* getValue(BinaryInputStream* instream, const ConstantPool& constPool, uint8_t typeTag) {
 				switch(typeTag) {
@@ -184,7 +184,7 @@ struct Annotation: Stringified {
 					case 'D': return new DoubleValue(instream, constPool);
 					case 'Z': return new BooleanValue(instream, constPool);
 					case 's': return new StringValue(instream, constPool);
-					case 'e': return new EnumValue(new ClassType(*constPool.get<Utf8Constant>(instream->readShort())), *constPool.get<Utf8Constant>(instream->readShort()));
+					case 'e': return new EnumValue(new ClassType(constPool.getUtf8Constant(instream->readShort())), constPool.getUtf8Constant(instream->readShort()));
 					case 'c': return new ClassValue(parseReferenceType(*constPool.get<ClassConstant>(instream->readShort())->name));
 					case '@': return new AnnotationValue(instream, constPool);
 					case '[': return new ArrayValue(instream, constPool);
@@ -199,7 +199,7 @@ struct Annotation: Stringified {
 		const uint16_t elementCount;
 		vector<const Element*> elements;
 
-		Annotation(BinaryInputStream* instream, const ConstantPool& constPool): type(getAnnotationType(*constPool.get<Utf8Constant>(instream->readShort()))), elementCount(instream->readShort()) {
+		Annotation(BinaryInputStream* instream, const ConstantPool& constPool): type(getAnnotationType(constPool.getUtf8Constant(instream->readShort()))), elementCount(instream->readShort()) {
 			elements.reserve(elementCount);
 			for(int i = 0; i < elementCount; i++)
 				elements.push_back(new Element(instream, constPool));
@@ -279,7 +279,7 @@ Attributes::Attributes(BinaryInputStream* instream, const ConstantPool& constPoo
 	this->reserve(attributeCount);
 
 	for(uint16_t i = 0; i < attributeCount; i++) {
-		string name = constPool.get<Utf8Constant>(instream->readShort())->bytes;
+		string name = constPool.getUtf8Constant(instream->readShort());
 		const uint32_t length = instream->readInt();
 		const streampos pos = instream->getPos() + (streampos)length;
 		const Attribute* attribute;

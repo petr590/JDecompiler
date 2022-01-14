@@ -18,10 +18,10 @@ namespace JDecompiler {
 	struct ConstantPool {
 		private:
 			const uint16_t size;
-			Constant** pool;
+			Constant** const pool;
 
 		public:
-			ConstantPool(const int size): size(size), pool(new Constant*[size]) {}
+			ConstantPool(const uint16_t size): size(size), pool(new Constant*[size]) {}
 
 			Constant*& operator[](int index) const {
 				if(index < 0 || index >= size)
@@ -30,7 +30,7 @@ namespace JDecompiler {
 			}
 
 			template<class T>
-			T* get(int index) const {
+			T* get(uint16_t index) const {
 				static_assert(is_base_of<Constant, T>::value, "T is not subclass of class Constant");
 				if(index < 0 || index >= size)
 					throw IndexOutOfBoundsException("Invalid constant pool reference 0x" + hex<4>(index));
@@ -39,18 +39,16 @@ namespace JDecompiler {
 					throw DynamicCastException("Invalid constant pool reference 0x" + hex<4>(index) + " at " + typeid(T).name());
 				return constant;
 			}
+
+			inline const Utf8Constant& getUtf8Constant(uint16_t index) const {
+				return *get<Utf8Constant>(index);
+			}
 	};
 
 
-	struct Utf8Constant: Constant {
-		const uint16_t length;
-		const char* bytes;
+	struct Utf8Constant: Constant, string {
 
-		Utf8Constant(uint16_t length, const char* bytes): length(length), bytes(bytes) {}
-
-		operator string() const {
-			return string(bytes, length);
-		}
+		Utf8Constant(uint16_t length, const char* bytes): string(bytes, length) {}
 	};
 
 	struct ClassConstant: Constant {
@@ -83,7 +81,7 @@ namespace JDecompiler {
 
 		string toLiteral() const {
 			#define checkLength(n) if(i + n >= length) throw Exception("Unexpected end of the string")
-			const char* bytes = value->bytes;
+			const char* bytes = value->c_str();
 			const uint32_t length = strlen(bytes);
 			string str = "\"";
 			for(uint32_t i = 0; i < length; i++) {

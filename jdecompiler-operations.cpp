@@ -804,7 +804,8 @@ namespace Operations {
 
 		public:
 			InvokestaticOperation(const CodeEnvironment& environment, uint16_t index):
-				clazz(new ClassType(*environment.constPool.get<MethodrefConstant>(index)->clazz->name)), InvokeOperation(environment, new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)) {}
+				InvokeOperation(environment, new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)),
+				clazz(new ClassType(*environment.constPool.get<MethodrefConstant>(index)->clazz->name)) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return clazz->toString(environment.classinfo) + "." + methodDescriptor->name + "(" +

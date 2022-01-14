@@ -446,8 +446,8 @@ namespace JDecompiler {
 
 		public:
 			Field(const ConstantPool& constPool, BinaryInputStream* instream): modifiers(instream->readShort()),
-					name(constPool.get<Utf8Constant>(instream->readShort())->bytes),
-					descriptor(parseType(constPool.get<Utf8Constant>(instream->readShort())->bytes)), attributes(new Attributes(instream, constPool, instream->readShort())) {}
+					name(constPool.getUtf8Constant(instream->readShort())),
+					descriptor(parseType(constPool.getUtf8Constant(instream->readShort()))), attributes(new Attributes(instream, constPool, instream->readShort())) {}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
 				return modifiersToString(modifiers) + " " + descriptor->toString(classinfo) + " " + name;
@@ -542,7 +542,7 @@ namespace JDecompiler {
 			Scope* scope;
 
 		public:
-			Method(const ConstantPool& constPool, BinaryInputStream* instream, const Type* thisType): modifiers(instream->readShort()), descriptor(new MethodDescriptor(constPool.get<Utf8Constant>(instream->readShort())->bytes, constPool.get<Utf8Constant>(instream->readShort())->bytes)), attributes(new Attributes(instream, constPool, instream->readShort())), codeAttribute(attributes->get<CodeAttribute>()), scope(nullptr) {
+			Method(const ConstantPool& constPool, BinaryInputStream* instream, const Type* thisType): modifiers(instream->readShort()), descriptor(new MethodDescriptor(constPool.getUtf8Constant(instream->readShort()), constPool.getUtf8Constant(instream->readShort()))), attributes(new Attributes(instream, constPool, instream->readShort())), codeAttribute(attributes->get<CodeAttribute>()), scope(nullptr) {
 				const bool hasCodeAttribute = codeAttribute != nullptr;
 
 				scope = new Scope(0, hasCodeAttribute ? codeAttribute->codeLength : 0, hasCodeAttribute ? 0 : descriptor->arguments.size());

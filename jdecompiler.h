@@ -1,6 +1,8 @@
 #ifndef JDECOMPILER_H
 #define JDECOMPILER_H
 
+#define LABEL(s) cout << s << endl;
+
 #include <string>
 #include <vector>
 #include <stdint.h>

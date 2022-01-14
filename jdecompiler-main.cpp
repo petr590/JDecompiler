@@ -152,16 +152,28 @@ namespace JDecompiler {
 				return posMap;
 			}
 
-			inline uint16_t nextByte() {
+			inline int16_t nextByte() {
 				return bytes[++pos] & 0xFF;
 			}
 
-			inline uint16_t nextShort() {
-				return nextByte() << 8 | nextByte();
+			inline uint16_t nextUByte() {
+				return bytes[++pos] & 0xFF;
 			}
 
-			inline uint32_t nextInt() {
-				return nextByte() << 24 | nextByte() << 16 | nextByte() << 8 | nextByte();
+			inline int16_t nextShort() {
+				return nextUByte() << 8 | nextUByte();
+			}
+
+			inline uint16_t nextUShort() {
+				return nextUByte() << 8 | nextUByte();
+			}
+
+			inline int32_t nextInt() {
+				return nextUByte() << 24 | nextUByte() << 16 | nextUByte() << 8 | nextUByte();
+			}
+
+			inline uint32_t nextUInt() {
+				return nextUByte() << 24 | nextUByte() << 16 | nextUByte() << 8 | nextUByte();
 			}
 
 			inline uint16_t current() const {
@@ -274,12 +286,12 @@ namespace JDecompiler {
 	struct CodeEnvironment {
 		public:
 			const Bytecode& bytecode;
-			const Method* method;
+			//const Method* method; // @Unused
 			const ConstantPool& constPool;
-			Stack* stack;
-			Scope *scope, *currentScope;
+			Stack& stack;
+			Scope* const scope, *currentScope;
 			const ClassInfo& classinfo;
-			uint32_t pos, index;
+			uint32_t pos, index, exprStartIndex;
 
 		private: vector<Scope*> scopes;
 
@@ -303,6 +315,7 @@ namespace JDecompiler {
 			vector<Variable*> variables;
 			vector<const Operation*> code;
 
+		public:
 			vector<Scope*> innerScopes;
 
 			Scope(uint32_t from, uint32_t to, Scope* parentScope): from(from), to(to), parentScope(parentScope) {}
@@ -341,8 +354,12 @@ namespace JDecompiler {
 				string str = getHeader(environment) + "{\n";
 				const size_t baseSize = str.size();
 
-				for(const Operation* operation : code) {
-					str += operation->getFrontSeparator(environment.classinfo) + operation->toString(environment) + operation->getBackSeparator(environment.classinfo);
+				for(auto i = code.begin(); i != code.end(); ++i) {
+					if(printNextOperation(i)) {
+						const Operation* operation = *i;
+						str += operation->getFrontSeparator(environment.classinfo) + operation->toString(environment) +
+								operation->getBackSeparator(environment.classinfo);
+					}
 				}
 
 				environment.classinfo.reduceIndent();
@@ -355,6 +372,9 @@ namespace JDecompiler {
 				return str + environment.classinfo.getIndent() + "}";
 			}
 
+		protected:
+			virtual inline bool printNextOperation(const vector<const Operation*>::const_iterator i) const { return true; }
+
 			virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
 				return "\n";
 			}
@@ -363,6 +383,7 @@ namespace JDecompiler {
 				return EMPTY_STRING;
 			}
 
+		public:
 			int getVariablesCount() const {
 				return variables.size();
 			}
@@ -478,7 +499,7 @@ namespace JDecompiler {
 
 
 	struct MethodDescriptor {
-		string name;
+		const string name;
 		const Type* returnType;
 		vector<const Type*> arguments;
 
@@ -536,7 +557,7 @@ namespace JDecompiler {
 		const uint16_t modifiers;
 		const MethodDescriptor* const descriptor;
 		const Attributes* const attributes;
-		const CodeAttribute *const codeAttribute;
+		const CodeAttribute* const codeAttribute;
 
 		protected:
 			Scope* scope;
@@ -544,6 +565,11 @@ namespace JDecompiler {
 		public:
 			Method(const ConstantPool& constPool, BinaryInputStream* instream, const Type* thisType): modifiers(instream->readShort()), descriptor(new MethodDescriptor(constPool.getUtf8Constant(instream->readShort()), constPool.getUtf8Constant(instream->readShort()))), attributes(new Attributes(instream, constPool, instream->readShort())), codeAttribute(attributes->get<CodeAttribute>()), scope(nullptr) {
 				const bool hasCodeAttribute = codeAttribute != nullptr;
+
+				if(modifiers & ACC_ABSTRACT && hasCodeAttribute)
+					throw IllegalStateException("In method " + descriptor->name + ":\n" + "Abstract method mustn't have Code attribute");
+				if(!(modifiers & ACC_ABSTRACT) && !hasCodeAttribute)
+					throw IllegalStateException("In method " + descriptor->name + ":\n" + "Non-abstract method must have Code attribute");
 
 				scope = new Scope(0, hasCodeAttribute ? codeAttribute->codeLength : 0, hasCodeAttribute ? 0 : descriptor->arguments.size());
 				if(!(modifiers & ACC_STATIC))
@@ -579,7 +605,7 @@ namespace JDecompiler {
 
 		private:
 			static FormatString modifiersToString(uint16_t modifiers, const ClassInfo& classinfo) {
-				FormatString str = FormatString();
+				FormatString str;
 
 				switch(modifiers & (ACC_VISIBLE | ACC_PUBLIC | ACC_PRIVATE | ACC_PROTECTED)) {
 					case ACC_VISIBLE: break;
@@ -592,11 +618,15 @@ namespace JDecompiler {
 				if(modifiers & ACC_STATIC) str += "static";
 
 				if(modifiers & ACC_ABSTRACT) {
-					if(modifiers & (ACC_FINAL | ACC_SYNCHRONIZED | ACC_NATIVE | ACC_STRICT))
+					if(modifiers & (ACC_STATIC | ACC_FINAL | ACC_SYNCHRONIZED | ACC_NATIVE | ACC_STRICT))
 						throw IllegalModifersException(modifiers);
 					if(!(classinfo.modifiers & ACC_INTERFACE))
 						str += "abstract";
+				} else {
+					if(classinfo.modifiers & ACC_INTERFACE)
+						str += "default";
 				}
+
 				if(modifiers & ACC_FINAL) str += "final";
 				if(modifiers & ACC_SYNCHRONIZED) str += "synchronized";
 				// ACC_BRIDGE, ACC_VARARGS
@@ -817,7 +847,7 @@ namespace JDecompiler {
 
 	// --------------------------------------------------
 
-	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ConstantPool& constPool, Scope* scope, uint32_t codeLength, uint16_t maxLocals, const ClassInfo& classinfo): bytecode(bytecode), constPool(constPool), stack(new Stack()), scope(scope), currentScope(scope), classinfo(classinfo) {
+	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ConstantPool& constPool, Scope* scope, uint32_t codeLength, uint16_t maxLocals, const ClassInfo& classinfo): bytecode(bytecode), constPool(constPool), stack(*new Stack()), scope(scope), currentScope(scope), classinfo(classinfo) {
 		for(int i = scope->getVariablesCount(); i < maxLocals; i++)
 			scope->addVariable(ANY_OBJECT /*TODO*/, "x");
 
@@ -839,12 +869,17 @@ namespace JDecompiler {
 			currentScope = currentScope->parentScope;
 		}
 
-		for(Scope* scope : scopes) {
-			if(scope->from == index) {
-				if(scope->to > currentScope->to) throw DecompilationException("Scope is out of bounds of the parent scope: " + to_string(scope->from) + " - " + to_string(scope->to) + ", " + to_string(currentScope->from) + " - " + to_string(currentScope->to));
+		for(auto i = scopes.begin(); i != scopes.end(); ) {
+			Scope* scope = *i;
+			if(scope->from <= index) {
+				if(scope->to > currentScope->to)
+					throw DecompilationException("Scope is out of bounds of the parent scope: " +
+						to_string(scope->from) + " - " + to_string(scope->to) + ", " + to_string(currentScope->from) + " - " + to_string(currentScope->to));
 				currentScope->add(scope);
 				currentScope = scope;
-			}
+				scopes.erase(i);
+			} else
+				++i;
 		}
 	}
 

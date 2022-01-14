@@ -390,7 +390,7 @@ namespace Instructions {
 		IfICmpInstruction(int16_t offset, const CompareType& compareType): IfCmpInstruction(offset, compareType) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-			environment.stack->push(new ICmpOperation(environment));
+			environment.stack.push(new ICmpOperation(environment));
 			return new IfCmpScope(environment, offset, compareType);
 		}
 	};
@@ -425,7 +425,7 @@ namespace Instructions {
 		IfACmpInstruction(int16_t offset, const EqualsCompareType& compareType): IfCmpInstruction(offset, compareType) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-			environment.stack->push(new ACmpOperation(environment));
+			environment.stack.push(new ACmpOperation(environment));
 			return new IfCmpScope(environment, offset, compareType);
 		}
 	};
@@ -445,14 +445,23 @@ namespace Instructions {
 
 		GotoInstruction(const int32_t offset): offset(offset) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+		virtual inline const Operation* toOperation(const CodeEnvironment& environment) const override {
 			if(offset == 0) return new EmptyInfiniteLoopScope(environment);
 
+			const uint32_t index = environment.bytecode.posToIndex(offset + environment.pos);
+
 			const IfScope* ifScope = dynamic_cast<const IfScope*>(environment.getCurrentScope());
-			//cout << "goto " << typeid(*environment.getCurrentScope()->parentScope).name() << endl;
-			if(ifScope && environment.index == ifScope->to) {
+
+			if(ifScope != nullptr && environment.index == ifScope->to) {
 				if(offset > 0)
-					return new ElseScope(environment, min(environment.bytecode.posToIndex(offset + environment.pos), ifScope->parentScope->to) - 1, ifScope);
+					return new ElseScope(environment, min(index, ifScope->parentScope->to) - 1, ifScope);
+
+				if(index == ifScope->from) {
+					if(offset < 0) {
+						ifScope->isLoop = true;
+						return new ContinueOperation(/*ifScope*/);
+					}
+				}
 			}
 
 			throw DecompilationException("illegal using of goto instruction");
@@ -491,31 +500,31 @@ namespace Instructions {
 	};
 
 
-	struct GetstaticInstruction: InstructionWithIndex {
-		GetstaticInstruction(uint16_t index): InstructionWithIndex(index) {}
+	struct GetStaticFieldInstruction: InstructionWithIndex {
+		GetStaticFieldInstruction(uint16_t index): InstructionWithIndex(index) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new GetstaticOperation(environment, index); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new GetStaticFieldOperation(environment, index); }
 	};
 
 
-	struct PutstaticInstruction: InstructionWithIndex {
-		PutstaticInstruction(uint16_t index): InstructionWithIndex(index) {}
+	struct PutStaticFieldInstruction: InstructionWithIndex {
+		PutStaticFieldInstruction(uint16_t index): InstructionWithIndex(index) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new PutfieldOperation(environment, index); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new PutStaticFieldOperation(environment, index); }
 	};
 
 
-	struct GetfieldInstruction: InstructionWithIndex {
-		GetfieldInstruction(uint16_t index): InstructionWithIndex(index) {}
+	struct GetInstanceFieldInstruction: InstructionWithIndex {
+		GetInstanceFieldInstruction(uint16_t index): InstructionWithIndex(index) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new GetfieldOperation(environment, index); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new GetInstanceFieldOperation(environment, index); }
 	};
 
 
-	struct PutfieldInstruction: InstructionWithIndex {
-		PutfieldInstruction(uint16_t index): InstructionWithIndex(index) {}
+	struct PutInstanceFieldInstruction: InstructionWithIndex {
+		PutInstanceFieldInstruction(uint16_t index): InstructionWithIndex(index) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new PutfieldOperation(environment, index); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new PutInstanceFieldOperation(environment, index); }
 	};
 
 

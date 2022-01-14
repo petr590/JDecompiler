@@ -37,16 +37,16 @@ namespace JDecompiler {
 			case 0x0D: return FCONST_2;
 			case 0x0E: return DCONST_0;
 			case 0x0F: return DCONST_1;
-			case 0x10: return new BIPushInstruction(nextByte());
-			case 0x11: return new SIPushInstruction(nextShort());
-			case 0x12: return new LdcInstruction(nextByte());
-			case 0x13: return new LdcInstruction(nextShort());
-			case 0x14: return new Ldc2Instruction(nextShort());
-			case 0x15: return new ILoadInstruction(nextByte());
-			case 0x16: return new LLoadInstruction(nextByte());
-			case 0x17: return new FLoadInstruction(nextByte());
-			case 0x18: return new DLoadInstruction(nextByte());
-			case 0x19: return new ALoadInstruction(nextByte());
+			case 0x10: return new BIPushInstruction(nextUByte());
+			case 0x11: return new SIPushInstruction(nextUShort());
+			case 0x12: return new LdcInstruction(nextUByte());
+			case 0x13: return new LdcInstruction(nextUShort());
+			case 0x14: return new Ldc2Instruction(nextUShort());
+			case 0x15: return new ILoadInstruction(nextUByte());
+			case 0x16: return new LLoadInstruction(nextUByte());
+			case 0x17: return new FLoadInstruction(nextUByte());
+			case 0x18: return new DLoadInstruction(nextUByte());
+			case 0x19: return new ALoadInstruction(nextUByte());
 			case 0x1A: return new ILoadInstruction(0);
 			case 0x1B: return new ILoadInstruction(1);
 			case 0x1C: return new ILoadInstruction(2);
@@ -75,11 +75,11 @@ namespace JDecompiler {
 			case 0x33: return new BALoadInstruction();
 			case 0x34: return new CALoadInstruction();
 			case 0x35: return new SALoadInstruction();
-			case 0x36: return new IStoreInstruction(nextByte());
-			case 0x37: return new LStoreInstruction(nextByte());
-			case 0x38: return new FStoreInstruction(nextByte());
-			case 0x39: return new DStoreInstruction(nextByte());
-			case 0x3A: return new AStoreInstruction(nextByte());
+			case 0x36: return new IStoreInstruction(nextUByte());
+			case 0x37: return new LStoreInstruction(nextUByte());
+			case 0x38: return new FStoreInstruction(nextUByte());
+			case 0x39: return new DStoreInstruction(nextUByte());
+			case 0x3A: return new AStoreInstruction(nextUByte());
 			case 0x3B: return new IStoreInstruction(0);
 			case 0x3C: return new IStoreInstruction(1);
 			case 0x3D: return new IStoreInstruction(2);
@@ -129,7 +129,7 @@ namespace JDecompiler {
 			case 0x7E: case 0x7F: return new AndOperatorInstruction(current() & 1);
 			case 0x80: case 0x81: return new OrOperatorInstruction(current() & 1);
 			case 0x82: case 0x83: return new XorOperatorInstruction(current() & 1);
-			case 0x84: return new IIncInstruction(nextByte(), nextByte());
+			case 0x84: return new IIncInstruction(nextUByte(), nextUByte());
 			case 0x85: return new CastInstruction<false>(LONG); // int -> long
 			case 0x86: return new CastInstruction<false>(FLOAT); // int -> float
 			case 0x87: return new CastInstruction<false>(DOUBLE); // int -> double
@@ -150,80 +150,80 @@ namespace JDecompiler {
 			case 0x96: return new FCmpInstruction();
 			case 0x97: return new DCmpInstruction();
 			case 0x98: return new DCmpInstruction();
-			case 0x99: return new IfNotEqInstruction(nextShort());
-			case 0x9A: return new IfEqInstruction(nextShort());
-			case 0x9B: return new IfGeInstruction(nextShort());
-			case 0x9C: return new IfLtInstruction(nextShort());
-			case 0x9D: return new IfLeInstruction(nextShort());
-			case 0x9E: return new IfGtInstruction(nextShort());
-			case 0x9F: return new IfINotEqInstruction(nextShort());
-			case 0xA0: return new IfIEqInstruction(nextShort());
-			case 0xA1: return new IfIGeInstruction(nextShort());
-			case 0xA2: return new IfILtInstruction(nextShort());
-			case 0xA3: return new IfILeInstruction(nextShort());
-			case 0xA4: return new IfIGtInstruction(nextShort());
-			case 0xA5: return new IfANotEqInstruction(nextShort());
-			case 0xA6: return new IfAEqInstruction(nextShort());
+			case 0x99: return new IfNotEqInstruction(nextUShort());
+			case 0x9A: return new IfEqInstruction(nextUShort());
+			case 0x9B: return new IfGeInstruction(nextUShort());
+			case 0x9C: return new IfLtInstruction(nextUShort());
+			case 0x9D: return new IfLeInstruction(nextUShort());
+			case 0x9E: return new IfGtInstruction(nextUShort());
+			case 0x9F: return new IfINotEqInstruction(nextUShort());
+			case 0xA0: return new IfIEqInstruction(nextUShort());
+			case 0xA1: return new IfIGeInstruction(nextUShort());
+			case 0xA2: return new IfILtInstruction(nextUShort());
+			case 0xA3: return new IfILeInstruction(nextUShort());
+			case 0xA4: return new IfIGtInstruction(nextUShort());
+			case 0xA5: return new IfANotEqInstruction(nextUShort());
+			case 0xA6: return new IfAEqInstruction(nextUShort());
 			case 0xA7: return new GotoInstruction(nextShort());
 			/*case 0xA8: i+=2; return "JSR";
 			case 0xA9: i++ ; return "RET";*/
 			//case 0xAA: return "TABLESWITCH";
 			case 0xAB: {
 				skip(3 - pos % 4); // alignment by 4 bytes
-				int32_t defaultOffset = nextInt();
+				int32_t defaultOffset = nextUInt();
 				map<int32_t, int32_t> offsetTable;
-				for(uint32_t i = nextInt(); i > 0; i--) {
-					int32_t value = nextInt(), offset = nextInt();
+				for(uint32_t i = nextUInt(); i > 0; i--) {
+					int32_t value = nextUInt(), offset = nextUInt();
 					offsetTable[value] = offset;
 				}
 				return new LookupswitchInstruction(defaultOffset, offsetTable);
 			}
 			case 0xAC: case 0xAD: case 0xAE: case 0xAF: case 0xB0: return new ReturnInstruction();
 			case 0xB1: return &VReturn::getInstance();
-			case 0xB2: return new GetstaticInstruction(nextShort());
-			case 0xB3: return new PutstaticInstruction(nextShort());
-			case 0xB4: return new GetfieldInstruction(nextShort());
-			case 0xB5: return new PutfieldInstruction(nextShort());
-			case 0xB6: return new InvokevirtualInstruction(nextShort());
-			case 0xB7: return new InvokespecialInstruction(nextShort());
-			case 0xB8: return new InvokestaticInstruction(nextShort());
+			case 0xB2: return new GetStaticFieldInstruction(nextUShort());
+			case 0xB3: return new PutStaticFieldInstruction(nextUShort());
+			case 0xB4: return new GetInstanceFieldInstruction(nextUShort());
+			case 0xB5: return new PutInstanceFieldInstruction(nextUShort());
+			case 0xB6: return new InvokevirtualInstruction(nextUShort());
+			case 0xB7: return new InvokespecialInstruction(nextUShort());
+			case 0xB8: return new InvokestaticInstruction(nextUShort());
 			case 0xB9: {
-				Instruction* instruction = new InvokeinterfaceInstruction(nextShort());
-				nextShort();
+				Instruction* instruction = new InvokeinterfaceInstruction(nextUShort());
+				nextUShort();
 				return instruction;
 			}
 			case 0xBA: {
-				Instruction* instruction = new InvokedynamicInstruction(nextShort());
-				nextShort();
+				Instruction* instruction = new InvokedynamicInstruction(nextUShort());
+				nextUShort();
 				return instruction;
 			}
-			case 0xBB: return new NewInstruction(nextShort());
-			case 0xBC: return new NewArrayInstruction(nextByte());
-			case 0xBD: return new ANewArrayInstruction(nextShort());
+			case 0xBB: return new NewInstruction(nextUShort());
+			case 0xBC: return new NewArrayInstruction(nextUByte());
+			case 0xBD: return new ANewArrayInstruction(nextUShort());
 			case 0xBE: return new ArrayLengthInstruction();
 			case 0xBF: return new AThrowInstruction();
-			case 0xC0: return new CheckCastInstruction(nextShort());
-			case 0xC1: return new InstanceofInstruction(nextShort());
+			case 0xC0: return new CheckCastInstruction(nextUShort());
+			case 0xC1: return new InstanceofInstruction(nextUShort());
 			/*case 0xC2: return "MONITORENTER";
 			case 0xC3: return "MONITOREXIT";*/
-			case 0xC4: switch(nextByte()) {
-				case 0x15: return new ILoadInstruction(nextShort());
-				case 0x16: return new LLoadInstruction(nextShort());
-				case 0x17: return new FLoadInstruction(nextShort());
-				case 0x18: return new DLoadInstruction(nextShort());
-				case 0x19: return new ALoadInstruction(nextShort());
-				case 0x36: return new IStoreInstruction(nextShort());
-				case 0x37: return new LStoreInstruction(nextShort());
-				case 0x38: return new FStoreInstruction(nextShort());
-				case 0x39: return new DStoreInstruction(nextShort());
-				case 0x3A: return new AStoreInstruction(nextShort());
-				case 0x84: return new IIncInstruction(nextShort(), nextShort());
+			case 0xC4: switch(nextUByte()) {
+				case 0x15: return new ILoadInstruction(nextUShort());
+				case 0x16: return new LLoadInstruction(nextUShort());
+				case 0x17: return new FLoadInstruction(nextUShort());
+				case 0x18: return new DLoadInstruction(nextUShort());
+				case 0x19: return new ALoadInstruction(nextUShort());
+				case 0x36: return new IStoreInstruction(nextUShort());
+				case 0x37: return new LStoreInstruction(nextUShort());
+				case 0x38: return new FStoreInstruction(nextUShort());
+				case 0x39: return new DStoreInstruction(nextUShort());
+				case 0x3A: return new AStoreInstruction(nextUShort());
+				case 0x84: return new IIncInstruction(nextUShort(), nextUShort());
 				//case 0xA9: i+=2 ; return "RET";
 				default: throw IllegalOpcodeException("Illegal wide opcode: 0x" + hex(current()));
 			}
-			case 0xC5: return new MultiANewArrayInstruction(nextShort(), nextByte());
-			case 0xC6: return new IfNonNullInstruction(nextShort());
-			case 0xC7: return new IfNullInstruction(nextShort());
+			case 0xC5: return new MultiANewArrayInstruction(nextUShort(), nextUByte());
+			case 0xC6: return new IfNonNullInstruction(nextUShort());
+			case 0xC7: return new IfNullInstruction(nextUShort());
 			case 0xC8: return new GotoInstruction(nextInt());
 			/*case 0xC9: i+=4; return "JSR_W";
 			case 0xCA: return "BREAKPOINT";
@@ -245,7 +245,7 @@ namespace JDecompiler {
 
 		while(bytecode.available()) {
 			bytecode.nextInstruction();
-			bytecode.nextByte();
+			bytecode.nextUByte();
 		}
 
 		const vector<Instruction*>& instructions = bytecode.getInstructions();
@@ -256,8 +256,11 @@ namespace JDecompiler {
 			environment.pos = bytecode.getPosMap()[i];
 			const Operation* operation = instructions[i]->toOperation(environment);
 
+			if(environment.stack.empty())
+				environment.exprStartIndex = i;
+
 			if(operation->getReturnType() != VOID)
-				environment.stack->push(operation);
+				environment.stack.push(operation);
 			else if(!dynamic_cast<const Scope*>(operation) && (i != instructionsSize - 1 || operation != &VReturn::getInstance()))
 				environment.currentScope->add(operation);
 

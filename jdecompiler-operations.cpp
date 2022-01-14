@@ -216,7 +216,7 @@ namespace Operations {
 			const Operation * const index, * const array;
 
 		public:
-			ArrayLoadOperation(const Type* returnType, const CodeEnvironment& environment): ReturnableOperation(returnType), index(environment.stack->pop()), array(environment.stack->pop()) {}
+			ArrayLoadOperation(const Type* returnType, const CodeEnvironment& environment): ReturnableOperation(returnType), index(environment.stack.pop()), array(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return array->toString(environment) + "[" + index->toString(environment) + "]";
@@ -240,7 +240,7 @@ namespace Operations {
 	};
 
 	struct AALoadOperation: ArrayLoadOperation {
-		AALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(safe_cast<const ArrayType*>(environment.stack->lookup(1)->getReturnType())->memberType, environment) {} // TOCHECK
+		AALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(safe_cast<const ArrayType*>(environment.stack.lookup(1)->getReturnType())->memberType, environment) {} // TOCHECK
 	};
 
 	struct BALoadOperation: ArrayLoadOperation {
@@ -262,7 +262,7 @@ namespace Operations {
 			const Variable* const localVariable;
 
 		public:
-			StoreOperation(const CodeEnvironment& environment, uint16_t index): value(environment.stack->pop()), localVariable(environment.getCurrentScope()->getVariable(index)) {}
+			StoreOperation(const CodeEnvironment& environment, uint16_t index): value(environment.stack.pop()), localVariable(environment.getCurrentScope()->getVariable(index)) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return localVariable->name + " = " + value->toString(environment);
@@ -295,7 +295,7 @@ namespace Operations {
 			const Operation * const array, * const index, * const value;
 
 		public:
-			ArrayStoreOperation(const Type* returnType, const CodeEnvironment& environment): array(environment.stack->pop()), index(environment.stack->pop()), value(environment.stack->pop()) {}
+			ArrayStoreOperation(const Type* returnType, const CodeEnvironment& environment): array(environment.stack.pop()), index(environment.stack.pop()), value(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return array->toString(environment) + "[" + index->toString(environment) + "] = " + value->toString(environment);
@@ -319,7 +319,7 @@ namespace Operations {
 	};
 
 	struct AAStoreOperation: ArrayStoreOperation {
-		AAStoreOperation(const CodeEnvironment& environment): ArrayStoreOperation(safe_cast<const ArrayType*>(environment.stack->top()->getReturnType())->memberType, environment) {} // TOCHECK
+		AAStoreOperation(const CodeEnvironment& environment): ArrayStoreOperation(safe_cast<const ArrayType*>(environment.stack.top()->getReturnType())->memberType, environment) {} // TOCHECK
 	};
 
 	struct BAStoreOperation: ArrayStoreOperation {
@@ -339,7 +339,7 @@ namespace Operations {
 		protected: const Operation* const operation;
 
 		public:
-			PopOperation(const CodeEnvironment& environment): operation(environment.stack->pop()) {}
+			PopOperation(const CodeEnvironment& environment): operation(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return operation->toString(environment);
@@ -351,7 +351,7 @@ namespace Operations {
 		protected: const Operation* const operation;
 
 		public:
-			DupOperation(const CodeEnvironment& environment): operation(environment.stack->top()) {}
+			DupOperation(const CodeEnvironment& environment): operation(environment.stack.top()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override { return operation->toString(environment); }
 
@@ -361,7 +361,7 @@ namespace Operations {
 
 	struct SwapOperation: VoidOperation {
 		SwapOperation(const CodeEnvironment& environment) {
-			environment.stack->push({environment.stack->pop(), environment.stack->pop()});
+			environment.stack.push({environment.stack.pop(), environment.stack.pop()});
 		}
 
 		virtual string toString(const CodeEnvironment& environment) const override { return EMPTY_STRING; }
@@ -380,7 +380,7 @@ namespace Operations {
 		protected: const Operation *const operand2, *const operand1;
 
 		public:
-			BinaryOperatorOperation(const Type* type, const CodeEnvironment& environment, char32_t operation, uint16_t priority): OperatorOperation(type, operation, priority), operand2(environment.stack->pop()), operand1(environment.stack->pop()) {}
+			BinaryOperatorOperation(const Type* type, const CodeEnvironment& environment, char32_t operation, uint16_t priority): OperatorOperation(type, operation, priority), operand2(environment.stack.pop()), operand1(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return operand1->toString(environment, priority, LEFT) + ' ' + operation + ' ' + operand2->toString(environment, priority, RIGHT);
@@ -391,7 +391,7 @@ namespace Operations {
 		protected: const Operation* const operand;
 
 		public:
-			UnaryOperatorOperation(const Type* type, const CodeEnvironment& environment, char32_t operation, uint16_t priority): OperatorOperation(type, operation, priority), operand(environment.stack->pop()) {}
+			UnaryOperatorOperation(const Type* type, const CodeEnvironment& environment, char32_t operation, uint16_t priority): OperatorOperation(type, operation, priority), operand(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return operation + operand->toString(environment, priority, RIGHT);
@@ -409,8 +409,8 @@ namespace Operations {
 
 		public:
 			IIncOperation(const CodeEnvironment& environment, uint16_t index, int16_t value): variable(environment.getCurrentScope()->getVariable(index)), value(value), isShortInc(value == 1 || value == -1) /* isShortInc true when we can write ++ or -- */ {
-				if(isShortInc && !environment.stack->empty() && dynamic_cast<const ILoadOperation*>(environment.stack->top())) {
-					environment.stack->pop();
+				if(isShortInc && !environment.stack.empty() && dynamic_cast<const ILoadOperation*>(environment.stack.top())) {
+					environment.stack.pop();
 					returnType = INT;
 					isPostInc = true;
 				}else
@@ -438,7 +438,7 @@ namespace Operations {
 			const Type* const type;
 
 		public:
-			CastOperation(const CodeEnvironment& environment, const Type* type): ReturnableOperation(type), operation(environment.stack->pop()), type(type) {}
+			CastOperation(const CodeEnvironment& environment, const Type* type): ReturnableOperation(type), operation(environment.stack.pop()), type(type) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return required ? "(" + type->name + ")" + operation->toString(environment, priority, LEFT) : operation->toString(environment);
@@ -447,10 +447,22 @@ namespace Operations {
 
 
 
+	struct ContinueOperation: VoidOperation {
+		/*protected:
+			const IfScope* ifScope;*/
+
+		public:
+			//ContinueOperation(const IfScope* ifScope): ifScope(ifScope) {}
+
+			virtual string toString(const CodeEnvironment& environment) const override { return "continue"; }
+	};
+
+
+
 	struct CmpOperation: BooleanOperation {
 		const Operation* const operand2, * const operand1;
 
-		CmpOperation(const CodeEnvironment& environment): operand2(environment.stack->pop()), operand1(environment.stack->pop()) {}
+		CmpOperation(const CodeEnvironment& environment): operand2(environment.stack.pop()), operand1(environment.stack.pop()) {}
 	};
 
 
@@ -567,17 +579,24 @@ namespace Operations {
 
 		private: mutable const ElseScope* elseScope = nullptr;
 
+		public: mutable bool isLoop = false;
+
 		friend ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope);
 
 		public:
-			IfScope(const CodeEnvironment& environment, const int16_t offset, const CompareOperation* condition): Scope(environment.index, environment.bytecode.posToIndex(offset + environment.pos) - 1, environment.getCurrentScope()), condition(condition) {}
+			IfScope(const CodeEnvironment& environment, const int16_t offset, const CompareOperation* condition): Scope(environment.exprStartIndex, environment.bytecode.posToIndex(offset + environment.pos) - 1, environment.getCurrentScope()), condition(condition) {}
 
+		protected:
 			virtual string getHeader(const CodeEnvironment& environment) const override {
-				return "if(" + condition->toString(environment) + ") ";
+				return (string)(isLoop ? "while" : "if") + "(" + condition->toString(environment) + ") ";
+			}
+
+			virtual bool printNextOperation(const vector<const Operation*>::const_iterator i) const override {
+				return !(next(i) == code.end() && dynamic_cast<const ContinueOperation*>(*i));
 			}
 
 			virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
-				return elseScope == nullptr ? this->Scope::getBackSeparator(classinfo) : EMPTY_STRING;
+				return isLoop || elseScope == nullptr ? this->Scope::getBackSeparator(classinfo) : EMPTY_STRING;
 			}
 	};
 
@@ -587,7 +606,7 @@ namespace Operations {
 		public: IfCmpScope(const CodeEnvironment& environment, const int16_t offset, const CompareType& compareType): IfScope(environment, offset, getCondition(environment, compareType)), compareType(compareType) {}
 
 		private: static const CompareOperation* getCondition(const CodeEnvironment& environment, const CompareType& compareType) {
-			const Operation* operation = environment.stack->pop();
+			const Operation* operation = environment.stack.pop();
 			if(const CmpOperation* cmpOperation = dynamic_cast<const CmpOperation*>(operation))
 				return new CompareBinaryOperation(cmpOperation, compareType);
 			return new CompareWithZeroOperation(operation, compareType);
@@ -616,7 +635,7 @@ namespace Operations {
 			map<int32_t, uint32_t> indexTable;
 
 		public:
-			SwitchScope(const CodeEnvironment& environment, int32_t defaultOffset, map<int32_t, int32_t> offsetTable): Scope(environment.index, environment.bytecode.posToIndex(defaultOffset + environment.pos), environment.getCurrentScope()), value(environment.stack->pop()), defaultIndex(this->to) {
+			SwitchScope(const CodeEnvironment& environment, int32_t defaultOffset, map<int32_t, int32_t> offsetTable): Scope(environment.index, environment.bytecode.posToIndex(defaultOffset + environment.pos), environment.getCurrentScope()), value(environment.stack.pop()), defaultIndex(this->to) {
 				for(auto& entry : offsetTable)
 					indexTable[entry.first] = environment.bytecode.posToIndex(environment.pos + entry.second);
 			}
@@ -666,7 +685,7 @@ namespace Operations {
 		protected: const Operation* const value;
 
 		public:
-			ReturnOperation(const CodeEnvironment& environment): value(environment.stack->pop()) {}
+			ReturnOperation(const CodeEnvironment& environment): value(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return "return " + value->toString(environment);
@@ -675,67 +694,81 @@ namespace Operations {
 
 
 
-	struct GetstaticOperation: Operation {
+	struct FieldOperation: Operation {
 		protected:
 			const FieldrefConstant* const fieldref;
 
+			FieldOperation(const CodeEnvironment& environment, uint16_t index): fieldref(environment.constPool.get<FieldrefConstant>(index)) {}
+	};
+
+
+	struct GetFieldOperation: FieldOperation {
+		protected:
+			GetFieldOperation(const CodeEnvironment& environment, uint16_t index): FieldOperation(environment, index) {}
+
 		public:
-			GetstaticOperation(const CodeEnvironment& environment, uint16_t index): fieldref(environment.constPool.get<FieldrefConstant>(index)) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return ClassType(*fieldref->clazz->name).toString(environment.classinfo) + "." + (string)*fieldref->nameAndType->name;
-			}
-
 			virtual const Type* getReturnType() const override {
 				return parseType(*fieldref->nameAndType->descriptor);
 			}
 	};
 
 
-	struct PutstaticOperation: VoidOperation {
+	struct PutFieldOperation: FieldOperation {
 		protected:
-			const FieldrefConstant* const fieldref;
 			const Operation* const value;
 
+			PutFieldOperation(const CodeEnvironment& environment, uint16_t index): FieldOperation(environment, index), value(environment.stack.pop()) {}
+
 		public:
-			PutstaticOperation(const CodeEnvironment& environment, uint16_t index): fieldref(environment.constPool.get<FieldrefConstant>(index)), value(environment.stack->pop()) {}
+			virtual const Type* getReturnType() const override { return VOID; }
+	};
+
+
+	struct GetStaticFieldOperation: GetFieldOperation {
+		public:
+			GetStaticFieldOperation(const CodeEnvironment& environment, uint16_t index): GetFieldOperation(environment, index) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return ClassType(*fieldref->clazz->name).toString(environment.classinfo) + "." + (string)*fieldref->nameAndType->name + " = " + value->toString(environment);
+				return ClassType(*fieldref->clazz->name).toString(environment.classinfo) + "." + *fieldref->nameAndType->name;
 			}
 	};
 
 
-	struct GetfieldOperation: Operation {
+	struct PutStaticFieldOperation: PutFieldOperation {
+		public:
+			PutStaticFieldOperation(const CodeEnvironment& environment, uint16_t index): PutFieldOperation(environment, index) {}
+
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return ClassType(*fieldref->clazz->name).toString(environment.classinfo) + "." + *fieldref->nameAndType->name + " = " + value->toString(environment);
+			}
+	};
+
+
+	struct GetInstanceFieldOperation: GetFieldOperation {
 		protected:
-			const FieldrefConstant* const fieldref;
 			const Operation* const object;
 
 		public:
-			GetfieldOperation(const CodeEnvironment& environment, uint16_t index): fieldref(environment.constPool.get<FieldrefConstant>(index)), object(environment.stack->pop()) {}
+			GetInstanceFieldOperation(const CodeEnvironment& environment, uint16_t index): GetFieldOperation(environment, index), object(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return object->toString(environment) + "." + (string)*fieldref->nameAndType->name;
-			}
-
-			virtual const Type* getReturnType() const override {
-				return parseType(*fieldref->nameAndType->descriptor);
+				return object->toString(environment) + "." + *fieldref->nameAndType->name;
 			}
 	};
 
 
-	struct PutfieldOperation: VoidOperation {
+	struct PutInstanceFieldOperation: PutFieldOperation {
 		protected:
-			const FieldrefConstant* const fieldref;
-			const Operation* const object, * const value;
+			const Operation* const object;
 
 		public:
-			PutfieldOperation(const CodeEnvironment& environment, uint16_t index): fieldref(environment.constPool.get<FieldrefConstant>(index)), object(environment.stack->pop()), value(environment.stack->pop()) {}
+			PutInstanceFieldOperation(const CodeEnvironment& environment, uint16_t index): PutFieldOperation(environment, index), object(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return object->toString(environment) + "." + (string)*fieldref->nameAndType->name + " = " + value->toString(environment);
+				return object->toString(environment) + "." + *fieldref->nameAndType->name + " = " + value->toString(environment);
 			}
 	};
+
 
 
 	struct InvokeOperation: Operation {
@@ -745,7 +778,7 @@ namespace Operations {
 
 			InvokeOperation(const CodeEnvironment& environment, const MethodDescriptor* methodDescriptor): methodDescriptor(methodDescriptor) {
 				for(int i = methodDescriptor->arguments.size(); i > 0; i--)
-					arguments.push_back(environment.stack->pop());
+					arguments.push_back(environment.stack.pop());
 			}
 
 			virtual const Type* getReturnType() const override {
@@ -759,7 +792,7 @@ namespace Operations {
 			const Operation* const objectOperation;
 
 			InvokeNonStaticOperation(const CodeEnvironment& environment, const MethodDescriptor* methodDescriptor):
-				InvokeOperation(environment, methodDescriptor), objectOperation(environment.stack->pop()) {}
+				InvokeOperation(environment, methodDescriptor), objectOperation(environment.stack.pop()) {}
 
 			InvokeNonStaticOperation(const CodeEnvironment& environment, uint16_t index): InvokeNonStaticOperation(environment, new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)) {}
 
@@ -781,7 +814,7 @@ namespace Operations {
 		public:
 			InvokespecialOperation(const CodeEnvironment& environment, uint16_t index): InvokeNonStaticOperation(environment, index), isConstructor(methodDescriptor->name == "<init>") {
 				if(isConstructor && dynamic_cast<const DupOperation*>(objectOperation))
-					environment.stack->pop();
+					environment.stack.pop();
 			}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
@@ -842,7 +875,7 @@ namespace Operations {
 			const Operation* const index;
 
 		public:
-			NewArrayOperation(const CodeEnvironment& environment, const Type* memberType): ReturnableOperation(new ArrayType(memberType)), memberType(memberType), index(environment.stack->pop()) {}
+			NewArrayOperation(const CodeEnvironment& environment, const Type* memberType): ReturnableOperation(new ArrayType(memberType)), memberType(memberType), index(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return "new " + memberType->toString(environment.classinfo) + "[" + index->toString(environment) + "]";
@@ -858,7 +891,7 @@ namespace Operations {
 		protected: const Operation* const array;
 
 		public:
-			ArrayLengthOperation(const CodeEnvironment& environment): array(environment.stack->pop()) {}
+			ArrayLengthOperation(const CodeEnvironment& environment): array(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return array->toString(environment, priority, LEFT) + ".length";
@@ -870,7 +903,7 @@ namespace Operations {
 		protected: const Operation* const exceptionOperation;
 
 		public:
-			AThrowOperation(const CodeEnvironment& environment): exceptionOperation(environment.stack->pop()) {}
+			AThrowOperation(const CodeEnvironment& environment): exceptionOperation(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return "throw " + exceptionOperation->toString(environment);
@@ -882,7 +915,7 @@ namespace Operations {
 		protected: const Operation* const object;
 
 		public:
-			CheckCastOperation(const CodeEnvironment& environment, uint16_t index): ReturnableOperation(parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name), 13), object(environment.stack->pop()) {}
+			CheckCastOperation(const CodeEnvironment& environment, uint16_t index): ReturnableOperation(parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name), 13), object(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return "(" + returnType->toString(environment.classinfo) + ")" + object->toString(environment, priority, RIGHT);
@@ -895,7 +928,7 @@ namespace Operations {
 			const Operation* const object;
 
 		public:
-			InstanceofOperation(const CodeEnvironment& environment, uint16_t index): ReturnableOperation(BOOLEAN, 9), type(parseType(*environment.constPool.get<ClassConstant>(index)->name)), object(environment.stack->pop()) {}
+			InstanceofOperation(const CodeEnvironment& environment, uint16_t index): ReturnableOperation(BOOLEAN, 9), type(parseType(*environment.constPool.get<ClassConstant>(index)->name)), object(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return object->toString(environment, priority, LEFT) + " instanceof " + type->toString(environment.classinfo);
@@ -911,7 +944,7 @@ namespace Operations {
 			MultiANewArrayOperation(const CodeEnvironment& environment, uint16_t index, uint16_t dimensions): ReturnableOperation(new ArrayType(*environment.constPool.get<ClassConstant>(index)->name, dimensions)) {
 				indexes.reserve(dimensions);
 				for(uint16_t i = 0; i < dimensions; i++)
-					indexes.push_back(environment.stack->pop());
+					indexes.push_back(environment.stack.pop());
 			}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
@@ -926,7 +959,7 @@ namespace Operations {
 			const Operation* const operand;
 
 		public:
-			CompareWithNullOperation(const CodeEnvironment& environment, const EqualsCompareType& compareType): CompareOperation(compareType), operand(environment.stack->pop()) {}
+			CompareWithNullOperation(const CodeEnvironment& environment, const EqualsCompareType& compareType): CompareOperation(compareType), operand(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const {
 				return operand->toString(environment) + " " + compareType.stringOperator + " null";

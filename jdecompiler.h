@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_H
 #define JDECOMPILER_H
 
-#define LABEL(s) cout << s << endl;
+#define LOG(s) cout << s << endl;
 
 #include <string>
 #include <vector>
@@ -28,14 +28,9 @@ namespace JDecompiler {
 
 	struct ClassConstant;
 
-	template<typename T>
-	struct ConstValueConstant;
-
 	struct StringConstant;
 
 	struct NameAndTypeConstant;
-
-	struct ReferenceConstant;
 
 	struct FieldrefConstant;
 
@@ -58,7 +53,6 @@ namespace JDecompiler {
 
 	struct UnknownAttribute;
 
-	template<typename T>
 	struct ConstantValueAttribute;
 
 	struct CodeAttribute;
@@ -125,7 +119,7 @@ namespace JDecompiler {
 
 	struct CodeEnvironment;
 
-	static string decompileCode(const ConstantPool& constPool, const CodeAttribute* attribute, Scope* scope, const ClassInfo& classinfo);
+	static string decompileCode(const ConstantPool& constPool, const Attributes& attributes, const CodeAttribute* attribute, Scope* scope, const ClassInfo& classinfo);
 
 
 	// jdecompiler-operations

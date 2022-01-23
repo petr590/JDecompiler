@@ -234,14 +234,14 @@ namespace JDecompiler {
 		}
 	}
 
-	static string decompileCode(const ConstantPool& constPool, const CodeAttribute* attribute, Scope* scope, const ClassInfo& classinfo) {
+	static string decompileCode(const ConstantPool& constPool, const Attributes& attributes, const CodeAttribute* attribute, Scope* scope, const ClassInfo& classinfo) {
 		using namespace Operations;
 		using namespace Instructions;
 
 		//cout << "decompileCode" << endl; // DEBUG
 		Bytecode bytecode = Bytecode(attribute->codeLength, attribute->code);
 
-		CodeEnvironment environment = CodeEnvironment(bytecode, constPool, scope, attribute->codeLength, attribute->maxLocals, classinfo);
+		CodeEnvironment environment(bytecode, constPool, scope, attributes, attribute->codeLength, attribute->maxLocals, classinfo);
 
 		while(bytecode.available()) {
 			bytecode.nextInstruction();
@@ -264,8 +264,10 @@ namespace JDecompiler {
 			else if(!dynamic_cast<const Scope*>(operation) && (i != instructionsSize - 1 || operation != &VReturn::getInstance()))
 				environment.currentScope->add(operation);
 
-			if(Scope* scope = const_cast<Scope*>(dynamic_cast<const Scope*>(operation)))
+			if(Scope* scope = const_cast<Scope*>(dynamic_cast<const Scope*>(operation))) {
+				//LOG(typeid(*scope).name() << " {" << scope->from << ", " << scope->to << "}");
 				environment.addScope(scope);
+			}
 
 			environment.checkCurrentScope();
 		}

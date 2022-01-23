@@ -5,14 +5,14 @@ struct Type: Stringified {
 	public:
 		string encodedName, name;
 
-		Type(string encodedName, string name): encodedName(encodedName), name(name) {}
+		Type(const string& encodedName, const string& name): encodedName(encodedName), name(name) {}
 
 		virtual bool isPrimitive() const = 0;
 };
 
 struct PrimitiveType: Type {
 	public:
-		PrimitiveType(string encodedName, string name): Type(encodedName, name) {}
+		PrimitiveType(const string& encodedName, const string& name): Type(encodedName, name) {}
 
 		virtual string toString(const ClassInfo& classinfo) const override { return name; }
 
@@ -32,7 +32,7 @@ static const PrimitiveType
 
 
 struct ReferenceType: Type {
-	ReferenceType(string encodedName, string name): Type(encodedName, name) {}
+	ReferenceType(const string& encodedName, const string& name): Type(encodedName, name) {}
 
 	ReferenceType(): Type(EMPTY_STRING, EMPTY_STRING) {}
 
@@ -48,7 +48,7 @@ struct ClassType: ReferenceType {
 		string simpleName, packageName;
 		vector<const ReferenceType*> parameters;
 
-		ClassType(string encodedName): simpleName(EMPTY_STRING), packageName(EMPTY_STRING) {
+		ClassType(string encodedName) {
 			const int length = encodedName.size();
 
 			string name = encodedName;
@@ -83,7 +83,7 @@ struct ClassType: ReferenceType {
 		}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
-			if(packageName != (string)"java.lang" && packageName != (string)classinfo.type->packageName)
+			if(packageName != "java.lang" && packageName != classinfo.type->packageName)
 				classinfo.imports->insert(name);
 			return simpleName;
 		}
@@ -104,10 +104,10 @@ struct ArrayType: ReferenceType {
 		const Type *memberType, *elementType;
 		uint16_t nestingLevel = 0;
 
-	private: string braces = EMPTY_STRING;
+	private: string braces;
 
 	public:
-		ArrayType(const string name) {
+		ArrayType(const string& name) {
 			int i = 0;
 			for(char c = name[0]; c == '['; c = name[++i]) {
 				nestingLevel++;
@@ -129,7 +129,7 @@ struct ArrayType: ReferenceType {
 			this->encodedName = string('[', nestingLevel) + memberType->encodedName;
 		}
 
-		ArrayType(const string memberName, uint16_t nestingLevel): ArrayType(parseType(memberName), nestingLevel) {}
+		ArrayType(const string& memberName, uint16_t nestingLevel): ArrayType(parseType(memberName), nestingLevel) {}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
 			return memberType->toString(classinfo) + braces;
@@ -141,7 +141,7 @@ struct ParameterType: ReferenceType {
 	ParameterType(const char* encodedName) {
 		string name;
 		uint32_t i = 0;
-		for(char c = *encodedName; isLetterOrDigit(c); c = encodedName[++i])
+		for(char c = encodedName[0]; isLetterOrDigit(c); c = encodedName[++i])
 			name += c;
 		this->encodedName = this->name = name;
 	}

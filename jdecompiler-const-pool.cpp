@@ -31,7 +31,7 @@ namespace JDecompiler {
 
 			template<class T>
 			T* get(uint16_t index) const {
-				static_assert(is_base_of<Constant, T>::value, "T is not subclass of class Constant");
+				static_assert(is_base_of<Constant, T>::value, "template type T of method ConstantPool::get is not subclass of class Constant");
 				if(index < 0 || index >= size)
 					throw IndexOutOfBoundsException("Invalid constant pool reference 0x" + hex<4>(index));
 				T* constant = dynamic_cast<T*>(pool[index]);
@@ -51,7 +51,28 @@ namespace JDecompiler {
 		Utf8Constant(uint16_t length, const char* bytes): string(bytes, length) {}
 	};
 
-	struct ClassConstant: Constant {
+
+	struct ConstValueConstant: Constant {
+		virtual string toString(const ClassInfo& classinfo) const = 0;
+	};
+
+
+	template<typename T>
+	struct NumberConstant: ConstValueConstant {
+		T value;
+		NumberConstant(T value): value(value) {}
+
+		virtual string toString(const ClassInfo& classinfo) const override { return primitiveToString(value); }
+	};
+
+
+	using IntegerConstant = NumberConstant<int32_t>;
+	using FloatConstant = NumberConstant<float>;
+	using LongConstant = NumberConstant<int64_t>;
+	using DoubleConstant = NumberConstant<double>;
+
+
+	struct ClassConstant: ConstValueConstant {
 		const uint16_t nameRef;
 		const Utf8Constant* name;
 
@@ -60,26 +81,22 @@ namespace JDecompiler {
 		virtual void init(const ConstantPool& constPool) override {
 			name = constPool.get<Utf8Constant>(nameRef);
 		}
+
+		virtual string toString(const ClassInfo& classinfo) const override;
 	};
 
 
-	template<typename T>
-	struct ConstValueConstant: Constant {
-		T value;
-		ConstValueConstant(T value): value(value) {}
-	};
-
-
-	struct StringConstant: ConstValueConstant<const Utf8Constant*> {
+	struct StringConstant: ConstValueConstant {
 		const uint16_t valueRef;
+		const Utf8Constant* value;
 
-		StringConstant(uint16_t valueRef): ConstValueConstant(nullptr), valueRef(valueRef) {}
+		StringConstant(uint16_t valueRef): valueRef(valueRef) {}
 
 		virtual void init(const ConstantPool& constPool) override {
 			value = constPool.get<Utf8Constant>(valueRef);
 		}
 
-		string toLiteral() const {
+		virtual string toString(const ClassInfo& classinfo) const override {
 			#define checkLength(n) if(i + n >= length) throw Exception("Unexpected end of the string")
 			const char* bytes = value->c_str();
 			const uint32_t length = strlen(bytes);
@@ -116,12 +133,6 @@ namespace JDecompiler {
 			return str + '"';
 		}
 	};
-
-
-	using IntegerConstant = ConstValueConstant<int32_t>;
-	using FloatConstant = ConstValueConstant<float>;
-	using LongConstant = ConstValueConstant<int64_t>;
-	using DoubleConstant = ConstValueConstant<double>;
 
 
 

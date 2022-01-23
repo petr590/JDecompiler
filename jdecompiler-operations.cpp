@@ -5,7 +5,7 @@ namespace Operations {
 
 	template<class T = Type>
 	struct ReturnableOperation: Operation { // ReturnableOperation is an operation which returns specified type
-		static_assert(is_base_of<Type, T>::value, "T is not subclass of class Type");
+		static_assert(is_base_of<Type, T>::value, "template class T of struct ReturnableOperation is not subclass of class Type");
 
 		protected: const T* const returnType;
 
@@ -71,7 +71,7 @@ namespace Operations {
 
 	template<typename T>
 	struct IPushOperation: IntOperation {
-		static_assert(is_same<T, int8_t>::value || is_same<T, int16_t>::value, "T is not uint8_t or uint16_t type");
+		static_assert(is_same<T, int8_t>::value || is_same<T, int16_t>::value, "template type T of struct IPushOperation is not uint8_t or uint16_t type");
 
 		protected:
 			const T value;
@@ -120,7 +120,7 @@ namespace Operations {
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				switch(type) {
-					case ConstantType::STRING: return safe_cast<const StringConstant*>(value)->toLiteral();
+					case ConstantType::STRING: return safe_cast<const StringConstant*>(value)->toString(environment.classinfo);
 					case ConstantType::CLASS: return parseReferenceType(*safe_cast<const ClassConstant*>(value)->name)->toString(environment.classinfo) + ".class";
 					case ConstantType::INTEGER: return primitiveToString(safe_cast<const IntegerConstant*>(value)->value);
 					case ConstantType::FLOAT: return primitiveToString(safe_cast<const FloatConstant*>(value)->value);
@@ -447,18 +447,6 @@ namespace Operations {
 
 
 
-	struct ContinueOperation: VoidOperation {
-		/*protected:
-			const IfScope* ifScope;*/
-
-		public:
-			//ContinueOperation(const IfScope* ifScope): ifScope(ifScope) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override { return "continue"; }
-	};
-
-
-
 	struct CmpOperation: BooleanOperation {
 		const Operation* const operand2, * const operand1;
 
@@ -574,29 +562,55 @@ namespace Operations {
 	};
 
 
+
+	struct ContinueOperation: VoidOperation {
+			const IfScope* const ifScope;
+
+		public:
+			ContinueOperation(const CodeEnvironment& environment, const IfScope* ifScope);
+
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return //ifScope->hasLabel ? "continue " + ifScope->getLabel() : "continue";
+					"continue";
+			}
+	};
+
+
 	struct IfScope: Scope {
 		protected: const CompareOperation* const condition;
 
-		private: mutable const ElseScope* elseScope = nullptr;
+		private:
+			mutable const ElseScope* elseScope = nullptr;
+			friend ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope);
+
+			mutable bool hasLabel = false;
+			friend ContinueOperation::ContinueOperation(const CodeEnvironment& environment, const IfScope* ifScope);
 
 		public: mutable bool isLoop = false;
-
-		friend ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope);
 
 		public:
 			IfScope(const CodeEnvironment& environment, const int16_t offset, const CompareOperation* condition): Scope(environment.exprStartIndex, environment.bytecode.posToIndex(offset + environment.pos) - 1, environment.getCurrentScope()), condition(condition) {}
 
 		protected:
 			virtual string getHeader(const CodeEnvironment& environment) const override {
-				return (string)(isLoop ? "while" : "if") + "(" + condition->toString(environment) + ") ";
+				return (string)(isLoop ? (hasLabel ? getLabel(environment) + ": while" : "while") : "if") + "(" + condition->toString(environment) + ") ";
 			}
 
-			virtual bool printNextOperation(const vector<const Operation*>::const_iterator i) const override {
-				return !(next(i) == code.end() && dynamic_cast<const ContinueOperation*>(*i));
+			virtual bool printNextOperation(const Scope* currentScope, const vector<const Operation*>::const_iterator i) const override {
+				if(next(i) != code.end())
+					return true;
+				const ContinueOperation* continueOperation = dynamic_cast<const ContinueOperation*>(*i);
+				return !continueOperation || continueOperation->ifScope != currentScope;
 			}
 
 			virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
 				return isLoop || elseScope == nullptr ? this->Scope::getBackSeparator(classinfo) : EMPTY_STRING;
+			}
+
+			string getLabel(const CodeEnvironment& environment) const {
+				if(isLoop)
+					return "Loop";
+				throw DecompilationException("Cannot get label for if scope");
 			}
 	};
 
@@ -612,6 +626,12 @@ namespace Operations {
 			return new CompareWithZeroOperation(operation, compareType);
 		}
 	};
+
+
+	ContinueOperation::ContinueOperation(const CodeEnvironment& environment, const IfScope* ifScope): ifScope(ifScope) {
+		if(ifScope != environment.getCurrentScope())
+			ifScope->hasLabel = true;
+	}
 
 
 	ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope): Scope(environment.index, to, ifScope->parentScope), ifScope(ifScope) {
@@ -631,7 +651,7 @@ namespace Operations {
 	struct SwitchScope: Scope {
 		protected:
 			const Operation* const value;
-			uint32_t defaultIndex;
+			const uint32_t defaultIndex;
 			map<int32_t, uint32_t> indexTable;
 
 		public:
@@ -981,7 +1001,7 @@ namespace Operations {
 		InvokedynamicOperation(const CodeEnvironment& environment, uint16_t index): InvokeOperation(environment, new MethodDescriptor(environment.constPool.get<InvokeDynamicConstant>(index)->nameAndType)) {}
 
 			virtual string toString(const CodeEnvironment& environment) const {
-				return "INVOKEDYNAMIC";
+				return environment.attributes.getExact<BootstrapMethodsAttribute>()->name;
 			}
 	};
 

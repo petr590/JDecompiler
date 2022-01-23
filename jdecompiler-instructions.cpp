@@ -21,7 +21,8 @@ namespace Instructions {
 
 
 	struct AConstNull: VoidInstructionAndOperation {
-		private: AConstNull() {}
+		private:
+			AConstNull() {}
 
 		public:
 			virtual string toString(const CodeEnvironment& environment) const override { return "null"; }
@@ -34,9 +35,11 @@ namespace Instructions {
 
 	template<typename T>
 	struct NumberConstInstruction: Instruction {
+		static_assert(is_fundamental<T>::value, "template type T of struct NumberConstInstruction is not primitive");
+
 		const T value;
 
-		NumberConstInstruction(T value): value(value) {}
+		NumberConstInstruction(const T value): value(value) {}
 	};
 
 
@@ -397,27 +400,27 @@ namespace Instructions {
 
 
 	struct IfIEqInstruction: IfICmpInstruction {
-		IfIEqInstruction(const int16_t offset): IfICmpInstruction(offset, CompareType::EQUALS) {}
+		IfIEqInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::EQUALS) {}
 	};
 
 	struct IfINotEqInstruction: IfICmpInstruction {
-		IfINotEqInstruction(const int16_t offset): IfICmpInstruction(offset, CompareType::NOT_EQUALS) {}
+		IfINotEqInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::NOT_EQUALS) {}
 	};
 
 	struct IfIGtInstruction: IfICmpInstruction {
-		IfIGtInstruction(const int16_t offset): IfICmpInstruction(offset, CompareType::GREATER) {}
+		IfIGtInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::GREATER) {}
 	};
 
 	struct IfIGeInstruction: IfICmpInstruction {
-		IfIGeInstruction(const int16_t offset): IfICmpInstruction(offset, CompareType::GREATER_OR_EQUALS) {}
+		IfIGeInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::GREATER_OR_EQUALS) {}
 	};
 
 	struct IfILtInstruction: IfICmpInstruction {
-		IfILtInstruction(const int16_t offset): IfICmpInstruction(offset, CompareType::LESS) {}
+		IfILtInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::LESS) {}
 	};
 
 	struct IfILeInstruction: IfICmpInstruction {
-		IfILeInstruction(const int16_t offset): IfICmpInstruction(offset, CompareType::LESS_OR_EQUALS) {}
+		IfILeInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::LESS_OR_EQUALS) {}
 	};
 
 
@@ -432,39 +435,51 @@ namespace Instructions {
 
 
 	struct IfAEqInstruction: IfACmpInstruction {
-		IfAEqInstruction(const int16_t offset): IfACmpInstruction(offset, CompareType::EQUALS) {}
+		IfAEqInstruction(int16_t offset): IfACmpInstruction(offset, CompareType::EQUALS) {}
 	};
 
 	struct IfANotEqInstruction: IfACmpInstruction {
-		IfANotEqInstruction(const int16_t offset): IfACmpInstruction(offset, CompareType::NOT_EQUALS) {}
+		IfANotEqInstruction(int16_t offset): IfACmpInstruction(offset, CompareType::NOT_EQUALS) {}
 	};
 
 
 	struct GotoInstruction: Instruction {
 		const int32_t offset;
 
-		GotoInstruction(const int32_t offset): offset(offset) {}
+		GotoInstruction(int32_t offset): offset(offset) {}
 
 		virtual inline const Operation* toOperation(const CodeEnvironment& environment) const override {
 			if(offset == 0) return new EmptyInfiniteLoopScope(environment);
 
 			const uint32_t index = environment.bytecode.posToIndex(offset + environment.pos);
 
-			const IfScope* ifScope = dynamic_cast<const IfScope*>(environment.getCurrentScope());
+			const Scope* const currentScope = environment.getCurrentScope();
 
-			if(ifScope != nullptr && environment.index == ifScope->to) {
-				if(offset > 0)
-					return new ElseScope(environment, min(index, ifScope->parentScope->to) - 1, ifScope);
+			const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope);
 
-				if(index == ifScope->from) {
-					if(offset < 0) {
-						ifScope->isLoop = true;
-						return new ContinueOperation(/*ifScope*/);
-					}
+			if(ifScope) {
+				if(offset > 0 && !ifScope->isLoop && environment.index == ifScope->to) {
+					const Scope* parentScope = ifScope->parentScope;
+
+					if(index <= parentScope->to)
+						return new ElseScope(environment, index, ifScope);
+
+					const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(environment.bytecode.getInstructions()[parentScope->to]);
+					if(gotoInstruction && environment.bytecode.posToIndex(gotoInstruction->offset + environment.bytecode.indexToPos(parentScope->to)) == index)
+						return new ElseScope(environment, parentScope->to - 1, ifScope);
 				}
+
+				do {
+					if(index == ifScope->from) {
+						ifScope->isLoop = true;
+						return new ContinueOperation(environment, ifScope);
+					}
+					ifScope = dynamic_cast<const IfScope*>(ifScope->parentScope);
+				} while(ifScope);
 			}
 
-			throw DecompilationException("illegal using of goto instruction");
+			//LOG(typeid(*currentScope).name() << ": " << currentScope->from << ", " << currentScope->to);
+			throw DecompilationException("illegal using of goto instruction: goto " + to_string(environment.pos + offset));
 		}
 	};
 
@@ -477,9 +492,9 @@ namespace Instructions {
 		public:
 			LookupswitchInstruction(int32_t defaultOffset, map<int32_t, int32_t> offsetTable): defaultOffset(defaultOffset), offsetTable(offsetTable) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-			return new SwitchScope(environment, defaultOffset, offsetTable);
-		}
+			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+				return new SwitchScope(environment, defaultOffset, offsetTable);
+			}
 	};
 
 

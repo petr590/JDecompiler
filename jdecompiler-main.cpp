@@ -82,6 +82,11 @@ namespace JDecompiler {
 	#include "jdecompiler-attributes.cpp"
 
 
+	string ClassConstant::toString(const ClassInfo& classinfo) const {
+		return ClassType(*name).toString(classinfo);
+	}
+
+
 	struct Variable {
 		const Type* type;
 		string name;
@@ -144,11 +149,11 @@ namespace JDecompiler {
 				instructions.reserve(length);
 			}
 
-			const vector<Instruction*>& getInstructions() {
+			const vector<Instruction*>& getInstructions() const {
 				return instructions;
 			}
 
-			const vector<uint32_t>& getPosMap() {
+			const vector<uint32_t>& getPosMap() const {
 				return posMap;
 			}
 
@@ -203,9 +208,13 @@ namespace JDecompiler {
 					index = posMap[++i];
 				if(index != pos) {
 					cout << join<uint32_t>(posMap, [](uint32_t index) { return to_string(index); }) << endl;
-					throw IndexOutOfBoundsException("0x" + hex(pos));
+					throw IndexOutOfBoundsException(to_string(pos));
 				}
 				return i;
+			}
+
+			inline uint32_t indexToPos(uint32_t index) const {
+				return posMap[index];
 			}
 
 			inline Instruction* nextInstruction() {
@@ -290,13 +299,14 @@ namespace JDecompiler {
 			const ConstantPool& constPool;
 			Stack& stack;
 			Scope* const scope, *currentScope;
+			const Attributes& attributes;
 			const ClassInfo& classinfo;
 			uint32_t pos, index, exprStartIndex;
 
 		private: vector<Scope*> scopes;
 
 		public:
-			CodeEnvironment(const Bytecode& bytecode, const ConstantPool& constPool, Scope* scope, uint32_t codeLength, uint16_t maxLocals, const ClassInfo& classinfo);
+			CodeEnvironment(const Bytecode& bytecode, const ConstantPool& constPool, Scope* scope, const Attributes& attributes, uint32_t codeLength, uint16_t maxLocals, const ClassInfo& classinfo);
 
 			void checkCurrentScope();
 
@@ -355,7 +365,7 @@ namespace JDecompiler {
 				const size_t baseSize = str.size();
 
 				for(auto i = code.begin(); i != code.end(); ++i) {
-					if(printNextOperation(i)) {
+					if(printNextOperation(this, i)) {
 						const Operation* operation = *i;
 						str += operation->getFrontSeparator(environment.classinfo) + operation->toString(environment) +
 								operation->getBackSeparator(environment.classinfo);
@@ -373,7 +383,7 @@ namespace JDecompiler {
 			}
 
 		protected:
-			virtual inline bool printNextOperation(const vector<const Operation*>::const_iterator i) const { return true; }
+			virtual inline bool printNextOperation(const Scope* currentScope, const vector<const Operation*>::const_iterator i) const { return true; }
 
 			virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
 				return "\n";
@@ -476,7 +486,7 @@ namespace JDecompiler {
 
 		private:
 			static string modifiersToString(uint16_t modifiers) {
-				FormatString str = FormatString();
+				FormatString str;
 
 				switch(modifiers & (ACC_VISIBLE | ACC_PUBLIC | ACC_PRIVATE | ACC_PROTECTED)) {
 					case ACC_VISIBLE: break;
@@ -556,14 +566,14 @@ namespace JDecompiler {
 	struct Method: Stringified {
 		const uint16_t modifiers;
 		const MethodDescriptor* const descriptor;
-		const Attributes* const attributes;
+		const Attributes& attributes;
 		const CodeAttribute* const codeAttribute;
 
 		protected:
 			Scope* scope;
 
 		public:
-			Method(const ConstantPool& constPool, BinaryInputStream* instream, const Type* thisType): modifiers(instream->readShort()), descriptor(new MethodDescriptor(constPool.getUtf8Constant(instream->readShort()), constPool.getUtf8Constant(instream->readShort()))), attributes(new Attributes(instream, constPool, instream->readShort())), codeAttribute(attributes->get<CodeAttribute>()), scope(nullptr) {
+			Method(const ConstantPool& constPool, BinaryInputStream* instream, const Type* thisType): modifiers(instream->readShort()), descriptor(new MethodDescriptor(constPool.getUtf8Constant(instream->readShort()), constPool.getUtf8Constant(instream->readShort()))), attributes(*new Attributes(instream, constPool, instream->readShort())), codeAttribute(attributes.get<CodeAttribute>()), scope(nullptr) {
 				const bool hasCodeAttribute = codeAttribute != nullptr;
 
 				if(modifiers & ACC_ABSTRACT && hasCodeAttribute)
@@ -584,7 +594,7 @@ namespace JDecompiler {
 			virtual string toString(const ClassInfo& classinfo) const override {
 				string str;
 
-				const AnnotationsAttribute* annotationsAttribute = attributes->get<const AnnotationsAttribute>();
+				const AnnotationsAttribute* annotationsAttribute = attributes.get<const AnnotationsAttribute>();
 				if(annotationsAttribute != nullptr)
 					str += annotationsAttribute->toString(classinfo);
 
@@ -596,10 +606,10 @@ namespace JDecompiler {
 					return type->toString(classinfo) + " " + scope->getVariable(i + isNonStatic)->name;
 				}) + ")";
 
-				if(attributes->has<const ExceptionsAttribute>())
-					str += " throws " + join<const ClassConstant*>(attributes->get<const ExceptionsAttribute>()->exceptions, [classinfo](const ClassConstant* clazz) { return ClassType(*clazz->name).toString(classinfo); });
+				if(attributes.has<const ExceptionsAttribute>())
+					str += " throws " + join<const ClassConstant*>(attributes.get<const ExceptionsAttribute>()->exceptions, [classinfo](const ClassConstant* clazz) { return ClassType(*clazz->name).toString(classinfo); });
 
-				str += (codeAttribute == nullptr ? ";" : " " + decompileCode(classinfo.constPool, codeAttribute, scope, classinfo));
+				str += (codeAttribute == nullptr ? ";" : " " + decompileCode(classinfo.constPool, attributes, codeAttribute, scope, classinfo));
 				return str;
 			}
 
@@ -812,7 +822,7 @@ namespace JDecompiler {
 
 
 			static string modifiersToString(uint16_t modifiers) {
-				FormatString str = FormatString();
+				FormatString str;
 
 				switch(modifiers & (ACC_VISIBLE | ACC_PUBLIC | ACC_PRIVATE | ACC_PROTECTED)) {
 					case ACC_VISIBLE: break;
@@ -847,7 +857,7 @@ namespace JDecompiler {
 
 	// --------------------------------------------------
 
-	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ConstantPool& constPool, Scope* scope, uint32_t codeLength, uint16_t maxLocals, const ClassInfo& classinfo): bytecode(bytecode), constPool(constPool), stack(*new Stack()), scope(scope), currentScope(scope), classinfo(classinfo) {
+	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ConstantPool& constPool, Scope* scope, const Attributes& attributes, uint32_t codeLength, uint16_t maxLocals, const ClassInfo& classinfo): bytecode(bytecode), constPool(constPool), stack(*new Stack()), scope(scope), currentScope(scope), attributes(attributes), classinfo(classinfo) {
 		for(int i = scope->getVariablesCount(); i < maxLocals; i++)
 			scope->addVariable(ANY_OBJECT /*TODO*/, "x");
 

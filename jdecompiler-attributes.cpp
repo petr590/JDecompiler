@@ -28,21 +28,25 @@ struct Attribute {
 	const uint32_t length;
 
 	protected:
-		Attribute(string name, uint32_t length): name(name), length(length) {}
+		Attribute(const string& name, uint32_t length): name(name), length(length) {}
 
   virtual ~Attribute() {}
 };
 
 
 struct Attributes: vector<const Attribute*> {
-	template<class T> const T* get() const {
-		const int size = this->size();
-		for(int i = 0; i < size; i++) {
-			const Attribute* attribute = (*this)[i];
-			if(const T* t = dynamic_cast<const T*>(attribute))
-				return t;
-		}
+	template<class T>
+	const T* get() const {
+		for(const Attribute* attribute : *this)
+			if(const T* t = dynamic_cast<const T*>(attribute)) return t;
 		return nullptr;
+	}
+
+	template<class T>
+	const T* getExact() const {
+		for(const Attribute* attribute : *this)
+			if(const T* t = dynamic_cast<const T*>(attribute)) return t;
+		throw AttributeNotFoundException(typeid(T).name());
 	}
 
 	template<class T> bool has() const {
@@ -55,14 +59,13 @@ struct Attributes: vector<const Attribute*> {
 
 struct UnknownAttribute: Attribute {
 	const char* const bytes;
-	UnknownAttribute(string name, uint32_t length, BinaryInputStream* instream): Attribute(name, length), bytes(instream->readBytes(length)) {}
+	UnknownAttribute(const string& name, uint32_t length, BinaryInputStream* instream): Attribute(name, length), bytes(instream->readBytes(length)) {}
 };
 
-template<typename T>
 struct ConstantValueAttribute: Attribute {
-	const ConstValueConstant<T>* const value;
+	const ConstValueConstant* const value;
 
-	ConstantValueAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool& constPool): Attribute("ConstantValue", length), value(constPool.get<ConstValueConstant<T>>(instream->readShort())) {
+	ConstantValueAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool& constPool): Attribute("ConstantValue", length), value(constPool.get<ConstValueConstant>(instream->readShort())) {
 		if(length != 2) throw IllegalAttributeException("Length of ConstantValue attribute must be 2");
 	}
 };
@@ -104,30 +107,40 @@ struct Annotation: Stringified {
 				struct Value: Stringified {};
 
 				template<typename T, typename ConstT = T>
-				struct ConstValue: Value {
+				struct NumberValue: Value {
 					T value;
 
-					ConstValue(const ConstValueConstant<ConstT>* constant): value(constant->value) {}
-					ConstValue(BinaryInputStream* instream, const ConstantPool& constPool): ConstValue(constPool.get<ConstValueConstant<ConstT>>(instream->readShort())) {}
+					NumberValue(const NumberConstant<ConstT>* constant): value(constant->value) {}
+					NumberValue(BinaryInputStream* instream, const ConstantPool& constPool): NumberValue(constPool.get<NumberConstant<ConstT>>(instream->readShort())) {}
 
 					virtual string toString(const ClassInfo& classinfo) const override {
 						return primitiveToString(value);
 					}
 				};
 
-				using BooleanValue = ConstValue<bool, int32_t>;
-				using CharValue = ConstValue<char, int32_t>;
-				using IntegerValue = ConstValue<int32_t>;
-				using FloatValue = ConstValue<float>;
-				using LongValue = ConstValue<int64_t>;
-				using DoubleValue = ConstValue<double>;
-				using StringValue = ConstValue<const Utf8Constant*>;
+				using BooleanValue = NumberValue<bool, int32_t>;
+				using CharValue = NumberValue<char, int32_t>;
+				using IntegerValue = NumberValue<int32_t>;
+				using FloatValue = NumberValue<float>;
+				using LongValue = NumberValue<int64_t>;
+				using DoubleValue = NumberValue<double>;
+
+
+				struct StringValue: Value {
+					const StringConstant* const value;
+
+					StringValue(BinaryInputStream* instream, const ConstantPool& constPool): value(constPool.get<StringConstant>(instream->readShort())) {}
+
+					virtual string toString(const ClassInfo& classinfo) const override {
+						return value->toString(classinfo);
+					}
+				};
 
 				struct EnumValue: Value {
 					const ClassType* const type;
 					const string name;
 
-					EnumValue(const ClassType* type, const string name): type(type), name(name) {}
+					EnumValue(const ClassType* type, const string& name): type(type), name(name) {}
 
 					virtual string toString(const ClassInfo& classinfo) const override {
 						return type->toString(classinfo) + "." + name;
@@ -209,7 +222,7 @@ struct Annotation: Stringified {
 			return "@" + type->toString(classinfo) + (elementCount == 0 ? "" : "(" + join<const Element*>(elements, [classinfo](const Element* element) { return element->name + "=" + element->value->toString(classinfo); }) + ")");
 		}
 
-		private: static inline const ClassType* getAnnotationType(string descriptor) {
+		private: static inline const ClassType* getAnnotationType(const string& descriptor) {
 			const Type* type = parseType(descriptor);
 			if(const ClassType* classType = dynamic_cast<const ClassType*>(type))
 				return classType;
@@ -275,6 +288,25 @@ struct ClassSignature {
 };*/
 
 
+struct BootstrapMethodsAttribute: Attribute {
+	protected:
+		struct BootstrapMethod {
+			const MethodHandleConstant* const methodHandle;
+
+			BootstrapMethod(BinaryInputStream* instream, const ConstantPool& constPool):
+					methodHandle(constPool.get<MethodHandleConstant>(instream->readShort())) {}
+		};
+
+		vector<const BootstrapMethod*> bootstrapMethods;
+
+	public:
+		BootstrapMethodsAttribute(uint32_t length, BinaryInputStream* instream, const ConstantPool& constPool): Attribute("BootstrapMethods", length) {
+			for(uint16_t i = instream->readShort(); i > 0; i--)
+				bootstrapMethods.push_back(new BootstrapMethod(instream, constPool));
+		}
+};
+
+
 Attributes::Attributes(BinaryInputStream* instream, const ConstantPool& constPool, uint16_t attributeCount) {
 	this->reserve(attributeCount);
 
@@ -295,6 +327,8 @@ Attributes::Attributes(BinaryInputStream* instream, const ConstantPool& constPoo
 			attribute = new AnnotationsAttribute(name, length, instream, constPool);
 		/*else if(name == "Signature")
 			attribute = new SignatureAttribute(length, instream, constPool);*/
+		else if(name == "BootstrapMethodsAttribute")
+			attribute = new BootstrapMethodsAttribute(length, instream, constPool);
 		else
 			attribute = new UnknownAttribute(name, length, instream);
 

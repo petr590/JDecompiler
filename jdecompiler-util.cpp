@@ -15,7 +15,7 @@ static const string EMPTY_STRING = string();
 
 template<uint16_t length>
 static string hex(uint64_t n) {
-	static string digits = "0123456789ABCDEF";
+	static const char* digits = "0123456789ABCDEF";
 
 	char str[length + 1];
 	str[length] = '\0';
@@ -31,7 +31,7 @@ static string hex(uint64_t n) {
 static string hex(uint64_t n) {
 	if(n == 0) return "0";
 
-	static string digits = "0123456789ABCDEF";
+	static const char* digits = "0123456789ABCDEF";
 	string str;
 
 	while(n != 0) {
@@ -53,12 +53,12 @@ T safe_cast(B o) {
 
 
 class Exception: public exception {
-	string message;
+	const string message;
 
 	public:
 		Exception() {}
 		Exception(const char* message): message(message) {}
-		Exception(string message): message(message) {}
+		Exception(const string& message): message(message) {}
 
 		virtual const char* what() const noexcept override {
 			return message.c_str();
@@ -69,53 +69,52 @@ class Exception: public exception {
 class IndexOutOfBoundsException: public Exception {
 	public:
 		IndexOutOfBoundsException(const char* message): Exception(message) {}
-		IndexOutOfBoundsException(string message): Exception(message) {}
+		IndexOutOfBoundsException(const string& message): Exception(message) {}
 };
 
 class IllegalStateException: public Exception {
 	public:
 		IllegalStateException(const char* message): Exception(message) {}
-		IllegalStateException(string message): Exception(message) {}
+		IllegalStateException(const string& message): Exception(message) {}
 };
 
 class DynamicCastException: public Exception {
 	public:
 		DynamicCastException(const char* message): Exception(message) {}
-		DynamicCastException(string message): Exception(message) {}
+		DynamicCastException(const string& message): Exception(message) {}
 };
 
 class AssertionException: public Exception {
 	public:
 		AssertionException(const char* message): Exception(message) {}
-		AssertionException(string message): Exception(message) {}
+		AssertionException(const string& message): Exception(message) {}
 };
 
 
 class DecompilationException: public Exception {
 	public:
 		DecompilationException(const char* message): Exception(message) {}
-		DecompilationException(string message): Exception(message) {}
+		DecompilationException(const string& message): Exception(message) {}
 };
 
 
 class IllegalTypeNameException: public DecompilationException {
 	public:
 		IllegalTypeNameException(const char* message): DecompilationException(message) {}
-		IllegalTypeNameException(string message): DecompilationException(message) {}
+		IllegalTypeNameException(const string& message): DecompilationException(message) {}
 };
 
 class IllegalSignatureException: public IllegalTypeNameException {
 	public:
 		IllegalSignatureException(const char* message): IllegalTypeNameException(message) {}
-		IllegalSignatureException(string message): IllegalTypeNameException(message) {}
+		IllegalSignatureException(const string& message): IllegalTypeNameException(message) {}
 };
 
 class ClassFormatException: public DecompilationException {
 	public:
 		ClassFormatException(const char* message): DecompilationException(message) {}
-		ClassFormatException(string message): DecompilationException(message) {}
+		ClassFormatException(const string& message): DecompilationException(message) {}
 };
-
 
 class IllegalModifersException: public DecompilationException {
 	public:
@@ -131,25 +130,32 @@ class IllegalMethodDescriptorException: public DecompilationException {
 class IllegalConstantPointerException: public DecompilationException {
 	public:
 		IllegalConstantPointerException(const char* message): DecompilationException(message) {}
-		IllegalConstantPointerException(string message): DecompilationException(message) {}
+		IllegalConstantPointerException(const string& message): DecompilationException(message) {}
 };
 
 class IllegalOpcodeException: public DecompilationException {
 	public:
 		IllegalOpcodeException(const char* message): DecompilationException(message) {}
-		IllegalOpcodeException(string message): DecompilationException(message) {}
+		IllegalOpcodeException(const string& message): DecompilationException(message) {}
 };
 
 class IllegalAttributeException: public ClassFormatException {
 	public:
 		IllegalAttributeException(const char* message): ClassFormatException(message) {}
-		IllegalAttributeException(string message): ClassFormatException(message) {}
+		IllegalAttributeException(const string& message): ClassFormatException(message) {}
 };
+
+class AttributeNotFoundException: public DecompilationException {
+	public:
+		AttributeNotFoundException(const char* message): DecompilationException(message) {}
+		AttributeNotFoundException(const string& message): DecompilationException(message) {}
+};
+
 
 class IOException: public Exception {
 	public:
 		IOException(const char* message): Exception(message) {}
-		IOException(string message): Exception(message) {}
+		IOException(const string& message): Exception(message) {}
 		IOException(): Exception() {}
 };
 
@@ -195,8 +201,8 @@ static inline bool isLetterOrDigit(char c) {
 
 
 template<typename T>
-static string join(const vector<T>& array, const function<string(T)> func, const string separator = ", ") {
-	string result = EMPTY_STRING;
+static string join(const vector<T>& array, const function<string(T)> func, const string& separator = ", ") {
+	string result;
 	const uint32_t size = array.size();
 
 	if(size > 0) {
@@ -213,8 +219,8 @@ static string join(const vector<T>& array, const function<string(T)> func, const
 
 
 template<typename T>
-static string join(const vector<T>& array, const function<string(T, uint32_t)> func, const string separator = ", ") {
-	string result = EMPTY_STRING;
+static string join(const vector<T>& array, const function<string(T, uint32_t)> func, const string& separator = ", ") {
+	string result;
 	const uint32_t size = array.size();
 
 	if(size > 0) {
@@ -231,8 +237,8 @@ static string join(const vector<T>& array, const function<string(T, uint32_t)> f
 
 
 template<typename T>
-static string rjoin(const vector<T>& array, const function<string(T)> func, const string separator = ", ") {
-	string result = EMPTY_STRING;
+static string rjoin(const vector<T>& array, const function<string(T)> func, const string& separator = ", ") {
+	string result;
 	uint32_t i = array.size();
 
 	if(i > 0) {
@@ -301,7 +307,7 @@ class BinaryInputStream {
 		}
 
 	public:
-		BinaryInputStream(const string path): infile(path, ios::binary | ios::in) {
+		BinaryInputStream(const string& path): infile(path, ios::binary | ios::in) {
 			if(!infile.good())
 				throw IOException("Cannnot open the file '" + path + "'");
 			infile.seekg(0, ios::end);
@@ -364,35 +370,34 @@ class BinaryInputStream {
 namespace JDecompiler {
 
 	class FormatString {
-		private:
-			string str;
+		private: string value;
 
 		public:
 			FormatString() {}
-			FormatString(string str): str(str) {}
+			FormatString(const string& value): value(value) {}
 
 
 			FormatString operator+(const char* str) const {
-				return FormatString(this->str + (this->str.empty() || *str == '\0' ? str : " " + (string)str));
+				return FormatString(value + (value.empty() || *str == '\0' ? str : " " + (string)str));
 			}
 
-			FormatString operator+(string str) const {
-				return FormatString(this->str + (this->str.empty() || str.empty() ? str : " " + str));
+			FormatString operator+(const string& str) const {
+				return FormatString(value + (value.empty() || str.empty() ? str : " " + str));
 			}
 
-			FormatString* operator+=(const char* str) {
-				this->str += (this->str.empty() || *str == '\0' ? str : " " + (string)str);
-				return this;
+			FormatString& operator+=(const char* str) {
+				value += (value.empty() || *str == '\0' ? str : " " + (string)str);
+				return *this;
 			}
 
-			FormatString* operator+=(string str) {
-				this->str += (this->str.empty() || str.empty() ? str : " " + str);
-				return this;
+			FormatString& operator+=(const string& str) {
+				value += (value.empty() || str.empty() ? str : " " + str);
+				return *this;
 			}
 
 
 			operator string() const {
-				return str;
+				return value;
 			}
 	};
 

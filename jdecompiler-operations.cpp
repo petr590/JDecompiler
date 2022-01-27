@@ -1,6 +1,9 @@
 #ifndef JDECOMPILER_OPERATIONS_CPP
 #define JDECOMPILER_OPERATIONS_CPP
 
+#undef LOG_PREFIX
+#define LOG_PREFIX "[ jdecompiler-operations.cpp ]"
+
 namespace Operations {
 
 	template<class T = Type>
@@ -85,95 +88,34 @@ namespace Operations {
 	};
 
 
-	struct AbstractLdcOperation: Operation {
-		#define THROW_ILLEGAL_CONSTANT_TYPE_EXCEPTION throw IllegalStateException("Illegal constant type " + (int)type)
-
+	struct LdcOperation: ReturnableOperation<> {
 		protected:
-			uint16_t index;
-			const Constant* const value;
+			const uint16_t index;
+			const ConstValueConstant* const value;
 
-		public:
-			AbstractLdcOperation(const CodeEnvironment& environment, uint16_t index): index(index), value(environment.constPool.get<Constant>(index)) {}
-	};
-
-	struct LdcOperation: AbstractLdcOperation {
 		private:
-			enum class ConstantType {
-				STRING, CLASS, INTEGER, FLOAT, METHOD_TYPE, METHOD_HANDLE
-			};
-
-			const ConstantType type;
-
-			ConstantType getConstantType() {
-				if(safe_cast<const StringConstant*>(value)) return ConstantType::STRING;
-				if(safe_cast<const ClassConstant*>(value)) return ConstantType::CLASS;
-				if(safe_cast<const IntegerConstant*>(value)) return ConstantType::INTEGER;
-				if(safe_cast<const FloatConstant*>(value)) return ConstantType::FLOAT;
-				if(safe_cast<const MethodTypeConstant*>(value)) return ConstantType::METHOD_TYPE;
-				if(safe_cast<const MethodHandleConstant*>(value)) return ConstantType::METHOD_HANDLE;
+			static const Type* getReturnType(uint16_t index, const ConstValueConstant* value) {
+				if(dynamic_cast<const StringConstant*>(value)) return STRING;
+				if(dynamic_cast<const ClassConstant*>(value)) return CLASS;
+				if(dynamic_cast<const IntegerConstant*>(value)) return INT;
+				if(dynamic_cast<const FloatConstant*>(value)) return FLOAT;
+				if(dynamic_cast<const LongConstant*>(value)) return LONG;
+				if(dynamic_cast<const DoubleConstant*>(value)) return DOUBLE;
+				if(dynamic_cast<const MethodTypeConstant*>(value)) return METHOD_TYPE;
+				if(dynamic_cast<const MethodHandleConstant*>(value)) return METHOD_HANDLE;
 				throw IllegalStateException("Illegal constant pointer 0x" + hex(index) +
-						": expected String, Class, Integer, Float, MethodType or MethodHandle constant");
+						": expected String, Class, Integer, Float, Long, Double, MethodType or MethodHandle constant");
 			}
 
 		public:
-			LdcOperation(const CodeEnvironment& environment, uint16_t index): AbstractLdcOperation(environment, index), type(getConstantType()) {}
+			LdcOperation(uint16_t index, const ConstValueConstant* value): ReturnableOperation(getReturnType(index, value)), index(index), value(value) {}
+			LdcOperation(const CodeEnvironment& environment, uint16_t index): LdcOperation(index, environment.constPool.get<ConstValueConstant>(index)) {}
+
+			LdcOperation(const StringConstant* value): index(0), ReturnableOperation(STRING), value(value) {}
+			LdcOperation(const MethodTypeConstant* value): index(0), ReturnableOperation(METHOD_TYPE), value(value) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				switch(type) {
-					case ConstantType::STRING: return safe_cast<const StringConstant*>(value)->toString(environment.classinfo);
-					case ConstantType::CLASS: return parseReferenceType(*safe_cast<const ClassConstant*>(value)->name)->toString(environment.classinfo) + ".class";
-					case ConstantType::INTEGER: return primitiveToString(safe_cast<const IntegerConstant*>(value)->value);
-					case ConstantType::FLOAT: return primitiveToString(safe_cast<const FloatConstant*>(value)->value);
-					case ConstantType::METHOD_TYPE: throw Exception("MethodType: Unsupported toString operation");
-					case ConstantType::METHOD_HANDLE: throw Exception("MethodHadle: Unsupported toString operation");
-					default: THROW_ILLEGAL_CONSTANT_TYPE_EXCEPTION;
-				}
-			}
-
-			virtual const Type* getReturnType() const override {
-				switch(type) {
-					case ConstantType::STRING: return STRING;
-					case ConstantType::CLASS: return CLASS;
-					case ConstantType::INTEGER: return INT;
-					case ConstantType::FLOAT: return FLOAT;
-					case ConstantType::METHOD_TYPE: throw Exception("MethodHadle: Unsupported getReturnType operation");
-					case ConstantType::METHOD_HANDLE: throw Exception("MethodHadle: Unsupported getReturnType operation");
-					default: THROW_ILLEGAL_CONSTANT_TYPE_EXCEPTION;
-				}
-			}
-	};
-
-	struct Ldc2Operation: AbstractLdcOperation {
-		private:
-			enum class ConstantType {
-				LONG, DOUBLE
-			};
-
-			ConstantType getConstantType() {
-				if(safe_cast<const LongConstant*>(value)) return ConstantType::LONG;
-				if(safe_cast<const DoubleConstant*>(value)) return ConstantType::DOUBLE;
-				throw IllegalStateException("Illegal constant pointer 0x" + hex(index) + ": expected Long or Double constant");
-			}
-
-			const ConstantType type;
-
-		public:
-			Ldc2Operation(const CodeEnvironment& environment, uint16_t index): AbstractLdcOperation(environment, index), type(getConstantType()) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override {
-				switch(type) {
-					case ConstantType::LONG: return primitiveToString(safe_cast<const LongConstant*>(value)->value);
-					case ConstantType::DOUBLE: return primitiveToString(safe_cast<const DoubleConstant*>(value)->value);
-					default: THROW_ILLEGAL_CONSTANT_TYPE_EXCEPTION;
-				}
-			}
-
-			virtual const Type* getReturnType() const override {
-				switch(type) {
-					case ConstantType::LONG: return LONG;
-					case ConstantType::DOUBLE: return DOUBLE;
-					default: THROW_ILLEGAL_CONSTANT_TYPE_EXCEPTION;
-				}
+				return value->toString(environment.classinfo);
 			}
 	};
 
@@ -383,7 +325,7 @@ namespace Operations {
 			BinaryOperatorOperation(const Type* type, const CodeEnvironment& environment, char32_t operation, uint16_t priority): OperatorOperation(type, operation, priority), operand2(environment.stack.pop()), operand1(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return operand1->toString(environment, priority, LEFT) + ' ' + operation + ' ' + operand2->toString(environment, priority, RIGHT);
+				return operand1->toString(environment, priority, Associativity::LEFT) + ' ' + operation + ' ' + operand2->toString(environment, priority, Associativity::RIGHT);
 			}
 	};
 
@@ -394,7 +336,7 @@ namespace Operations {
 			UnaryOperatorOperation(const Type* type, const CodeEnvironment& environment, char32_t operation, uint16_t priority): OperatorOperation(type, operation, priority), operand(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return operation + operand->toString(environment, priority, RIGHT);
+				return operation + operand->toString(environment, priority, Associativity::RIGHT);
 			}
 	};
 
@@ -441,7 +383,7 @@ namespace Operations {
 			CastOperation(const CodeEnvironment& environment, const Type* type): ReturnableOperation(type), operation(environment.stack.pop()), type(type) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return required ? "(" + type->name + ")" + operation->toString(environment, priority, LEFT) : operation->toString(environment);
+				return required ? "(" + type->name + ")" + operation->toString(environment, priority, Associativity::LEFT) : operation->toString(environment);
 			}
 	};
 
@@ -793,16 +735,16 @@ namespace Operations {
 
 	struct InvokeOperation: Operation {
 		protected:
-			const MethodDescriptor* const methodDescriptor;
+			const MethodDescriptor& methodDescriptor;
 			vector<const Operation*> arguments;
 
-			InvokeOperation(const CodeEnvironment& environment, const MethodDescriptor* methodDescriptor): methodDescriptor(methodDescriptor) {
-				for(int i = methodDescriptor->arguments.size(); i > 0; i--)
+			InvokeOperation(const CodeEnvironment& environment, const MethodDescriptor& methodDescriptor): methodDescriptor(methodDescriptor) {
+				for(int i = methodDescriptor.arguments.size(); i > 0; i--)
 					arguments.push_back(environment.stack.pop());
 			}
 
 			virtual const Type* getReturnType() const override {
-				return methodDescriptor->returnType;
+				return methodDescriptor.returnType;
 			}
 	};
 
@@ -811,14 +753,18 @@ namespace Operations {
 		protected:
 			const Operation* const objectOperation;
 
-			InvokeNonStaticOperation(const CodeEnvironment& environment, const MethodDescriptor* methodDescriptor):
-				InvokeOperation(environment, methodDescriptor), objectOperation(environment.stack.pop()) {}
+			InvokeNonStaticOperation(const CodeEnvironment& environment, const MethodDescriptor& methodDescriptor):
+					InvokeOperation(environment, methodDescriptor), objectOperation(environment.stack.pop()) {}
 
-			InvokeNonStaticOperation(const CodeEnvironment& environment, uint16_t index): InvokeNonStaticOperation(environment, new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)) {}
+			InvokeNonStaticOperation(const CodeEnvironment& environment, uint16_t index):
+					InvokeNonStaticOperation(environment, *new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)) {}
+
+			InvokeNonStaticOperation(const CodeEnvironment& environment, const Operation* objectOperation, uint16_t index):
+					InvokeOperation(environment, *new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)), objectOperation(objectOperation) {}
 
 		public:
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return objectOperation->toString(environment, priority, LEFT) + "." + methodDescriptor->name + "(" + rjoin<const Operation*>(arguments, [environment](const Operation* operation) { return operation->toString(environment); }) + ")";
+				return objectOperation->toString(environment, priority, Associativity::LEFT) + "." + methodDescriptor.name + "(" + rjoin<const Operation*>(arguments, [&environment] (const Operation* operation) { return operation->toString(environment); }) + ")";
 			}
 	};
 
@@ -832,14 +778,18 @@ namespace Operations {
 		protected: const bool isConstructor;
 
 		public:
-			InvokespecialOperation(const CodeEnvironment& environment, uint16_t index): InvokeNonStaticOperation(environment, index), isConstructor(methodDescriptor->name == "<init>") {
+			InvokespecialOperation(const CodeEnvironment& environment, uint16_t index):
+					InvokeNonStaticOperation(environment, index), isConstructor(methodDescriptor.name == "<init>") {
 				if(isConstructor && dynamic_cast<const DupOperation*>(objectOperation))
 					environment.stack.pop();
 			}
 
+			InvokespecialOperation(const CodeEnvironment& environment, const Operation* objectOperation, uint16_t index):
+					InvokeNonStaticOperation(environment, objectOperation, index), isConstructor(methodDescriptor.name == "<init>") {}
+
 			virtual string toString(const CodeEnvironment& environment) const override {
 				if(isConstructor)
-					return objectOperation->toString(environment, priority, LEFT) + "(" + rjoin<const Operation*>(arguments, [environment](const Operation* operation) { return operation->toString(environment); }) + ")";
+					return objectOperation->toString(environment, priority, Associativity::LEFT) + "(" + rjoin<const Operation*>(arguments, [&environment] (const Operation* operation) { return operation->toString(environment); }) + ")";
 				return InvokeNonStaticOperation::toString(environment);
 			}
 
@@ -857,18 +807,21 @@ namespace Operations {
 
 		public:
 			InvokestaticOperation(const CodeEnvironment& environment, uint16_t index):
-				InvokeOperation(environment, new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)),
-				clazz(new ClassType(*environment.constPool.get<MethodrefConstant>(index)->clazz->name)) {}
+					InvokeOperation(environment, *new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)),
+					clazz(new ClassType(*environment.constPool.get<MethodrefConstant>(index)->clazz->name)) {}
+
+			InvokestaticOperation(const CodeEnvironment& environment, const MethodDescriptor& methodDescriptor, const ClassType* clazz):
+					InvokeOperation(environment, methodDescriptor), clazz(clazz) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return clazz->toString(environment.classinfo) + "." + methodDescriptor->name + "(" +
-						rjoin<const Operation*>(arguments, [environment](const Operation* operation) { return operation->toString(environment); }) + ")";
+				return clazz->toString(environment.classinfo) + "." + methodDescriptor.name + "(" +
+						rjoin<const Operation*>(arguments, [&environment] (const Operation* operation) { return operation->toString(environment); }) + ")";
 			}
 	};
 
 
 	struct InvokeinterfaceOperation: InvokeNonStaticOperation {
-		InvokeinterfaceOperation(const CodeEnvironment& environment, uint16_t index): InvokeNonStaticOperation(environment, new MethodDescriptor(environment.constPool.get<InterfaceMethodrefConstant>(index)->nameAndType)) {}
+		InvokeinterfaceOperation(const CodeEnvironment& environment, uint16_t index): InvokeNonStaticOperation(environment, *new MethodDescriptor(environment.constPool.get<InterfaceMethodrefConstant>(index)->nameAndType)) {}
 	};
 
 
@@ -878,6 +831,8 @@ namespace Operations {
 
 		public:
 			NewOperation(const CodeEnvironment& environment, uint16_t classIndex): classType(new ClassType(*environment.constPool.get<ClassConstant>(classIndex)->name)) {}
+
+			NewOperation(const CodeEnvironment& environment, const ClassConstant* classConstant): classType(new ClassType(*classConstant->name)) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return "new " + classType->toString(environment.classinfo);
@@ -914,7 +869,7 @@ namespace Operations {
 			ArrayLengthOperation(const CodeEnvironment& environment): array(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return array->toString(environment, priority, LEFT) + ".length";
+				return array->toString(environment, priority, Associativity::LEFT) + ".length";
 			}
 	};
 
@@ -938,7 +893,7 @@ namespace Operations {
 			CheckCastOperation(const CodeEnvironment& environment, uint16_t index): ReturnableOperation(parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name), 13), object(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return "(" + returnType->toString(environment.classinfo) + ")" + object->toString(environment, priority, RIGHT);
+				return "(" + returnType->toString(environment.classinfo) + ")" + object->toString(environment, priority, Associativity::RIGHT);
 			}
 	};
 
@@ -951,7 +906,7 @@ namespace Operations {
 			InstanceofOperation(const CodeEnvironment& environment, uint16_t index): ReturnableOperation(BOOLEAN, 9), type(parseType(*environment.constPool.get<ClassConstant>(index)->name)), object(environment.stack.pop()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return object->toString(environment, priority, LEFT) + " instanceof " + type->toString(environment.classinfo);
+				return object->toString(environment, priority, Associativity::LEFT) + " instanceof " + type->toString(environment.classinfo);
 			}
 	};
 
@@ -969,7 +924,7 @@ namespace Operations {
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return "new " + returnType->memberType->toString(environment.classinfo) +
-						rjoin<const Operation*>(indexes, [environment](const Operation* index) { return "[" + index->toString(environment) + "]"; }, EMPTY_STRING);
+						rjoin<const Operation*>(indexes, [&environment] (const Operation* index) { return "[" + index->toString(environment) + "]"; }, EMPTY_STRING);
 			}
 	};
 
@@ -998,10 +953,15 @@ namespace Operations {
 
 
 	struct InvokedynamicOperation: InvokeOperation {
-		InvokedynamicOperation(const CodeEnvironment& environment, uint16_t index): InvokeOperation(environment, new MethodDescriptor(environment.constPool.get<InvokeDynamicConstant>(index)->nameAndType)) {}
+		private:
+			const BootstrapMethod* const bootstrapMethod;
 
-			virtual string toString(const CodeEnvironment& environment) const {
-				return environment.attributes.getExact<BootstrapMethodsAttribute>()->name;
+		public:
+			InvokedynamicOperation(const CodeEnvironment& environment, uint16_t index): InvokeOperation(environment, *new MethodDescriptor(environment.constPool.get<InvokeDynamicConstant>(index)->nameAndType)),
+			bootstrapMethod((*environment.classinfo.attributes.getExact<BootstrapMethodsAttribute>())[environment.constPool.get<InvokeDynamicConstant>(index)->bootstrapMethodAttrIndex]) {}
+
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return "#InvokeDynamic#"; //objectOperation->toString(environment, priority, Associativity::LEFT) + "." + methodDescriptor.name + "(" + rjoin<const Operation*>(arguments, [&environment] (const Operation* operation) { return operation->toString(environment); }) + ")";
 			}
 	};
 

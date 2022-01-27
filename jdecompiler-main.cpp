@@ -9,6 +9,9 @@
 #include "jdecompiler-util.cpp"
 #include "jdecompiler-const-pool.cpp"
 
+#undef LOG_PREFIX
+#define LOG_PREFIX "[ jdecompiler-main.cpp ]"
+
 #define CLASS_SIGNATURE 0xCAFEBABE
 
 #define ACC_VISIBLE      0x0000 // class, field, method
@@ -44,37 +47,50 @@ namespace JDecompiler {
 		public:
 			const ClassType * const type, * const superType;
 			const ConstantPool& constPool;
+			const Attributes& attributes;
 			const uint16_t modifiers;
 
-			set<string> *const imports;
+			set<string>& imports;
 
-			ClassInfo(const ClassType* type, const ClassType* superType, const ConstantPool& constPool, const uint16_t modifiers, const char* baseIndent): type(type), superType(superType), constPool(constPool), modifiers(modifiers), imports(new set<string>()), baseIndent(baseIndent) {}
+			ClassInfo(const ClassType* type, const ClassType* superType, const ConstantPool& constPool, const Attributes& attributes, const uint16_t modifiers, const char* baseIndent): type(type), superType(superType), constPool(constPool), attributes(attributes), modifiers(modifiers), imports(*new set<string>()), baseIndent(baseIndent) {}
 
 		private:
 			const char* const baseIndent;
 			mutable uint16_t indentWidth = 0;
-			mutable const char* indent;
+			mutable const char* indent = new char[0];
 
 		public:
-			const char* getIndent() const {
+			inline const char* getIndent() const {
 				return indent;
 			}
 
 			void increaseIndent() const {
+				delete[] indent;
 				indent = repeatString(baseIndent, ++indentWidth);
 			}
 
 			void increaseIndent(uint16_t count) const {
+				delete[] indent;
 				indent = repeatString(baseIndent, indentWidth += count);
 			}
 
 			void reduceIndent() const {
+				delete[] indent;
 				indent = repeatString(baseIndent, --indentWidth);
 			}
 
 			void reduceIndent(uint16_t count) const {
+				delete[] indent;
 				indent = repeatString(baseIndent, indentWidth -= count);
 			}
+
+			~ClassInfo() {
+				delete &imports;
+			}
+
+			ClassInfo(const ClassInfo&) = delete;
+
+			ClassInfo& operator=(const ClassInfo&) = delete;
 	};
 
 	#include "jdecompiler-types.cpp"
@@ -95,7 +111,7 @@ namespace JDecompiler {
 	};
 
 
-	enum Associativity { LEFT, RIGHT };
+	enum class Associativity { LEFT, RIGHT };
 
 
 	struct Operation {
@@ -123,8 +139,8 @@ namespace JDecompiler {
 
 		private: static Associativity getAssociativityByPriority(uint16_t priority) {
 			switch(priority) {
-				case 1: case 2: case 13: return /*Associativity::*/RIGHT;
-				default: return /*Associativity::*/LEFT;
+				case 1: case 2: case 13: return Associativity::RIGHT;
+				default: return Associativity::LEFT;
 			}
 		}
 	};
@@ -207,7 +223,7 @@ namespace JDecompiler {
 				while(index != pos && i < max)
 					index = posMap[++i];
 				if(index != pos) {
-					cout << join<uint32_t>(posMap, [](uint32_t index) { return to_string(index); }) << endl;
+					LOG(join<uint32_t>(posMap, [] (uint32_t index) { return to_string(index); }));
 					throw IndexOutOfBoundsException(to_string(pos));
 				}
 				return i;
@@ -238,6 +254,13 @@ namespace JDecompiler {
 					const Entry* const next;
 
 					Entry(const Operation* value, const Entry* next): value(value), next(next) {}
+
+					void deleteNext() const {
+						if(next != nullptr) {
+							next->deleteNext();
+							delete next;
+						}
+					}
 			};
 
 			const Entry* firstEntry;
@@ -282,12 +305,19 @@ namespace JDecompiler {
 				return currentEntry->value;
 			}
 
-			uint16_t size() const {
+			inline uint16_t size() const {
 				return length;
 			}
 
-			bool empty() const {
+			inline bool empty() const {
 				return length == 0;
+			}
+
+			~Stack() {
+				if(firstEntry != nullptr) {
+					firstEntry->deleteNext();
+					delete firstEntry;
+				}
 			}
 	};
 
@@ -313,6 +343,14 @@ namespace JDecompiler {
 			inline Scope* getCurrentScope() const;
 
 			void addScope(Scope* scope);
+
+			~CodeEnvironment() {
+				delete &stack;
+			}
+
+			CodeEnvironment(const CodeEnvironment& environment) = delete;
+
+			CodeEnvironment& operator=(const CodeEnvironment& environment) = delete;
 	};
 
 
@@ -471,17 +509,17 @@ namespace JDecompiler {
 
 	struct Field: Stringified {
 		const uint16_t modifiers;
-		string name;
-		const Type* descriptor;
-		Attributes* attributes;
+		const string name;
+		const Type& descriptor;
+		const Attributes& attributes;
 
 		public:
-			Field(const ConstantPool& constPool, BinaryInputStream* instream): modifiers(instream->readShort()),
-					name(constPool.getUtf8Constant(instream->readShort())),
-					descriptor(parseType(constPool.getUtf8Constant(instream->readShort()))), attributes(new Attributes(instream, constPool, instream->readShort())) {}
+			Field(const ConstantPool& constPool, BinaryInputStream& instream): modifiers(instream.readShort()),
+					name(constPool.getUtf8Constant(instream.readShort())),
+					descriptor(*parseType(constPool.getUtf8Constant(instream.readShort()))), attributes(*new Attributes(instream, constPool, instream.readShort())) {}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
-				return modifiersToString(modifiers) + " " + descriptor->toString(classinfo) + " " + name;
+				return modifiersToString(modifiers) + " " + descriptor.toString(classinfo) + " " + name;
 			}
 
 		private:
@@ -515,19 +553,16 @@ namespace JDecompiler {
 
 		MethodDescriptor(const NameAndTypeConstant* nameAndType): MethodDescriptor(*nameAndType->name, *nameAndType->descriptor) {}
 
-		MethodDescriptor(const string name, const string descriptor): name(name), returnType(nullptr) {
-
+		MethodDescriptor(const string& name, const string descriptor): name(name) {
 			if(descriptor[0] != '(')
 				throw IllegalMethodDescriptorException(descriptor);
 
 			const int descriptorLength = descriptor.size();
 
 			int i = 1;
-			//cout << descriptor << endl; // DEBUG
+
 			while(i < descriptorLength) {
 				const Type* argument;
-				//cout << descriptorLength << ' ' << i << ' ' << descriptor[i] << endl; // DEBUG
-				//cout << i << " " << &descriptor[i] << endl; // DEBUG
 				switch(descriptor[i]) {
 					case 'B': argument = BYTE; break;
 					case 'C': argument = CHAR; break;
@@ -565,7 +600,7 @@ namespace JDecompiler {
 
 	struct Method: Stringified {
 		const uint16_t modifiers;
-		const MethodDescriptor* const descriptor;
+		const MethodDescriptor& descriptor;
 		const Attributes& attributes;
 		const CodeAttribute* const codeAttribute;
 
@@ -573,21 +608,21 @@ namespace JDecompiler {
 			Scope* scope;
 
 		public:
-			Method(const ConstantPool& constPool, BinaryInputStream* instream, const Type* thisType): modifiers(instream->readShort()), descriptor(new MethodDescriptor(constPool.getUtf8Constant(instream->readShort()), constPool.getUtf8Constant(instream->readShort()))), attributes(*new Attributes(instream, constPool, instream->readShort())), codeAttribute(attributes.get<CodeAttribute>()), scope(nullptr) {
+			Method(const ConstantPool& constPool, BinaryInputStream& instream, const Type* thisType): modifiers(instream.readShort()), descriptor(*new MethodDescriptor(constPool.getUtf8Constant(instream.readShort()), constPool.getUtf8Constant(instream.readShort()))), attributes(*new Attributes(instream, constPool, instream.readShort())), codeAttribute(attributes.get<CodeAttribute>()) {
 				const bool hasCodeAttribute = codeAttribute != nullptr;
 
 				if(modifiers & ACC_ABSTRACT && hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor->name + ":\n" + "Abstract method mustn't have Code attribute");
+					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Abstract method mustn't have Code attribute");
 				if(!(modifiers & ACC_ABSTRACT) && !hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor->name + ":\n" + "Non-abstract method must have Code attribute");
+					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Non-abstract method must have Code attribute");
 
-				scope = new Scope(0, hasCodeAttribute ? codeAttribute->codeLength : 0, hasCodeAttribute ? 0 : descriptor->arguments.size());
+				scope = new Scope(0, hasCodeAttribute ? codeAttribute->codeLength : 0, hasCodeAttribute ? 0 : descriptor.arguments.size());
 				if(!(modifiers & ACC_STATIC))
 					scope->addVariable(thisType, "this");
 
-				const int argumentsCount = descriptor->arguments.size();
+				const int argumentsCount = descriptor.arguments.size();
 				for(int i = 0; i < argumentsCount; i++) {
-					scope->addVariable(descriptor->arguments[i], getNameByType(descriptor->arguments[i]));
+					scope->addVariable(descriptor.arguments[i], getNameByType(descriptor.arguments[i]));
 				}
 			}
 
@@ -600,14 +635,14 @@ namespace JDecompiler {
 
 				const bool isNonStatic = !(modifiers & ACC_STATIC);
 
-				str += modifiersToString(modifiers, classinfo) + (descriptor->name == "<init>" ? classinfo.type->simpleName : descriptor->name == "<clinit>" ? EMPTY_STRING : descriptor->returnType->toString(classinfo) + " " + descriptor->name);
+				str += modifiersToString(modifiers, classinfo) + (descriptor.name == "<init>" ? classinfo.type->simpleName : descriptor.name == "<clinit>" ? EMPTY_STRING : descriptor.returnType->toString(classinfo) + " " + descriptor.name);
 
-				str += "(" + join<const Type*>(descriptor->arguments, [this, classinfo, isNonStatic](const Type* type, uint32_t i) -> string {
+				str += "(" + join<const Type*>(descriptor.arguments, [this, &classinfo, isNonStatic] (const Type* type, uint32_t i) -> string {
 					return type->toString(classinfo) + " " + scope->getVariable(i + isNonStatic)->name;
 				}) + ")";
 
 				if(attributes.has<const ExceptionsAttribute>())
-					str += " throws " + join<const ClassConstant*>(attributes.get<const ExceptionsAttribute>()->exceptions, [classinfo](const ClassConstant* clazz) { return ClassType(*clazz->name).toString(classinfo); });
+					str += " throws " + join<const ClassConstant*>(attributes.get<const ExceptionsAttribute>()->exceptions, [&classinfo] (const ClassConstant* clazz) { return ClassType(*clazz->name).toString(classinfo); });
 
 				str += (codeAttribute == nullptr ? ";" : " " + decompileCode(classinfo.constPool, attributes, codeAttribute, scope, classinfo));
 				return str;
@@ -649,6 +684,14 @@ namespace JDecompiler {
 	};
 
 
+	string MethodTypeConstant::toString(const ClassInfo& classinfo) const {
+		const MethodDescriptor descriptor(EMPTY_STRING, *this->descriptor);
+
+		return METHOD_TYPE->toString(classinfo) + ".methodType(" + descriptor.returnType->toString(classinfo) + ".class" +
+				join<const Type*>(descriptor.arguments, [&classinfo] (auto type) { return ", " + type->toString(classinfo) + ".class"; }, EMPTY_STRING) + ")";
+	}
+
+
 	struct Class: Stringified {
 		public:
 			const ClassType *thisType, *superType;
@@ -657,78 +700,79 @@ namespace JDecompiler {
 			vector<const ClassType*> interfaces;
 			vector<Field*> fields;
 			vector<Method*> methods;
-			Attributes* attributes;
+			const Attributes* const attributes = 0;
 
 		private: const ConstantPool* constPool;
 
 		public:
-			Class(BinaryInputStream* instream) {
-				if(instream->readInt() != CLASS_SIGNATURE)
+			Class(BinaryInputStream& instream) {
+				if(instream.readInt() != CLASS_SIGNATURE)
 					throw ClassFormatException("Wrong class signature");
 
 				const uint16_t
-						majorVersion = instream->readShort(),
-						minorVersion = instream->readShort();
+						majorVersion = instream.readShort(),
+						minorVersion = instream.readShort();
 
 				cout << "/* Java version: " << majorVersion << "." << minorVersion << " */" << endl;
 
-				const uint16_t constPoolSize = instream->readShort();
+				const uint16_t constPoolSize = instream.readShort();
 
-				this->constPool = new ConstantPool(constPoolSize);
-				const ConstantPool& constPool = *this->constPool;
+				const ConstantPool& constPool = *(this->constPool = new ConstantPool(constPoolSize));
 
 				for(uint16_t i = 1; i < constPoolSize; i++) {
-					uint8_t constType = instream->readByte();
+					uint8_t constType = instream.readByte();
 
 					switch(constType) {
 						case  1: {
-							uint16_t size = instream->readShort();
-							constPool[i] = new Utf8Constant(size, instream->readBytes(size));
+							uint16_t size = instream.readShort();
+							const char* bytes = instream.readBytes(size);
+							constPool[i] = new Utf8Constant(bytes, size);
+							delete[] bytes;
 							break;
 						}
 						case  3:
-							constPool[i] = new IntegerConstant(instream->readInt());
+							constPool[i] = new IntegerConstant(instream.readInt());
 							break;
 						case  4:
-							constPool[i] = new FloatConstant(instream->readFloat());
+							constPool[i] = new FloatConstant(instream.readFloat());
 							break;
 						case  5:
-							constPool[i] = new LongConstant(instream->readLong());
+							constPool[i] = new LongConstant(instream.readLong());
 							i++; // Long and Double constants have historically held two positions in the pool
 							break;
 						case  6:
-							constPool[i] = new DoubleConstant(instream->readDouble());
+							constPool[i] = new DoubleConstant(instream.readDouble());
 							i++;
 							break;
 						case  7:
-							constPool[i] = new ClassConstant(instream->readShort());
+							constPool[i] = new ClassConstant(instream.readShort());
 							break;
 						case  8:
-							constPool[i] = new StringConstant(instream->readShort());
+							constPool[i] = new StringConstant(instream.readShort());
 							break;
 						case  9:
-							constPool[i] = new FieldrefConstant(instream->readShort(), instream->readShort());
+							constPool[i] = new FieldrefConstant(instream.readShort(), instream.readShort());
 							break;
 						case 10:
-							constPool[i] = new MethodrefConstant(instream->readShort(), instream->readShort());
+							constPool[i] = new MethodrefConstant(instream.readShort(), instream.readShort());
 							break;
 						case 11:
-							constPool[i] = new InterfaceMethodrefConstant(instream->readShort(), instream->readShort());
+							constPool[i] = new InterfaceMethodrefConstant(instream.readShort(), instream.readShort());
 							break;
 						case 12:
-							constPool[i] = new NameAndTypeConstant(instream->readShort(), instream->readShort());
+							constPool[i] = new NameAndTypeConstant(instream.readShort(), instream.readShort());
 							break;
 						case 15:
-							constPool[i] = new MethodHandleConstant(instream->readByte(), instream->readShort());
+							constPool[i] = new MethodHandleConstant(instream.readByte(), instream.readShort());
 							break;
 						case 16:
-							constPool[i] = new MethodTypeConstant(instream->readShort());
+							constPool[i] = new MethodTypeConstant(instream.readShort());
 							break;
 						case 18:
-							constPool[i] = new InvokeDynamicConstant(instream->readShort(), instream->readShort());
+							constPool[i] = new InvokeDynamicConstant(instream.readShort(), instream.readShort());
 							break;
 						default:
-							throw ClassFormatException("Illegal constant type 0x" + hex<2>(constType) + " at pos 0x" + hex((int32_t)instream->getPos()));
+							throw ClassFormatException("Illegal constant type 0x" + hex<2>(constType) + " at pos 0x" + hex((int32_t)instream.getPos()));
 					};
 				}
 
@@ -738,22 +782,22 @@ namespace JDecompiler {
 						constant->init(constPool);
 				}
 
-				modifiers = instream->readShort();
+				modifiers = instream.readShort();
 
-				thisType = new ClassType(*constPool.get<ClassConstant>(instream->readShort())->name);
-				superType = new ClassType(*constPool.get<ClassConstant>(instream->readShort())->name);
+				thisType = new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name);
+				superType = new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name);
 
-				interfacesCount = instream->readShort();
+				interfacesCount = instream.readShort();
 				interfaces.reserve(interfacesCount);
 				for(uint16_t i = 0; i < interfacesCount; i++) {
-					string name = *constPool.get<ClassConstant>(instream->readShort())->name;
+					string name = *constPool.get<ClassConstant>(instream.readShort())->name;
 					if(modifiers & ACC_ANNOTATION && name == "java/lang/annotation/Annotation") continue;
 					interfaces[i] = new ClassType(name);
 				}
 				interfacesCount = interfaces.size();
 
 
-				const uint16_t fieldsCount = instream->readShort();
+				const uint16_t fieldsCount = instream.readShort();
 				fields.reserve(fieldsCount);
 
 				for(uint16_t i = 0; i < fieldsCount; i++) {
@@ -761,12 +805,14 @@ namespace JDecompiler {
 				}
 
 
-				const uint16_t methodsCount = instream->readShort();
+				const uint16_t methodsCount = instream.readShort();
 				methods.reserve(methodsCount);
 
 				for(uint16_t i = 0; i < methodsCount; i++) {
 					methods.push_back(new Method(constPool, instream, thisType));
 				}
+
+				*((const Attributes**)&attributes) = new Attributes(instream, constPool, instream.readShort());
 			}
 
 
@@ -790,9 +836,9 @@ namespace JDecompiler {
 				for(size_t i = 0; i < fields.size(); i++)
 					str += (string)"\n" + classinfo.getIndent() + fields[i]->toString(classinfo) + ";";
 
-				//cout << methods.size() << endl; // DEBUG
+				//LOG(methods.size() << endl);
 				for(size_t i = 0; i < methods.size(); i++) {
-					//cout << methods[i] << endl; // DEBUG
+					//LOG(methods[i] << endl);
 					str += (string)"\n\n" + classinfo.getIndent() + methods[i]->toString(classinfo);
 				}
 
@@ -807,15 +853,15 @@ namespace JDecompiler {
 				if(thisType->packageName.size() != 0)
 					headers += (string)"package " + thisType->packageName + ";\n\n";
 
-				for(auto imp : *classinfo.imports)
+				for(auto imp : classinfo.imports)
 					headers += "import " + imp + ";\n";
-				if(classinfo.imports->size() > 0) headers += "\n";
+				if(classinfo.imports.size() > 0) headers += "\n";
 
 				return headers + classinfo.getIndent() + str;
 			}
 
 			string toString() {
-				const ClassInfo classinfo = ClassInfo(thisType, superType, *constPool, modifiers, "    ");
+				const ClassInfo classinfo(thisType, superType, *constPool, *attributes, modifiers, "    ");
 				return toString(classinfo);
 			}
 
@@ -861,14 +907,14 @@ namespace JDecompiler {
 		for(int i = scope->getVariablesCount(); i < maxLocals; i++)
 			scope->addVariable(ANY_OBJECT /*TODO*/, "x");
 
-		//cout << maxLocals << ' ' << scope->getVariablesCount() << endl;
+		//LOG(maxLocals << ' ' << scope->getVariablesCount());
 
 		// DEBUG
 		/*for(Attribute* attribute : *method->attributes)
-			cout << "Attribute " << attribute->name << endl;
+			LOG("Attribute " << attribute->name);
 
 		for(Attribute* attribute : *method->codeAttribute->attributes)
-			cout << "Code attribute " << attribute->name << endl;*/
+			LOG("Code attribute " << attribute->name);*/
 	}
 
 

@@ -9,6 +9,9 @@
 #include <sstream>
 #include <math.h>
 
+#undef LOG_PREFIX
+#define LOG_PREFIX "[ jdecompiler-util.cpp ]"
+
 using namespace std;
 
 static const string EMPTY_STRING = string();
@@ -118,7 +121,7 @@ class ClassFormatException: public DecompilationException {
 
 class IllegalModifersException: public DecompilationException {
 	public:
-		IllegalModifersException(uint16_t modifiers) : DecompilationException("0x" + hex<4>(modifiers)) {}
+		IllegalModifersException(uint16_t modifiers): DecompilationException("0x" + hex<4>(modifiers)) {}
 };
 
 class IllegalMethodDescriptorException: public DecompilationException {
@@ -283,6 +286,9 @@ inline bool instanceof(const T*) {
 }
 */
 
+namespace JDecompiler {
+	struct Utf8Constant;
+}
 
 class BinaryInputStream {
 	private:
@@ -294,7 +300,7 @@ class BinaryInputStream {
 		void check() {
 			if(pos >= max) {
 				max = min((streampos)4096, (streampos)(end - infile.tellg()));
-				infile.read(*&buffer, max);
+				infile.read(buffer, max);
 			}
 			if(pos >= end)
 				throw EOFException();
@@ -315,11 +321,11 @@ class BinaryInputStream {
 			infile.seekg(0, ios::beg);
 		}
 
-		streampos getPos() const {
+		inline streampos getPos() const {
 			return pos;
 		}
 
-		void setPosTo(streampos pos) {
+		inline void setPosTo(streampos pos) {
 			this->pos = pos;
 		}
 
@@ -340,29 +346,31 @@ class BinaryInputStream {
 		}
 
 		uint64_t readLong() {
-			return (uint64_t)next() << 56 | (uint64_t)next() << 48 | (uint64_t)next() << 40 | (uint64_t)next() << 32 | (uint64_t)next() << 24 | (uint64_t)next() << 16 | (uint64_t)next() << 8 | (uint64_t)next();
+			return (uint64_t)next() << 56 | (uint64_t)next() << 48 | (uint64_t)next() << 40 | (uint64_t)next() << 32 |
+					(uint64_t)next() << 24 | (uint64_t)next() << 16 | (uint64_t)next() << 8 | (uint64_t)next();
 		}
 
 		float readFloat() {
 			float f;
 			uint32_t bytes = readInt();
-			memcpy(&f, &bytes, 4);
+			memcpy(&f, &bytes, sizeof(bytes));
 			return f;
 		}
 
 		double readDouble() {
 			double d;
-			uint32_t bytes = readLong();
-			memcpy(&d, &bytes, 8);
+			uint64_t bytes = readLong();
+			memcpy(&d, &bytes, sizeof(bytes));
 			return d;
 		}
 
 		const char* readBytes(int size) {
-			char* str = new char[size + 1];
+			char* bytes = new char[size + 1];
 			for(int i = 0; i < size; i++)
-				str[i] = next();
-			str[size] = '\0';
-			return str;
+				bytes[i] = next();
+			bytes[size] = '\0';
+
+			return bytes;
 		}
 };
 

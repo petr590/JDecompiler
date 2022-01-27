@@ -1,6 +1,9 @@
 #ifndef JDECOMPILER_INSTRUCTIONS_CPP
 #define JDECOMPILER_INSTRUCTIONS_CPP
 
+#undef LOG_PREFIX
+#define LOG_PREFIX "[ jdecompiler-instructions.cpp ]"
+
 namespace Instructions {
 	using namespace Operations;
 
@@ -87,12 +90,6 @@ namespace Instructions {
 		LdcInstruction(uint16_t index): InstructionWithIndex(index) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new LdcOperation(environment, index); }
-	};
-
-	struct Ldc2Instruction: InstructionWithIndex {
-		Ldc2Instruction(uint16_t index): InstructionWithIndex(index) {}
-
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new Ldc2Operation(environment, index); }
 	};
 
 
@@ -577,7 +574,10 @@ namespace Instructions {
 
 
 	struct InvokeinterfaceInstruction: InvokeInstruction {
-		InvokeinterfaceInstruction(uint16_t index): InvokeInstruction(index) {}
+		InvokeinterfaceInstruction(uint16_t index, uint16_t zeroInt, const Bytecode& bytecode): InvokeInstruction(index) {
+			if(zeroInt != 0)
+				cerr << "warning: illegal format of instruction invokeinterface at pos " << hex(bytecode.getPos()) << ": by specification, two bytes must be zero" << endl;
+		}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
 			return new InvokeinterfaceOperation(environment, index);
@@ -586,10 +586,71 @@ namespace Instructions {
 
 
 	struct InvokedynamicInstruction: InvokeInstruction {
-		InvokedynamicInstruction(uint16_t index): InvokeInstruction(index) {}
+		InvokedynamicInstruction(uint16_t index, uint16_t zeroInt, const Bytecode& bytecode): InvokeInstruction(index) {
+			if(zeroInt != 0)
+				cerr << "warning: illegal format of instruction invokedynamic at pos " << hex(bytecode.getPos()) << ": by specification, two bytes must be zero" << endl;
+		}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-			return new InvokedynamicOperation(environment, index);
+			const InvokeDynamicConstant* invokeDynamicConstant = environment.constPool.get<InvokeDynamicConstant>(index);
+			const BootstrapMethod* bootstrapMethod =
+					(*environment.classinfo.attributes.getExact<BootstrapMethodsAttribute>())[invokeDynamicConstant->bootstrapMethodAttrIndex];
+
+			const uint16_t index = bootstrapMethod->methodHandle->referenceRef;
+
+			typedef MethodHandleConstant::ReferenceKind RefKind;
+			typedef MethodHandleConstant::KindType KindType;
+
+			switch(bootstrapMethod->methodHandle->kindType) {
+				case KindType::FIELD:
+					switch(bootstrapMethod->methodHandle->referenceKind) {
+						case RefKind::GETFIELD: return new GetInstanceFieldOperation(environment, index);
+						case RefKind::GETSTATIC: return new GetStaticFieldOperation(environment, index);
+						case RefKind::PUTFIELD: return new PutInstanceFieldOperation(environment, index);
+						case RefKind::PUTSTATIC: return new PutStaticFieldOperation(environment, index);
+						default: throw IllegalStateException((string)"Illegal reference kind " + to_string((int)bootstrapMethod->methodHandle->referenceKind));
+					}
+				case KindType::METHOD: {
+					const MethodDescriptor descriptor(invokeDynamicConstant->nameAndType);
+
+					vector<const Operation*> arguments;
+
+					// pop arguments that already on stack
+					for(int i = descriptor.arguments.size(); i > 0; i--)
+						arguments.push_back(environment.stack.pop());
+
+					// push lookup argument
+					environment.stack.push(new InvokestaticOperation(environment,
+							*new MethodDescriptor("publicLookup", "()Ljava/lang/invoke/CallSite;"), new ClassType("java/lang/invoke/MethodHandles$Lookup")));
+
+					StringConstant* nameArgument = new StringConstant(invokeDynamicConstant->nameAndType->nameRef);
+					nameArgument->init(environment.constPool);
+					environment.stack.push(new LdcOperation(nameArgument));
+
+					MethodTypeConstant* typeArgument = new MethodTypeConstant(invokeDynamicConstant->nameAndType->descriptorRef);
+					typeArgument->init(environment.constPool);
+					environment.stack.push(new LdcOperation(typeArgument));
+
+					// push static arguments on stack
+					for(uint16_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
+						environment.stack.push(new LdcOperation(bootstrapMethod->argumentIndexes[i], bootstrapMethod->arguments[i]));
+
+					// push non-static arguments on stack
+					for(const Operation* operation : arguments)
+						environment.stack.push(operation);
+
+					switch(bootstrapMethod->methodHandle->referenceKind) {
+						case RefKind::INVOKEVIRTUAL: return new InvokevirtualOperation(environment, index);
+						case RefKind::INVOKESTATIC: return new InvokestaticOperation(environment, index);
+						case RefKind::INVOKESPECIAL: return new InvokespecialOperation(environment, index);
+						case RefKind::NEWINVOKESPECIAL: return new InvokespecialOperation(environment,
+									new NewOperation(environment, bootstrapMethod->methodHandle->reference->clazz), index);
+						case RefKind::INVOKEINTERFACE: return new InvokeinterfaceOperation(environment, index);
+						default: throw IllegalStateException((string)"Illegal reference kind " + to_string((int)bootstrapMethod->methodHandle->referenceKind));
+					}
+				}
+				default: throw IllegalStateException((string)"Illegal kind type " + to_string((int)bootstrapMethod->methodHandle->kindType));
+			}
 		}
 	};
 
@@ -612,7 +673,7 @@ namespace Instructions {
 			case 0x9: return SHORT;
 			case 0xA: return INT;
 			case 0xB: return LONG;
-			default: throw Exception("Illegal array type code: 0x" + hex(code));
+			default: throw DecompilationException("Illegal array type code: 0x" + hex(code));
 		}
 	}
 

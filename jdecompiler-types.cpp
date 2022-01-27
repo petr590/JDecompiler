@@ -1,6 +1,9 @@
 #ifndef JDECOMPILER_TYPES_CPP
 #define JDECOMPILER_TYPES_CPP
 
+#undef LOG_PREFIX
+#define LOG_PREFIX "[ jdecompiler-types.cpp ]"
+
 struct Type: Stringified {
 	public:
 		string encodedName, name;
@@ -59,7 +62,7 @@ struct ClassType: ReferenceType {
 				char c = name[i];
 				if(isLetterOrDigit(c)) continue;
 				switch(c) {
-					case '/':
+					case '/': case '$':
 						pointPos = i;
 						name[i] = '.';
 						break;
@@ -84,7 +87,7 @@ struct ClassType: ReferenceType {
 
 		virtual string toString(const ClassInfo& classinfo) const override {
 			if(packageName != "java.lang" && packageName != classinfo.type->packageName)
-				classinfo.imports->insert(name);
+				classinfo.imports.insert(name);
 			return simpleName;
 		}
 };
@@ -96,6 +99,8 @@ bool operator==(const Type& type1, const Type& type2) {
 static const ClassType
 		* const STRING = new ClassType("java/lang/String"),
 		* const CLASS = new ClassType("java/lang/Class"),
+		* const METHOD_TYPE = new ClassType("java/lang/inkoke/MethodType"),
+		* const METHOD_HANDLE = new ClassType("java/lang/inkoke/MethodHandle"),
 		* const ANY_OBJECT = new ClassType("java/lang/Object"); // TODO
 
 

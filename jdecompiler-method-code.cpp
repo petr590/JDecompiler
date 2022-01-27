@@ -8,6 +8,9 @@
 #include "jdecompiler-const-pool.cpp"
 #include "jdecompiler-main.cpp"
 
+#undef LOG_PREFIX
+#define LOG_PREFIX "[ jdecompiler-method-code.cpp ]"
+
 using namespace std;
 
 namespace JDecompiler {
@@ -41,7 +44,7 @@ namespace JDecompiler {
 			case 0x11: return new SIPushInstruction(nextUShort());
 			case 0x12: return new LdcInstruction(nextUByte());
 			case 0x13: return new LdcInstruction(nextUShort());
-			case 0x14: return new Ldc2Instruction(nextUShort());
+			case 0x14: return new LdcInstruction(nextUShort());
 			case 0x15: return new ILoadInstruction(nextUByte());
 			case 0x16: return new LLoadInstruction(nextUByte());
 			case 0x17: return new FLoadInstruction(nextUByte());
@@ -187,16 +190,8 @@ namespace JDecompiler {
 			case 0xB6: return new InvokevirtualInstruction(nextUShort());
 			case 0xB7: return new InvokespecialInstruction(nextUShort());
 			case 0xB8: return new InvokestaticInstruction(nextUShort());
-			case 0xB9: {
-				Instruction* instruction = new InvokeinterfaceInstruction(nextUShort());
-				nextUShort();
-				return instruction;
-			}
-			case 0xBA: {
-				Instruction* instruction = new InvokedynamicInstruction(nextUShort());
-				nextUShort();
-				return instruction;
-			}
+			case 0xB9: return new InvokeinterfaceInstruction(nextUShort(), nextUShort(), *this);
+			case 0xBA: return new InvokedynamicInstruction(nextUShort(), nextUShort(), *this);
 			case 0xBB: return new NewInstruction(nextUShort());
 			case 0xBC: return new NewArrayInstruction(nextUByte());
 			case 0xBD: return new ANewArrayInstruction(nextUShort());
@@ -238,7 +233,7 @@ namespace JDecompiler {
 		using namespace Operations;
 		using namespace Instructions;
 
-		//cout << "decompileCode" << endl; // DEBUG
+		//LOG("decompileCode");
 		Bytecode bytecode = Bytecode(attribute->codeLength, attribute->code);
 
 		CodeEnvironment environment(bytecode, constPool, scope, attributes, attribute->codeLength, attribute->maxLocals, classinfo);
@@ -272,7 +267,7 @@ namespace JDecompiler {
 			environment.checkCurrentScope();
 		}
 
-		//cout << "decompileCode end" << endl; // DEBUG
+		//LOG("decompileCode end");
 
 		return environment.scope->toString(environment);
 	}

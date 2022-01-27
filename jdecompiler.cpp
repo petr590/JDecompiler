@@ -8,25 +8,22 @@ using namespace std;
 using namespace JDecompiler;
 
 int main(int argc, char* args[]) {
-	BinaryInputStream* instream = nullptr;
+	if(argc == 1) {
+		cout << "Usage: " << args[0] << " [options] <class-files>" << endl;
+		return 0;
+	}
+
+	vector<BinaryInputStream*> files;
 
 	for(int i = 1; i < argc; i++) {
 		const char* arg = args[i];
-		instream = new BinaryInputStream(arg);
+		files.push_back(new BinaryInputStream(arg));
 	}
 
-	if(instream == nullptr) {
-		cerr << "Input file is not specified" << endl;
-		return 1;
-	}
-
-	Class* c = new Class(instream);
-	//try {
+	for(BinaryInputStream* instream : files) {
+		Class* c = new Class(*instream);
 		cout << c->toString() << endl;
-	/*
-	}catch(exception ex) {
-		cout << "Exception: " << typeid(ex).name() << ": " << ex.what() << endl;
-	}*/
+	}
 
 	return 0;
 }

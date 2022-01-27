@@ -5,7 +5,10 @@
 #include <vector>
 #include "jdecompiler.h"
 #include "jdecompiler-util.cpp"
-//#include <iostream>
+#include <iostream>
+
+#undef LOG_PREFIX
+#define LOG_PREFIX "[ jdecompiler-const-pool.cpp ]"
 
 using namespace std;
 
@@ -47,8 +50,7 @@ namespace JDecompiler {
 
 
 	struct Utf8Constant: Constant, string {
-
-		Utf8Constant(uint16_t length, const char* bytes): string(bytes, length) {}
+		Utf8Constant(const char* str, size_t length): string(str, length) {}
 	};
 
 
@@ -59,10 +61,12 @@ namespace JDecompiler {
 
 	template<typename T>
 	struct NumberConstant: ConstValueConstant {
-		T value;
+		const T value;
 		NumberConstant(T value): value(value) {}
 
-		virtual string toString(const ClassInfo& classinfo) const override { return primitiveToString(value); }
+		virtual string toString(const ClassInfo& classinfo) const override {
+			return primitiveToString(value);
+		}
 	};
 
 
@@ -82,7 +86,7 @@ namespace JDecompiler {
 			name = constPool.get<Utf8Constant>(nameRef);
 		}
 
-		virtual string toString(const ClassInfo& classinfo) const override;
+		virtual string toString(const ClassInfo&) const override;
 	};
 
 
@@ -177,28 +181,45 @@ namespace JDecompiler {
 	};
 
 
-	struct MethodHandleConstant: Constant {
-		enum class ReferenceKind {
-			GETFIELD = 1, GETSTATIC, PUTFIELD, PUTSTATIC, INVOKEVIRTUAL, INVOKESTATIC, INVOKESPECIAL, NEWINVOKESPECIAL, INVOKEINTERFACE
-		};
+	struct MethodHandleConstant: ConstValueConstant {
+		public:
+			enum class ReferenceKind {
+				GETFIELD = 1, GETSTATIC, PUTFIELD, PUTSTATIC, INVOKEVIRTUAL, INVOKESTATIC, INVOKESPECIAL, NEWINVOKESPECIAL, INVOKEINTERFACE
+			};
 
-		const ReferenceKind referenceKind;
-		const uint16_t referenceRef;
+			enum class KindType { FIELD, METHOD };
 
-		const ReferenceConstant* reference;
+			const ReferenceKind referenceKind;
+			const KindType kindType;
 
-		MethodHandleConstant(uint8_t referenceKind, uint16_t referenceRef): referenceKind((ReferenceKind)referenceKind), referenceRef(referenceRef) {
-			if(referenceKind < 1 || referenceKind > 9)
-				throw IllegalStateException("referenceKind is " + to_string(referenceKind) + ", must be in the range 1 to 9");
+			const uint16_t referenceRef;
+			const ReferenceConstant* reference;
+
+		private: static KindType getKindType(const ReferenceKind referenceKind) {
+			switch(referenceKind) {
+				case ReferenceKind::GETFIELD: case ReferenceKind::GETSTATIC: case ReferenceKind::PUTFIELD: case ReferenceKind::PUTSTATIC:
+					return KindType::FIELD;
+				default: return KindType::METHOD;
+			}
 		}
 
-		virtual void init(const ConstantPool& constPool) override {
-			reference = constPool.get<ReferenceConstant>(referenceRef);
-		}
+		public:
+			MethodHandleConstant(uint8_t referenceKind, uint16_t referenceRef): referenceKind((ReferenceKind)referenceKind), kindType(getKindType((ReferenceKind)referenceKind)), referenceRef(referenceRef) {
+				if(referenceKind < 1 || referenceKind > 9)
+					throw IllegalStateException("referenceKind is " + to_string(referenceKind) + ", must be in the range 1 to 9");
+			}
+
+			virtual void init(const ConstantPool& constPool) override {
+				reference = constPool.get<ReferenceConstant>(referenceRef);
+			}
+
+			virtual string toString(const ClassInfo& classinfo) const override {
+				return "#MethodHandle#";
+			}
 	};
 
 
-	struct MethodTypeConstant: Constant {
+	struct MethodTypeConstant: ConstValueConstant {
 		const uint16_t descriptorRef;
 
 		const Utf8Constant* descriptor;
@@ -208,15 +229,17 @@ namespace JDecompiler {
 		virtual void init(const ConstantPool& constPool) override {
 			descriptor = constPool.get<Utf8Constant>(descriptorRef);
 		}
+
+		virtual string toString(const ClassInfo&) const override;
 	};
 
 	struct InvokeDynamicConstant: Constant {
-		const uint16_t bootstrapMethodAttrRef;
+		const uint16_t bootstrapMethodAttrIndex;
 		const uint16_t nameAndTypeRef;
 
 		const NameAndTypeConstant* nameAndType;
 
-		InvokeDynamicConstant(uint16_t bootstrapMethodAttrRef, uint16_t nameAndTypeRef): bootstrapMethodAttrRef(bootstrapMethodAttrRef), nameAndTypeRef(nameAndTypeRef) {}
+		InvokeDynamicConstant(uint16_t bootstrapMethodAttrIndex, uint16_t nameAndTypeRef): bootstrapMethodAttrIndex(bootstrapMethodAttrIndex), nameAndTypeRef(nameAndTypeRef) {}
 
 		virtual void init(const ConstantPool& constPool) override {
 			nameAndType = constPool.get<NameAndTypeConstant>(nameAndTypeRef);

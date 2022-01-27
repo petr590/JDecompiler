@@ -1,7 +1,8 @@
 #ifndef JDECOMPILER_H
 #define JDECOMPILER_H
 
-#define LOG(s) cout << s << endl;
+#define LOG_PREFIX
+#define LOG(s) cout << LOG_PREFIX << ": " << s << endl;
 
 #include <string>
 #include <vector>

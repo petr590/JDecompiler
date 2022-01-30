@@ -51,11 +51,15 @@ namespace JDecompiler {
 		UnknownAttribute(const string& name, uint32_t length, BinaryInputStream& instream): Attribute(name, length), bytes(instream.readBytes(length)) {}
 	};
 
-	struct ConstantValueAttribute: Attribute {
+	struct ConstantValueAttribute: Attribute, Stringified {
 		const ConstValueConstant* const value;
 
 		ConstantValueAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool): Attribute("ConstantValue", length), value(constPool.get<ConstValueConstant>(instream.readShort())) {
 			if(length != 2) throw IllegalAttributeException("Length of ConstantValue attribute must be 2");
+		}
+
+		virtual string toString(const ClassInfo& classinfo) const override {
+			return value->toString(classinfo);
 		}
 	};
 
@@ -64,7 +68,9 @@ namespace JDecompiler {
 			const uint16_t startPos, endPos, handlerPos;
 			const ClassConstant* const catchType;
 
-			ExceptionAttribute(BinaryInputStream& instream, const ConstantPool& constPool): startPos(instream.readShort()), endPos(instream.readShort()), handlerPos(instream.readShort()), catchType(constPool.get<ClassConstant>(instream.readShort())) {}
+			ExceptionAttribute(BinaryInputStream& instream, const ConstantPool& constPool):
+					startPos(instream.readShort()), endPos(instream.readShort()), handlerPos(instream.readShort()),
+					catchType(constPool.get<ClassConstant>(instream.readShort())) {}
 		};
 
 		static vector<ExceptionAttribute*> readExceptionTable(BinaryInputStream& instream, const ConstantPool& constPool, uint16_t length) {
@@ -82,9 +88,13 @@ namespace JDecompiler {
 		const char* const code;
 		const uint16_t exceptionTableLength;
 		vector<ExceptionAttribute*> exceptionTable;
-		const Attributes* const attributes;
+		const Attributes& attributes;
 
-		CodeAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool): Attribute("Code", length), maxStack(instream.readShort()), maxLocals(instream.readShort()), codeLength(instream.readInt()), code(instream.readBytes(codeLength)), exceptionTableLength(instream.readShort()), exceptionTable(readExceptionTable(instream, constPool, exceptionTableLength)), attributes(new Attributes(instream, constPool, instream.readShort())) {}
+		CodeAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+				Attribute("Code", length), maxStack(instream.readShort()), maxLocals(instream.readShort()),
+				codeLength(instream.readInt()), code(instream.readBytes(codeLength)),
+				exceptionTableLength(instream.readShort()), exceptionTable(readExceptionTable(instream, constPool, exceptionTableLength)),
+				attributes(*new Attributes(instream, constPool, instream.readShort())) {}
 	};
 
 

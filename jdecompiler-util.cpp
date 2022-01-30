@@ -8,6 +8,7 @@
 //#include <iostream> // DEBUG
 #include <sstream>
 #include <math.h>
+#include <algorithm>
 
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-util.cpp ]"
@@ -42,16 +43,9 @@ static string hex(uint64_t n) {
 		n >>= 4;
 	}
 
+	reverse(str.begin(), str.end());
+
 	return str;
-}
-
-
-template<class T, class B>
-T safe_cast(B o) {
-	T t = dynamic_cast<T>(o);
-	if(t == nullptr && o != nullptr)
-		throw bad_cast();
-	return t;
 }
 
 
@@ -169,6 +163,21 @@ struct IOException: Exception {
 struct EOFException: IOException {
 	EOFException(): IOException() {}
 };
+
+
+
+struct CastException: Exception {
+	CastException(): Exception() {}
+	CastException(const string& message): Exception(message) {}
+};
+
+template<class T, class B>
+T safe_cast(B o) {
+	T t = dynamic_cast<T>(o);
+	if(t == nullptr && o != nullptr)
+		throw CastException((string)"cannot cast " + typeid(B).name() + " to " + typeid(T).name());
+	return t;
+}
 
 
 

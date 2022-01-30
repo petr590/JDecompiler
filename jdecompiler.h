@@ -120,8 +120,6 @@ namespace JDecompiler {
 
 	struct CodeEnvironment;
 
-	static string decompileCode(const ConstantPool& constPool, const Attributes& attributes, const CodeAttribute* attribute, Scope* scope, const ClassInfo& classinfo);
-
 
 	// jdecompiler-operations
 

@@ -4,8 +4,6 @@
 #include <string>
 #include <map>
 #include "jdecompiler.h"
-#include "jdecompiler-util.cpp"
-#include "jdecompiler-const-pool.cpp"
 #include "jdecompiler-main.cpp"
 #include "jdecompiler-operations.cpp"
 #include "jdecompiler-instructions.cpp"
@@ -242,14 +240,29 @@ namespace JDecompiler {
 		}
 	}
 
-	static string decompileCode(const ConstantPool& constPool, const Attributes& attributes, const CodeAttribute* attribute, Scope* scope, const ClassInfo& classinfo) {
+	const CodeEnvironment& Method::decompileCode(const ClassInfo& classinfo) {
 		using namespace Operations;
 		using namespace Instructions;
 
-		//LOG("decompileCode");
-		Bytecode bytecode = Bytecode(attribute->codeLength, attribute->code);
+		const bool hasCodeAttribute = codeAttribute != nullptr;
+		const uint32_t to = hasCodeAttribute ? codeAttribute->codeLength : 0;
+		const uint16_t localsCount = hasCodeAttribute ? 0 : descriptor.arguments.size();
 
-		CodeEnvironment environment(bytecode, constPool, scope, attributes, attribute->codeLength, attribute->maxLocals, classinfo);
+		Scope* scope = descriptor.type == MethodDescriptor::MethodType::STATIC_INITIALIZER ?
+				new StaticInitializerScope(0, to, localsCount) : new Scope(0, to, localsCount);
+
+		if(!(modifiers & ACC_STATIC))
+			scope->addVariable(classinfo.type, "this");
+
+		const int argumentsCount = descriptor.arguments.size();
+		for(int i = 0; i < argumentsCount; i++)
+			scope->addVariable(descriptor.arguments[i], getNameByType(descriptor.arguments[i]));
+
+		//LOG("decompileCode");
+		Bytecode& bytecode = *new Bytecode(codeAttribute->codeLength, codeAttribute->code);
+
+		CodeEnvironment& environment =
+				*new CodeEnvironment(bytecode, classinfo, scope, modifiers, attributes, codeAttribute->codeLength, codeAttribute->maxLocals);
 
 		while(bytecode.available()) {
 			bytecode.nextInstruction();
@@ -271,8 +284,8 @@ namespace JDecompiler {
 
 			if(operation->getReturnType() != VOID)
 				environment.stack.push(operation);
-			else if(!dynamic_cast<const Scope*>(operation) && (i != instructionsSize - 1 || operation != &VReturn::getInstance())) {
-				environment.currentScope->add(operation);
+			else if(operation->canAddToCode() && (i != instructionsSize - 1 || operation != &VReturn::getInstance())) {
+				environment.currentScope->add(operation, environment);
 				exprIndex++;
 			}
 
@@ -286,7 +299,7 @@ namespace JDecompiler {
 
 		//LOG("decompileCode end");
 
-		return environment.scope->toString(environment);
+		return environment;
 	}
 }
 

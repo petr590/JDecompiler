@@ -137,6 +137,8 @@ namespace JDecompiler {
 			string simpleName, packageName;
 			vector<const ReferenceType*> parameters;
 
+			ClassType(const ClassConstant* clazz): ClassType(*clazz->name) {}
+
 			ClassType(string encodedName) {
 				const int length = encodedName.size();
 

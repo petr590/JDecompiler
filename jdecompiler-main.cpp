@@ -5,6 +5,7 @@
 #include <vector>
 #include <set>
 #include <map>
+#include <functional>
 #include "jdecompiler.h"
 #include "jdecompiler-util.cpp"
 #include "jdecompiler-const-pool.cpp"
@@ -92,11 +93,13 @@ namespace JDecompiler {
 
 			ClassInfo& operator=(const ClassInfo&) = delete;
 	};
+}
 
-	#include "jdecompiler-types.cpp"
-	#include "jdecompiler-javase.cpp"
-	#include "jdecompiler-attributes.cpp"
+#include "jdecompiler-types.cpp"
+#include "jdecompiler-javase.cpp"
+#include "jdecompiler-attributes.cpp"
 
+namespace JDecompiler {
 
 	string ClassConstant::toString(const ClassInfo& classinfo) const {
 		return ClassType(*name).toString(classinfo);
@@ -224,7 +227,7 @@ namespace JDecompiler {
 					index = posMap[++i];
 				if(index != pos) {
 					LOG(join<uint32_t>(posMap, [] (uint32_t index) { return to_string(index); }));
-					throw IndexOutOfBoundsException(to_string(pos));
+					throw BytecodeIndexOutOfBoundsException(pos, length);
 				}
 				return i;
 			}
@@ -266,6 +269,11 @@ namespace JDecompiler {
 			const Entry* firstEntry;
 			uint16_t length;
 
+			inline void checkEmptyStack() const {
+				if(firstEntry == nullptr)
+					throw EmptyStackException();
+			}
+
 		public:
 			void push(const Operation* operation) {
 				firstEntry = new Entry(operation, firstEntry);
@@ -278,6 +286,8 @@ namespace JDecompiler {
 			}
 
 			const Operation* pop() {
+				checkEmptyStack();
+
 				const Entry copiedEntry = *firstEntry;
 				delete firstEntry;
 				firstEntry = copiedEntry.next;
@@ -287,6 +297,8 @@ namespace JDecompiler {
 
 			template<class T>
 			const T* pop() {
+				checkEmptyStack();
+
 				const Operation* operation = pop();
 				if(const T* t = dynamic_cast<const T*>(operation))
 					return t;
@@ -294,11 +306,16 @@ namespace JDecompiler {
 			}
 
 			const Operation* top() const {
+				checkEmptyStack();
 				return firstEntry->value;
 			}
 
 			const Operation* lookup(uint16_t index) const {
-				if(index < 0) throw IndexOutOfBoundsException(to_string(index));
+				checkEmptyStack();
+
+				if(index >= length)
+					throw StackIndexOutOfBoundsException(index, length);
+
 				const Entry* currentEntry = firstEntry;
 				for(uint16_t i = 0; i < index; i++)
 					currentEntry = currentEntry->next;
@@ -332,6 +349,7 @@ namespace JDecompiler {
 			const Attributes& attributes;
 			const ClassInfo& classinfo;
 			uint32_t pos, index, exprStartIndex;
+			map<uint32_t, uint32_t> exprIndexTable;
 
 		private: vector<Scope*> scopes;
 
@@ -374,7 +392,9 @@ namespace JDecompiler {
 			}
 
 			Variable* getVariable(uint32_t index) {
-				return index >= variables.size() && parentScope != nullptr ? parentScope->getVariable(index) : variables[index];
+				if(index >= variables.size() && parentScope == nullptr)
+					throw IndexOutOfBoundsException(index, variables.size());
+				return index >= variables.size() ? parentScope->getVariable(index) : variables[index];
 			}
 
 			bool hasVariable(string name) {
@@ -396,6 +416,8 @@ namespace JDecompiler {
 				return var;
 			}
 
+			virtual void finalize(const CodeEnvironment& environment) {}
+
 			virtual string toString(const CodeEnvironment& environment) const override {
 				environment.classinfo.increaseIndent();
 
@@ -405,8 +427,9 @@ namespace JDecompiler {
 				for(auto i = code.begin(); i != code.end(); ++i) {
 					if(printNextOperation(this, i)) {
 						const Operation* operation = *i;
-						str += operation->getFrontSeparator(environment.classinfo) + operation->toString(environment) +
-								operation->getBackSeparator(environment.classinfo);
+						if(operation->getReturnType() == VOID)
+							str += operation->getFrontSeparator(environment.classinfo) + operation->toString(environment) +
+									operation->getBackSeparator(environment.classinfo);
 					}
 				}
 
@@ -531,11 +554,11 @@ namespace JDecompiler {
 					case ACC_PUBLIC: str += "public"; break;
 					case ACC_PRIVATE: str += "private"; break;
 					case ACC_PROTECTED: str += "protected"; break;
-					default: throw IllegalModifersException(modifiers);
+					default: throw IllegalModifiersException(modifiers);
 				}
 
 				if(modifiers & ACC_STATIC) str += "static";
-				if(modifiers & ACC_FINAL && modifiers & ACC_VOLATILE) throw IllegalModifersException(modifiers);
+				if(modifiers & ACC_FINAL && modifiers & ACC_VOLATILE) throw IllegalModifiersException(modifiers);
 				if(modifiers & ACC_FINAL) str += "final";
 				if(modifiers & ACC_TRANSIENT) str += "transient";
 				if(modifiers & ACC_VOLATILE) str += "volatile";
@@ -547,54 +570,68 @@ namespace JDecompiler {
 
 
 	struct MethodDescriptor {
-		const string name;
-		const Type* returnType;
-		vector<const Type*> arguments;
+		public:
+			const string name;
+			const Type* returnType;
+			vector<const Type*> arguments;
 
-		MethodDescriptor(const NameAndTypeConstant* nameAndType): MethodDescriptor(*nameAndType->name, *nameAndType->descriptor) {}
+			enum class MethodType {
+				CONSTRUCTOR, STATIC_INITIALIZER, PLAIN
+			};
 
-		MethodDescriptor(const string& name, const string descriptor): name(name) {
-			if(descriptor[0] != '(')
-				throw IllegalMethodDescriptorException(descriptor);
+			const MethodType type;
 
-			const int descriptorLength = descriptor.size();
-
-			int i = 1;
-
-			while(i < descriptorLength) {
-				const Type* argument;
-				switch(descriptor[i]) {
-					case 'B': argument = BYTE; break;
-					case 'C': argument = CHAR; break;
-					case 'S': argument = SHORT; break;
-					case 'I': argument = INT; break;
-					case 'J': argument = LONG; break;
-					case 'D': argument = DOUBLE; break;
-					case 'F': argument = FLOAT; break;
-					case 'Z': argument = BOOLEAN; break;
-					case 'L':
-						argument = new ClassType(&descriptor[i + 1]);
-						i += argument->encodedName.size() + 1;
-						goto PushArgument;
-					case '[':
-						argument = new ArrayType(&descriptor[i]);
-						i += argument->encodedName.size();
-						if(((const ArrayType*)argument)->memberType->isPrimitive())
-							goto PushArgument;
-						break;
-					case ')':
-						returnType = parseReturnType(&descriptor[i + 1]);
-						goto End;
-					default:
-						throw IllegalTypeNameException(descriptor);
-				}
-				i++;
-				PushArgument:
-				arguments.push_back(argument);
-			}
-
-			End:;
+		private: static MethodType typeForName(const string& name) {
+			if(name == "<init>") return MethodType::CONSTRUCTOR;
+			if(name == "<clinit>") return MethodType::STATIC_INITIALIZER;
+			return MethodType::PLAIN;
 		}
+
+		public:
+			MethodDescriptor(const NameAndTypeConstant* nameAndType): MethodDescriptor(*nameAndType->name, *nameAndType->descriptor) {}
+
+			MethodDescriptor(const string& name, const string descriptor): name(name), type(typeForName(name)) {
+				if(descriptor[0] != '(')
+					throw IllegalMethodDescriptorException(descriptor);
+
+				const int descriptorLength = descriptor.size();
+
+				int i = 1;
+
+				while(i < descriptorLength) {
+					const Type* argument;
+					switch(descriptor[i]) {
+						case 'B': argument = BYTE; break;
+						case 'C': argument = CHAR; break;
+						case 'S': argument = SHORT; break;
+						case 'I': argument = INT; break;
+						case 'J': argument = LONG; break;
+						case 'F': argument = FLOAT; break;
+						case 'D': argument = DOUBLE; break;
+						case 'Z': argument = BOOLEAN; break;
+						case 'L':
+							argument = new ClassType(&descriptor[i + 1]);
+							i += argument->encodedName.size() + 1;
+							goto PushArgument;
+						case '[':
+							argument = new ArrayType(&descriptor[i]);
+							i += argument->encodedName.size();
+							if(((const ArrayType*)argument)->memberType->isPrimitive())
+								goto PushArgument;
+							break;
+						case ')':
+							returnType = parseReturnType(&descriptor[i + 1]);
+							goto End;
+						default:
+							throw IllegalTypeNameException(descriptor);
+					}
+					i++;
+					PushArgument:
+					arguments.push_back(argument);
+				}
+
+				End:;
+			}
 	};
 
 
@@ -613,8 +650,10 @@ namespace JDecompiler {
 
 				if(modifiers & ACC_ABSTRACT && hasCodeAttribute)
 					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Abstract method mustn't have Code attribute");
-				if(!(modifiers & ACC_ABSTRACT) && !hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Non-abstract method must have Code attribute");
+				if(modifiers & ACC_NATIVE && hasCodeAttribute)
+					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Native method mustn't have Code attribute");
+				if(!(modifiers & ACC_ABSTRACT) && !(modifiers & ACC_NATIVE) && !hasCodeAttribute)
+					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Non-abstract and non-native method must have Code attribute");
 
 				scope = new Scope(0, hasCodeAttribute ? codeAttribute->codeLength : 0, hasCodeAttribute ? 0 : descriptor.arguments.size());
 				if(!(modifiers & ACC_STATIC))
@@ -627,25 +666,53 @@ namespace JDecompiler {
 			}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
+				typedef MethodDescriptor::MethodType MethodType;
+
 				string str;
 
-				const AnnotationsAttribute* annotationsAttribute = attributes.get<const AnnotationsAttribute>();
+				const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>();
 				if(annotationsAttribute != nullptr)
 					str += annotationsAttribute->toString(classinfo);
 
-				const bool isNonStatic = !(modifiers & ACC_STATIC);
+				if(descriptor.type == MethodType::STATIC_INITIALIZER) {
+					if(modifiers != ACC_STATIC)
+						throw IllegalModifiersException("0x" + hex<4>(modifiers) + ": static initializer must have only static modifier");
+					if(attributes.has<ExceptionsAttribute>())
+						throw IllegalAttributeException("static initializer cannot have Exceptions attribute");
+					str += "static";
+				} else {
+					const bool isNonStatic = !(modifiers & ACC_STATIC);
 
-				str += modifiersToString(modifiers, classinfo) + (descriptor.name == "<init>" ? classinfo.type->simpleName : descriptor.name == "<clinit>" ? EMPTY_STRING : descriptor.returnType->toString(classinfo) + " " + descriptor.name);
+					str += modifiersToString(modifiers, classinfo) + (descriptor.type == MethodType::CONSTRUCTOR ?
+							classinfo.type->simpleName : descriptor.returnType->toString(classinfo) + " " + descriptor.name);
 
-				str += "(" + join<const Type*>(descriptor.arguments, [this, &classinfo, isNonStatic] (const Type* type, uint32_t i) -> string {
-					return type->toString(classinfo) + " " + scope->getVariable(i + isNonStatic)->name;
-				}) + ")";
+					function<string(const Type*, uint32_t)> concater = [this, &classinfo, isNonStatic] (const Type* type, uint32_t i) {
+						return type->toString(classinfo) + " " + scope->getVariable(i + isNonStatic)->name;
+					};
 
-				if(attributes.has<const ExceptionsAttribute>())
-					str += " throws " + join<const ClassConstant*>(attributes.get<const ExceptionsAttribute>()->exceptions, [&classinfo] (const ClassConstant* clazz) { return ClassType(*clazz->name).toString(classinfo); });
+					if(modifiers & ACC_VARARGS) {
+						uint32_t varargsIndex;
+						for(int i = descriptor.arguments.size(); i > 0; i--)
+							if(dynamic_cast<const ArrayType*>(descriptor.arguments[i])) {
+								varargsIndex = i;
+								break;
+							}
 
-				str += (codeAttribute == nullptr ? ";" : " " + decompileCode(classinfo.constPool, attributes, codeAttribute, scope, classinfo));
-				return str;
+						concater = [this, &classinfo, isNonStatic, varargsIndex] (const Type* type, uint32_t i) {
+							return (i == varargsIndex ?
+									safe_cast<const ArrayType*>(type)->elementType->toString(classinfo) + "..." : type->toString(classinfo)) +
+									" " + scope->getVariable(i + isNonStatic)->name;
+						};
+					}
+
+					str += "(" + join<const Type*>(descriptor.arguments, concater) + ")";
+
+					if(attributes.has<ExceptionsAttribute>())
+						str += " throws " + join<const ClassConstant*>(attributes.get<ExceptionsAttribute>()->exceptions,
+								[&classinfo] (auto clazz) { return ClassType(*clazz->name).toString(classinfo); });
+				}
+
+				return str + (codeAttribute == nullptr ? ";" : " " + decompileCode(classinfo.constPool, attributes, codeAttribute, scope, classinfo));
 			}
 
 		private:
@@ -657,14 +724,14 @@ namespace JDecompiler {
 					case ACC_PUBLIC: str += "public"; break;
 					case ACC_PRIVATE: str += "private"; break;
 					case ACC_PROTECTED: str += "protected"; break;
-					default: throw IllegalModifersException(modifiers);
+					default: throw IllegalModifiersException(modifiers);
 				}
 
 				if(modifiers & ACC_STATIC) str += "static";
 
 				if(modifiers & ACC_ABSTRACT) {
 					if(modifiers & (ACC_STATIC | ACC_FINAL | ACC_SYNCHRONIZED | ACC_NATIVE | ACC_STRICT))
-						throw IllegalModifersException(modifiers);
+						throw IllegalModifiersException(modifiers);
 					if(!(classinfo.modifiers & ACC_INTERFACE))
 						str += "abstract";
 				} else {
@@ -675,7 +742,7 @@ namespace JDecompiler {
 				if(modifiers & ACC_FINAL) str += "final";
 				if(modifiers & ACC_SYNCHRONIZED) str += "synchronized";
 				// ACC_BRIDGE, ACC_VARARGS
-				if(modifiers & ACC_NATIVE && modifiers & ACC_STRICT) throw IllegalModifersException(modifiers);
+				if(modifiers & ACC_NATIVE && modifiers & ACC_STRICT) throw IllegalModifiersException(modifiers);
 				if(modifiers & ACC_NATIVE) str += "native";
 				if(modifiers & ACC_STRICT) str += "strictfp";
 
@@ -707,7 +774,7 @@ namespace JDecompiler {
 		public:
 			Class(BinaryInputStream& instream) {
 				if(instream.readInt() != CLASS_SIGNATURE)
-					throw ClassFormatException("Wrong class signature");
+					throw ClassFormatError("Wrong class signature");
 
 				const uint16_t
 						majorVersion = instream.readShort(),
@@ -772,7 +839,7 @@ namespace JDecompiler {
 							constPool[i] = new InvokeDynamicConstant(instream.readShort(), instream.readShort());
 							break;
 						default:
-							throw ClassFormatException("Illegal constant type 0x" + hex<2>(constType) + " at pos 0x" + hex((int32_t)instream.getPos()));
+							throw ClassFormatError("Illegal constant type 0x" + hex<2>(constType) + " at pos 0x" + hex((int32_t)instream.getPos()));
 					};
 				}
 
@@ -875,7 +942,7 @@ namespace JDecompiler {
 					case ACC_PUBLIC: str += "public"; break;
 					case ACC_PRIVATE: str += "private"; break;
 					case ACC_PROTECTED: str += "protected"; break;
-					default: throw IllegalModifersException(modifiers);
+					default: throw IllegalModifiersException(modifiers);
 				}
 
 				if(modifiers & ACC_STRICT) str += "strictfp";
@@ -894,7 +961,7 @@ namespace JDecompiler {
 					case ACC_ENUM: case ACC_ABSTRACT | ACC_ENUM:
 						str += "enum"; break;
 					default:
-						throw IllegalModifersException(modifiers);
+						throw IllegalModifiersException(modifiers);
 				}
 
 				return str;
@@ -921,7 +988,9 @@ namespace JDecompiler {
 	void CodeEnvironment::checkCurrentScope() {
 		while(index >= currentScope->to) {
 			if(currentScope->parentScope == nullptr)
-				throw DecompilationException("Unexpected end of global function scope");
+				throw DecompilationException("Unexpected end of global function scope {" +
+						to_string(currentScope->from) + ".." + to_string(currentScope->to) + "}");
+			currentScope->finalize(*this);
 			currentScope = currentScope->parentScope;
 		}
 
@@ -930,7 +999,7 @@ namespace JDecompiler {
 			if(scope->from <= index) {
 				if(scope->to > currentScope->to)
 					throw DecompilationException("Scope is out of bounds of the parent scope: " +
-						to_string(scope->from) + " - " + to_string(scope->to) + ", " + to_string(currentScope->from) + " - " + to_string(currentScope->to));
+						to_string(scope->from) + ".." + to_string(scope->to) + ", " + to_string(currentScope->from) + ".." + to_string(currentScope->to));
 				currentScope->add(scope);
 				currentScope = scope;
 				scopes.erase(i);

@@ -7,6 +7,9 @@
 #include "jdecompiler-util.cpp"
 #include "jdecompiler-const-pool.cpp"
 #include "jdecompiler-main.cpp"
+#include "jdecompiler-operations.cpp"
+#include "jdecompiler-instructions.cpp"
+
 
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-method-code.cpp ]"
@@ -15,14 +18,9 @@ using namespace std;
 
 namespace JDecompiler {
 
-
-	#include "jdecompiler-operations.cpp"
-	#include "jdecompiler-instructions.cpp"
-
-
 	Instruction* Bytecode::nextInstruction0() {
 		using namespace Instructions;
-		//cout << hex << current() << dec << endl; // DEBUG
+		//LOG("OPCODE " << hex << current() << dec);
 		switch(current()) {
 			case 0x00: return nullptr;
 			case 0x01: return &AConstNull::getInstance();
@@ -170,18 +168,33 @@ namespace JDecompiler {
 			case 0xA7: return new GotoInstruction(nextShort());
 			/*case 0xA8: i+=2; return "JSR";
 			case 0xA9: i++ ; return "RET";*/
-			//case 0xAA: return "TABLESWITCH";
+			case 0xAA: {
+				skip(3 - pos % 4); // alignment by 4 bytes
+				int32_t defaultOffset = nextInt();
+				uint32_t low = nextUInt(), high = nextUInt();
+				if(high < low)
+					throw InstructionFormatError("Instruction tableswitch: low is less than high (low = 0x" + hex(low) + ", high = 0x" + hex(high) + ")");
+
+				map<int32_t, int32_t> offsetTable;
+				for(uint32_t i = 0, size = high - low + 1; i < size; i++)
+					offsetTable[i + low] = nextInt();
+				return new SwitchInstruction(defaultOffset, offsetTable);
+			}
 			case 0xAB: {
 				skip(3 - pos % 4); // alignment by 4 bytes
-				int32_t defaultOffset = nextUInt();
+				int32_t defaultOffset = nextInt();
 				map<int32_t, int32_t> offsetTable;
 				for(uint32_t i = nextUInt(); i > 0; i--) {
-					int32_t value = nextUInt(), offset = nextUInt();
+					int32_t value = nextInt(), offset = nextInt();
 					offsetTable[value] = offset;
 				}
-				return new LookupswitchInstruction(defaultOffset, offsetTable);
+				return new SwitchInstruction(defaultOffset, offsetTable);
 			}
-			case 0xAC: case 0xAD: case 0xAE: case 0xAF: case 0xB0: return new ReturnInstruction();
+			case 0xAC: return new IReturnInstruction();
+			case 0xAD: return new LReturnInstruction();
+			case 0xAE: return new FReturnInstruction();
+			case 0xAF: return new DReturnInstruction();
+			case 0xB0: return new AReturnInstruction();
 			case 0xB1: return &VReturn::getInstance();
 			case 0xB2: return new GetStaticFieldInstruction(nextUShort());
 			case 0xB3: return new PutStaticFieldInstruction(nextUShort());
@@ -246,18 +259,22 @@ namespace JDecompiler {
 		const vector<Instruction*>& instructions = bytecode.getInstructions();
 		const uint32_t instructionsSize = instructions.size();
 
-		for(uint32_t i = 0; i < instructionsSize; i++) {
+		for(uint32_t i = 0, exprIndex = 0; i < instructionsSize; i++) {
 			environment.index = i;
 			environment.pos = bytecode.getPosMap()[i];
 			const Operation* operation = instructions[i]->toOperation(environment);
+
+			environment.exprIndexTable[i] = exprIndex;
 
 			if(environment.stack.empty())
 				environment.exprStartIndex = i;
 
 			if(operation->getReturnType() != VOID)
 				environment.stack.push(operation);
-			else if(!dynamic_cast<const Scope*>(operation) && (i != instructionsSize - 1 || operation != &VReturn::getInstance()))
+			else if(!dynamic_cast<const Scope*>(operation) && (i != instructionsSize - 1 || operation != &VReturn::getInstance())) {
 				environment.currentScope->add(operation);
+				exprIndex++;
+			}
 
 			if(Scope* scope = const_cast<Scope*>(dynamic_cast<const Scope*>(operation))) {
 				//LOG(typeid(*scope).name() << " {" << scope->from << ", " << scope->to << "}");

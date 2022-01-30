@@ -1,10 +1,12 @@
 #ifndef JDECOMPILER_OPERATIONS_CPP
 #define JDECOMPILER_OPERATIONS_CPP
 
+#include <algorithm>
+
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-operations.cpp ]"
 
-namespace Operations {
+namespace JDecompiler { namespace Operations {
 
 	template<class T = Type>
 	struct ReturnableOperation: Operation { // ReturnableOperation is an operation which returns specified type
@@ -44,10 +46,9 @@ namespace Operations {
 
 	template<typename T>
 	struct ConstOperation: ReturnableOperation<> {
-		protected:
+		public:
 			const T value;
 
-		public:
 			ConstOperation(const Type* returnType, T value): ReturnableOperation(returnType), value(value) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
@@ -485,11 +486,33 @@ namespace Operations {
 	};
 
 
+	struct TernaryOperatorOperation: ReturnableOperation<> {
+		const Operation *const condition, *const trueCase, *const falseCase;
+
+		const bool isShort;
+
+		TernaryOperatorOperation(const Operation* condition, const Operation* trueCase, const Operation* falseCase):
+				ReturnableOperation(trueCase->getReturnType()->getGeneralTypeFor(falseCase->getReturnType())),
+				condition(condition), trueCase(trueCase), falseCase(falseCase),
+				isShort(dynamic_cast<const IConstOperation*>(trueCase) && ((const IConstOperation*)trueCase)->value == 1 &&
+				dynamic_cast<const IConstOperation*>(falseCase) && ((const IConstOperation*)falseCase)->value == 0) {}
+
+		virtual string toString(const CodeEnvironment& environment) const override {
+			return isShort ? condition->toString(environment) :
+					condition->toString(environment) + " ? " + trueCase->toString(environment) + " : " + falseCase->toString(environment);
+		}
+	};
+
+
 	struct IfScope;
 
 
 	struct ElseScope: Scope {
-		protected: const IfScope* const ifScope;
+		protected:
+			const IfScope* const ifScope;
+
+			bool isTernary = false;
+			const Operation* ternaryFalseOperation = nullptr;
 
 		public:
 			ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope);
@@ -500,6 +523,12 @@ namespace Operations {
 
 			virtual inline string getFrontSeparator(const ClassInfo& classinfo) const override {
 				return EMPTY_STRING;
+			}
+
+			virtual void finalize(const CodeEnvironment& environment) override;
+
+			virtual const Type* getReturnType() const override {
+				return isTernary ? ternaryFalseOperation->getReturnType() : this->Scope::getReturnType();
 			}
 	};
 
@@ -523,15 +552,21 @@ namespace Operations {
 
 		private:
 			mutable const ElseScope* elseScope = nullptr;
-			friend ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope);
+			friend ElseScope::ElseScope(const CodeEnvironment&, const uint32_t, const IfScope*);
 
 			mutable bool hasLabel = false;
-			friend ContinueOperation::ContinueOperation(const CodeEnvironment& environment, const IfScope* ifScope);
+			friend ContinueOperation::ContinueOperation(const CodeEnvironment&, const IfScope*);
+
+			bool isTernary = false;
+			const Operation* ternaryTrueOperation = nullptr;
+			friend void ElseScope::finalize(const CodeEnvironment&);
 
 		public: mutable bool isLoop = false;
 
 		public:
-			IfScope(const CodeEnvironment& environment, const int16_t offset, const CompareOperation* condition): Scope(environment.exprStartIndex, environment.bytecode.posToIndex(offset + environment.pos) - 1, environment.getCurrentScope()), condition(condition) {}
+			IfScope(const CodeEnvironment& environment, const int16_t offset, const CompareOperation* condition):
+					Scope(environment.exprStartIndex, environment.bytecode.posToIndex(offset + environment.pos) - 1, environment.getCurrentScope()),
+					condition(condition) {}
 
 		protected:
 			virtual string getHeader(const CodeEnvironment& environment) const override {
@@ -554,12 +589,24 @@ namespace Operations {
 					return "Loop";
 				throw DecompilationException("Cannot get label for if scope");
 			}
+
+		public:
+			virtual void finalize(const CodeEnvironment& environment) override {
+				isTernary = elseScope != nullptr && !environment.stack.empty() && code.empty();
+				if(isTernary)
+					ternaryTrueOperation = environment.stack.pop();
+			}
+
+			virtual const Type* getReturnType() const override {
+				return isTernary ? ternaryTrueOperation->getReturnType() : this->Scope::getReturnType();
+			}
 	};
 
 	struct IfCmpScope: IfScope {
 		protected: const CompareType& compareType;
 
-		public: IfCmpScope(const CodeEnvironment& environment, const int16_t offset, const CompareType& compareType): IfScope(environment, offset, getCondition(environment, compareType)), compareType(compareType) {}
+		public: IfCmpScope(const CodeEnvironment& environment, const int16_t offset, const CompareType& compareType):
+						IfScope(environment, offset, getCondition(environment, compareType)), compareType(compareType) {}
 
 		private: static const CompareOperation* getCondition(const CodeEnvironment& environment, const CompareType& compareType) {
 			const Operation* operation = environment.stack.pop();
@@ -580,6 +627,14 @@ namespace Operations {
 		ifScope->elseScope = this;
 	}
 
+	void ElseScope::finalize(const CodeEnvironment& environment) {
+		isTernary = ifScope->isTernary;
+		if(isTernary) {
+			ternaryFalseOperation = environment.stack.pop();
+			environment.stack.push(new TernaryOperatorOperation(ifScope->condition, ifScope->ternaryTrueOperation, ternaryFalseOperation));
+		}
+	}
+
 
 
 	struct EmptyInfiniteLoopScope: Scope {
@@ -597,7 +652,12 @@ namespace Operations {
 			map<int32_t, uint32_t> indexTable;
 
 		public:
-			SwitchScope(const CodeEnvironment& environment, int32_t defaultOffset, map<int32_t, int32_t> offsetTable): Scope(environment.index, environment.bytecode.posToIndex(defaultOffset + environment.pos), environment.getCurrentScope()), value(environment.stack.pop()), defaultIndex(this->to) {
+			SwitchScope(const CodeEnvironment& environment, int32_t defaultOffset, map<int32_t, int32_t> offsetTable):
+					Scope(environment.index,
+						environment.bytecode.posToIndex(max(defaultOffset, max_element(offsetTable.begin(), offsetTable.end(),
+							[] (auto& e1, auto& e2) { return e1.second < e2.second; })->second) + environment.pos),
+						environment.getCurrentScope()),
+					value(environment.stack.pop()), defaultIndex(environment.bytecode.posToIndex(defaultOffset + environment.pos)) {
 				for(auto& entry : offsetTable)
 					indexTable[entry.first] = environment.bytecode.posToIndex(environment.pos + entry.second);
 			}
@@ -608,18 +668,19 @@ namespace Operations {
 				string str = "switch(" + value->toString(environment) + ") {\n";
 				const size_t baseSize = str.size();
 
-				uint32_t i = this->from;
+				const map<uint32_t, uint32_t>& exprIndexTable = environment.exprIndexTable;
+
+				const uint32_t defaultExprIndex = exprIndexTable.at(defaultIndex);
+
+				uint32_t i = exprIndexTable.at(this->from);
 				for(const Operation* operation : code) {
-					i++;
-					if(i == defaultIndex) {
+					if(i == defaultExprIndex) {
 						environment.classinfo.reduceIndent();
 						str += environment.classinfo.getIndent() + (string)"default:\n";
 						environment.classinfo.increaseIndent();
-					}else {
-						//cout << "----------" << endl; // DEBUG
+					} else {
 						for(auto& entry : indexTable) {
-							//cout << i << ' ' << entry.second << endl; // DEBUG
-							if(i == entry.second) {
+							if(i == exprIndexTable.at(entry.second)) {
 								environment.classinfo.reduceIndent();
 								str += environment.classinfo.getIndent() + (string)"case " + to_string(entry.first) + ":\n";
 								environment.classinfo.increaseIndent();
@@ -628,6 +689,7 @@ namespace Operations {
 						}
 					}
 					str += environment.classinfo.getIndent() + operation->toString(environment) + (dynamic_cast<const Scope*>(operation) ? "\n" : ";\n");
+					i++;
 				}
 
 				environment.classinfo.reduceIndent(2);
@@ -644,14 +706,37 @@ namespace Operations {
 
 
 	struct ReturnOperation: VoidOperation {
-		protected: const Operation* const value;
+		protected:
+			const Operation* const value;
+			const Type* const type;
 
 		public:
-			ReturnOperation(const CodeEnvironment& environment): value(environment.stack.pop()) {}
+			ReturnOperation(const CodeEnvironment& environment, const Type* type): value(environment.stack.pop()), type(type) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return "return " + value->toString(environment);
 			}
+	};
+
+
+	struct IReturnOperation: ReturnOperation {
+		IReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, INT) {}
+	};
+
+	struct LReturnOperation: ReturnOperation {
+		LReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, LONG) {}
+	};
+
+	struct FReturnOperation: ReturnOperation {
+		FReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, FLOAT) {}
+	};
+
+	struct DReturnOperation: ReturnOperation {
+		DReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, DOUBLE) {}
+	};
+
+	struct AReturnOperation: ReturnOperation {
+		AReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, ANY_OBJECT) {}
 	};
 
 
@@ -985,6 +1070,6 @@ namespace Operations {
 	static DConstOperation
 			*const DCONST_0_OPERATION = new DConstOperation(0),
 			*const DCONST_1_OPERATION = new DConstOperation(1);
-}
+} }
 
 #endif

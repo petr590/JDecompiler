@@ -28,7 +28,7 @@ namespace JDecompiler {
 
 			Constant*& operator[](int index) const {
 				if(index < 0 || index >= size)
-					throw IndexOutOfBoundsException("Invalid constant pool reference 0x" + hex<4>(index));
+					throw ConstantPoolIndexOutOfBoundsException(index, size);
 				return pool[index];
 			}
 
@@ -36,7 +36,7 @@ namespace JDecompiler {
 			T* get(uint16_t index) const {
 				static_assert(is_base_of<Constant, T>::value, "template type T of method ConstantPool::get is not subclass of class Constant");
 				if(index < 0 || index >= size)
-					throw IndexOutOfBoundsException("Invalid constant pool reference 0x" + hex<4>(index));
+					throw ConstantPoolIndexOutOfBoundsException(index, size);
 				T* constant = dynamic_cast<T*>(pool[index]);
 				if(constant == nullptr)
 					throw DynamicCastException("Invalid constant pool reference 0x" + hex<4>(index) + " at " + typeid(T).name());

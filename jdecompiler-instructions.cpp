@@ -4,7 +4,7 @@
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-instructions.cpp ]"
 
-namespace Instructions {
+namespace JDecompiler { namespace Instructions {
 	using namespace Operations;
 
 	struct InstructionWithIndex: Instruction {
@@ -459,7 +459,7 @@ namespace Instructions {
 					const Scope* parentScope = ifScope->parentScope;
 
 					if(index <= parentScope->to)
-						return new ElseScope(environment, index, ifScope);
+						return new ElseScope(environment, index - 1, ifScope);
 
 					const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(environment.bytecode.getInstructions()[parentScope->to]);
 					if(gotoInstruction && environment.bytecode.posToIndex(gotoInstruction->offset + environment.bytecode.indexToPos(parentScope->to)) == index)
@@ -481,13 +481,13 @@ namespace Instructions {
 	};
 
 
-	struct LookupswitchInstruction: Instruction {
+	struct SwitchInstruction: Instruction {
 		protected:
-			int32_t defaultOffset;
+			const int32_t defaultOffset;
 			map<int32_t, int32_t> offsetTable;
 
 		public:
-			LookupswitchInstruction(int32_t defaultOffset, map<int32_t, int32_t> offsetTable): defaultOffset(defaultOffset), offsetTable(offsetTable) {}
+			SwitchInstruction(int32_t defaultOffset, map<int32_t, int32_t> offsetTable): defaultOffset(defaultOffset), offsetTable(offsetTable) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
 				return new SwitchScope(environment, defaultOffset, offsetTable);
@@ -496,8 +496,35 @@ namespace Instructions {
 
 
 	struct ReturnInstruction: Instruction {
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new ReturnOperation(environment); }
+		const Type* const type;
+
+		ReturnInstruction(const Type* type): type(type) {}
+
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+			return new ReturnOperation(environment, type);
+		}
 	};
+
+	struct IReturnInstruction: ReturnInstruction {
+		IReturnInstruction(): ReturnInstruction(INT) {}
+	};
+
+	struct LReturnInstruction: ReturnInstruction {
+		LReturnInstruction(): ReturnInstruction(LONG) {}
+	};
+
+	struct FReturnInstruction: ReturnInstruction {
+		FReturnInstruction(): ReturnInstruction(FLOAT) {}
+	};
+
+	struct DReturnInstruction: ReturnInstruction {
+		DReturnInstruction(): ReturnInstruction(DOUBLE) {}
+	};
+
+	struct AReturnInstruction: ReturnInstruction {
+		AReturnInstruction(): ReturnInstruction(ANY_OBJECT) {}
+	};
+
 
 	struct VReturn: VoidInstructionAndOperation {
 		private: VReturn() {}
@@ -755,6 +782,6 @@ namespace Instructions {
 	static DConstInstruction
 			*const DCONST_0 = new DConstInstruction(0),
 			*const DCONST_1 = new DConstInstruction(1);
-}
+} }
 
 #endif

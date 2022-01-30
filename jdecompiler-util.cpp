@@ -55,8 +55,11 @@ T safe_cast(B o) {
 }
 
 
-class Exception: public exception {
-	const string message;
+struct Exception: exception {
+	//#define EXCEPTION_NAME(name) virtual const char* getName() const noexcept override { return "name"; }
+
+	protected:
+		const string message;
 
 	public:
 		Exception() {}
@@ -69,102 +72,102 @@ class Exception: public exception {
 };
 
 
-class IndexOutOfBoundsException: public Exception {
-	public:
-		IndexOutOfBoundsException(const char* message): Exception(message) {}
-		IndexOutOfBoundsException(const string& message): Exception(message) {}
+struct IndexOutOfBoundsException: Exception {
+	IndexOutOfBoundsException(const string& message): Exception(message) {}
+	IndexOutOfBoundsException(uint32_t index, uint32_t length): Exception("Index " + to_string(index) + " out of bounds for length " + to_string(length)) {}
 };
 
-class IllegalStateException: public Exception {
-	public:
-		IllegalStateException(const char* message): Exception(message) {}
-		IllegalStateException(const string& message): Exception(message) {}
+struct BytecodeIndexOutOfBoundsException: IndexOutOfBoundsException {
+	BytecodeIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length) {}
 };
 
-class DynamicCastException: public Exception {
-	public:
-		DynamicCastException(const char* message): Exception(message) {}
-		DynamicCastException(const string& message): Exception(message) {}
+struct StackIndexOutOfBoundsException: IndexOutOfBoundsException {
+	StackIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length) {}
 };
 
-class AssertionException: public Exception {
-	public:
-		AssertionException(const char* message): Exception(message) {}
-		AssertionException(const string& message): Exception(message) {}
+struct ConstantPoolIndexOutOfBoundsException: IndexOutOfBoundsException {
+	ConstantPoolIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length) {}
 };
 
 
-class DecompilationException: public Exception {
-	public:
-		DecompilationException(const char* message): Exception(message) {}
-		DecompilationException(const string& message): Exception(message) {}
+struct IllegalArgumentException: Exception {
+	IllegalArgumentException(const string& message): Exception(message) {}
+};
+
+struct IllegalStateException: Exception {
+	IllegalStateException(const string& message): Exception(message) {}
+};
+
+struct DynamicCastException: Exception {
+	DynamicCastException(const string& message): Exception(message) {}
+};
+
+struct AssertionException: Exception {
+	AssertionException(const string& message): Exception(message) {}
 };
 
 
-class IllegalTypeNameException: public DecompilationException {
-	public:
-		IllegalTypeNameException(const char* message): DecompilationException(message) {}
-		IllegalTypeNameException(const string& message): DecompilationException(message) {}
-};
-
-class IllegalSignatureException: public IllegalTypeNameException {
-	public:
-		IllegalSignatureException(const char* message): IllegalTypeNameException(message) {}
-		IllegalSignatureException(const string& message): IllegalTypeNameException(message) {}
-};
-
-class ClassFormatException: public DecompilationException {
-	public:
-		ClassFormatException(const char* message): DecompilationException(message) {}
-		ClassFormatException(const string& message): DecompilationException(message) {}
-};
-
-class IllegalModifersException: public DecompilationException {
-	public:
-		IllegalModifersException(uint16_t modifiers): DecompilationException("0x" + hex<4>(modifiers)) {}
-};
-
-class IllegalMethodDescriptorException: public DecompilationException {
-	public:
-		IllegalMethodDescriptorException(const char* descriptor): DecompilationException(descriptor) {}
-		IllegalMethodDescriptorException(string descriptor): DecompilationException(descriptor) {}
-};
-
-class IllegalConstantPointerException: public DecompilationException {
-	public:
-		IllegalConstantPointerException(const char* message): DecompilationException(message) {}
-		IllegalConstantPointerException(const string& message): DecompilationException(message) {}
-};
-
-class IllegalOpcodeException: public DecompilationException {
-	public:
-		IllegalOpcodeException(const char* message): DecompilationException(message) {}
-		IllegalOpcodeException(const string& message): DecompilationException(message) {}
-};
-
-class IllegalAttributeException: public ClassFormatException {
-	public:
-		IllegalAttributeException(const char* message): ClassFormatException(message) {}
-		IllegalAttributeException(const string& message): ClassFormatException(message) {}
-};
-
-class AttributeNotFoundException: public DecompilationException {
-	public:
-		AttributeNotFoundException(const char* message): DecompilationException(message) {}
-		AttributeNotFoundException(const string& message): DecompilationException(message) {}
+struct DecompilationException: Exception {
+	DecompilationException(): Exception() {}
+	DecompilationException(const string& message): Exception(message) {}
 };
 
 
-class IOException: public Exception {
-	public:
-		IOException(const char* message): Exception(message) {}
-		IOException(const string& message): Exception(message) {}
-		IOException(): Exception() {}
+struct IllegalTypeNameException: DecompilationException {
+	IllegalTypeNameException(const string& message): DecompilationException(message) {}
 };
 
-class EOFException: public IOException {
-	public:
-		EOFException(): IOException() {}
+struct IllegalSignatureException: IllegalTypeNameException {
+	IllegalSignatureException(const string& message): IllegalTypeNameException(message) {}
+};
+
+struct IllegalModifiersException: DecompilationException {
+	IllegalModifiersException(uint16_t modifiers): DecompilationException("0x" + hex<4>(modifiers)) {}
+		IllegalModifiersException(const string& message): DecompilationException(message) {}
+};
+
+struct IllegalMethodDescriptorException: DecompilationException {
+	IllegalMethodDescriptorException(const string& descriptor): DecompilationException(descriptor) {}
+};
+
+struct IllegalConstantPointerException: DecompilationException {
+	IllegalConstantPointerException(const string& message): DecompilationException(message) {}
+};
+
+struct EmptyStackException: DecompilationException {
+	EmptyStackException(): DecompilationException() {}
+	EmptyStackException(const string& message): DecompilationException(message) {}
+};
+
+
+struct ClassFormatError: Exception {
+	ClassFormatError(const string& message): Exception(message) {}
+};
+
+struct IllegalOpcodeException: ClassFormatError {
+	IllegalOpcodeException(const string& message): ClassFormatError(message) {}
+};
+
+struct InstructionFormatError: ClassFormatError {
+	InstructionFormatError(const string& message): ClassFormatError(message) {}
+};
+
+struct IllegalAttributeException: ClassFormatError {
+	IllegalAttributeException(const string& message): ClassFormatError(message) {}
+};
+
+struct AttributeNotFoundException: ClassFormatError {
+	AttributeNotFoundException(const string& message): ClassFormatError(message) {}
+};
+
+
+struct IOException: Exception {
+	IOException(): Exception() {}
+	IOException(const string& message): Exception(message) {}
+};
+
+struct EOFException: IOException {
+	EOFException(): IOException() {}
 };
 
 

@@ -303,16 +303,18 @@ namespace JDecompiler {
 }
 
 class BinaryInputStream {
+	#define bufferSize 4096
+
 	private:
 		ifstream infile;
-		char buffer[4096];
+		char buffer[bufferSize];
 		streampos end;
 		streampos pos = 0, max = 0;
 
 		void check() {
 			if(pos >= max) {
-				max = min((streampos)4096, (streampos)(end - infile.tellg()));
-				infile.read(buffer, max);
+				max = min(infile.tellg() + (streampos)bufferSize, end);
+				infile.read(buffer, max % bufferSize + bufferSize);
 			}
 			if(pos >= end)
 				throw EOFException();
@@ -321,7 +323,7 @@ class BinaryInputStream {
 		unsigned short next() { // reads only one byte; returns not char because type expansion for unsigned is same as for signed types
 			check();
 			pos += 1;
-			return buffer[pos - (streampos)1] & 0xFF;
+			return buffer[pos - (streampos)1 & 0xFFF] & 0xFF;
 		}
 
 	public:

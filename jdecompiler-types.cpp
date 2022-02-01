@@ -185,11 +185,12 @@ namespace JDecompiler {
 	};
 
 	static const ClassType
-			* const STRING = new ClassType("java/lang/String"),
-			* const CLASS = new ClassType("java/lang/Class"),
-			* const METHOD_TYPE = new ClassType("java/lang/inkoke/MethodType"),
-			* const METHOD_HANDLE = new ClassType("java/lang/inkoke/MethodHandle"),
-			* const ANY_OBJECT = new ClassType("java/lang/Object"); // TODO
+			*const STRING = new ClassType("java/lang/String"),
+			*const CLASS = new ClassType("java/lang/Class"),
+			*const METHOD_TYPE = new ClassType("java/lang/invoke/MethodType"),
+			*const METHOD_HANDLE = new ClassType("java/lang/invoke/MethodHandle"),
+			*const ANY_OBJECT = new ClassType("java/lang/Object"), // TODO
+			*const EXCEPTION = new ClassType("java/lang/Exception");
 
 
 	struct ArrayType: ReferenceType {

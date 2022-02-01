@@ -258,7 +258,9 @@ namespace JDecompiler {
 		for(int i = 0; i < argumentsCount; i++)
 			scope->addVariable(descriptor.arguments[i], getNameByType(descriptor.arguments[i]));
 
-		//LOG("decompileCode");
+		if(!hasCodeAttribute)
+			return *new CodeEnvironment(*new Bytecode(0, ""), classinfo, scope, modifiers, attributes, 0, 0);
+
 		Bytecode& bytecode = *new Bytecode(codeAttribute->codeLength, codeAttribute->code);
 
 		CodeEnvironment& environment =
@@ -275,23 +277,25 @@ namespace JDecompiler {
 		for(uint32_t i = 0, exprIndex = 0; i < instructionsSize; i++) {
 			environment.index = i;
 			environment.pos = bytecode.getPosMap()[i];
-			const Operation* operation = instructions[i]->toOperation(environment);
 
 			environment.exprIndexTable[i] = exprIndex;
 
 			if(environment.stack.empty())
 				environment.exprStartIndex = i;
 
-			if(operation->getReturnType() != VOID)
-				environment.stack.push(operation);
-			else if(operation->canAddToCode() && (i != instructionsSize - 1 || operation != &VReturn::getInstance())) {
-				environment.currentScope->add(operation, environment);
-				exprIndex++;
-			}
+			if(const Operation* operation = instructions[i]->toOperation(environment)) {
 
-			if(Scope* scope = const_cast<Scope*>(dynamic_cast<const Scope*>(operation))) {
-				//LOG(typeid(*scope).name() << " {" << scope->from << ", " << scope->to << "}");
-				environment.addScope(scope);
+				if(operation->getReturnType() != VOID)
+					environment.stack.push(operation);
+				else if(operation->canAddToCode() && (i != instructionsSize - 1 || operation != &VReturn::getInstance())) {
+					environment.currentScope->add(operation, environment);
+					exprIndex++;
+				}
+
+				if(Scope* scope = const_cast<Scope*>(dynamic_cast<const Scope*>(operation))) {
+					//LOG(typeid(*scope).name() << " {" << scope->from << ", " << scope->to << "}");
+					environment.addScope(scope);
+				}
 			}
 
 			environment.checkCurrentScope();

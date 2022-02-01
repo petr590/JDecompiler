@@ -8,8 +8,10 @@ namespace JDecompiler { namespace Instructions {
 	using namespace Operations;
 
 	struct InstructionWithIndex: Instruction {
-		protected:
+		public:
 			const uint16_t index;
+
+		protected:
 			InstructionWithIndex(uint16_t index): index(index) {}
 	};
 
@@ -73,9 +75,9 @@ namespace JDecompiler { namespace Instructions {
 
 	template<typename T>
 	struct IPushInstruction: Instruction {
-		protected: const T value;
-
 		public:
+			const T value;
+
 			IPushInstruction(T value): value(value) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new IPushOperation<T>(value); }
@@ -100,7 +102,18 @@ namespace JDecompiler { namespace Instructions {
 	struct ILoadInstruction: LoadInstruction {
 		ILoadInstruction(uint16_t index): LoadInstruction(index) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new ILoadOperation(environment, index); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+			return isNullOperation ? nullptr : new ILoadOperation(environment, index);
+		}
+
+		private:
+			friend Operations::IIncOperation::IIncOperation(const CodeEnvironment& environment, uint16_t index, int16_t value);
+
+			mutable bool isNullOperation = false;
+
+			inline void setNullOperation() const {
+				isNullOperation = true;
+			}
 	};
 
 	struct LLoadInstruction: LoadInstruction {
@@ -319,6 +332,33 @@ namespace JDecompiler { namespace Instructions {
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new IIncOperation(environment, index, value); }
 	};
 
+}
+
+namespace Operations {
+	IIncOperation::IIncOperation(const CodeEnvironment& environment, uint16_t index, int16_t value):
+			variable(environment.getCurrentScope()->getVariable(index)), value(value),
+			isShortInc(value == 1 || value == -1) /* isShortInc true when we can write ++ or -- */ {
+
+		using namespace Instructions;
+
+		const ILoadOperation* iloadOperation = environment.stack.empty() ? nullptr : dynamic_cast<const ILoadOperation*>(environment.stack.top());
+		if(isShortInc && iloadOperation != nullptr && iloadOperation->variable == variable) {
+			environment.stack.pop();
+			returnType = INT;
+			isPostInc = true;
+		} else {
+			const ILoadInstruction* iloadInstruction =
+					dynamic_cast<const ILoadInstruction*>(environment.bytecode.getInstructionNoexcept(environment.index + 1));
+			if(iloadInstruction != nullptr && iloadInstruction->index == index) {
+				iloadInstruction->setNullOperation();
+				returnType = INT;
+			} else
+				returnType = VOID;
+		}
+	}
+}
+
+namespace Instructions {
 
 	template<bool required>
 	struct CastInstruction: Instruction {
@@ -648,7 +688,7 @@ namespace JDecompiler { namespace Instructions {
 
 					// push lookup argument
 					environment.stack.push(new InvokestaticOperation(environment,
-							*new MethodDescriptor("publicLookup", "()Ljava/lang/invoke/CallSite;"), new ClassType("java/lang/invoke/MethodHandles$Lookup")));
+							*new MethodDescriptor("publicLookup", "()Ljava/lang/invoke/CallSite;"), METHOD_HANDLE));
 
 					StringConstant* nameArgument = new StringConstant(invokeDynamicConstant->nameAndType->nameRef);
 					nameArgument->init(environment.constPool);

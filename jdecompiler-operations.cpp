@@ -124,13 +124,13 @@ namespace JDecompiler {
 
 		struct LoadOperation: ReturnableOperation<> {
 			public:
-				const Variable* const localVariable;
+				const Variable* const variable;
 
 				LoadOperation(const Type* returnType, const CodeEnvironment& environment, uint16_t index):
-						ReturnableOperation(returnType), localVariable(environment.getCurrentScope()->getVariable(index)) {}
+						ReturnableOperation(returnType), variable(environment.getCurrentScope()->getVariable(index)) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return localVariable->name;
+					return variable->name;
 				}
 		};
 
@@ -205,13 +205,13 @@ namespace JDecompiler {
 		struct StoreOperation: VoidOperation {
 			public:
 				const Operation* const value;
-				const Variable* const localVariable;
+				const Variable* const variable;
 
 				StoreOperation(const CodeEnvironment& environment, uint16_t index):
-						value(environment.stack.pop()), localVariable(environment.getCurrentScope()->getVariable(index)) {}
+						value(environment.stack.pop()), variable(environment.getCurrentScope()->getVariable(index)) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return localVariable->name + " = " + value->toString(environment);
+					return variable->name + " = " + value->toString(environment);
 				}
 		};
 
@@ -315,17 +315,7 @@ namespace JDecompiler {
 				bool isShortInc, isPostInc = false;
 
 			public:
-				IIncOperation(const CodeEnvironment& environment, uint16_t index, int16_t value):
-						variable(environment.getCurrentScope()->getVariable(index)), value(value),
-						isShortInc(value == 1 || value == -1) /* isShortInc true when we can write ++ or -- */ {
-
-					if(isShortInc && !environment.stack.empty() && dynamic_cast<const ILoadOperation*>(environment.stack.top())) {
-						environment.stack.pop();
-						returnType = INT;
-						isPostInc = true;
-					}else
-						returnType = VOID;
-				}
+				IIncOperation(const CodeEnvironment& environment, uint16_t index, int16_t value);
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					if(isShortInc) {
@@ -729,7 +719,7 @@ namespace JDecompiler {
 
 				string instanceFieldToString(const CodeEnvironment& environment, const Operation* object) const {
 					const ALoadOperation* aloadOperation = dynamic_cast<const ALoadOperation*>(object);
-					return aloadOperation != nullptr && aloadOperation->localVariable->name == "this" &&
+					return aloadOperation != nullptr && aloadOperation->variable->name == "this" &&
 							!environment.currentScope->hasVariable(*fieldref->nameAndType->name) ?
 							(string)*fieldref->nameAndType->name : object->toString(environment) + "." + *fieldref->nameAndType->name;
 				}

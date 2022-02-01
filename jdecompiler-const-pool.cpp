@@ -23,21 +23,42 @@ namespace JDecompiler {
 			const uint16_t size;
 			Constant** const pool;
 
+			#define checkTemplate() \
+					static_assert(is_base_of<Constant, T>::value, "template type T of method ConstantPool::get is not subclass of class Constant")
+
 		public:
 			ConstantPool(const uint16_t size): size(size), pool(new Constant*[size]) {}
 
-			Constant*& operator[](int index) const {
-				if(index < 0 || index >= size)
+		private:
+			inline void checkIndex(uint16_t index) const {
+				if(index >= size)
 					throw ConstantPoolIndexOutOfBoundsException(index, size);
+			}
+
+		public:
+
+			Constant*& operator[](uint16_t index) const {
+				checkIndex(index);
 				return pool[index];
 			}
 
 			template<class T>
-			T* get(uint16_t index) const {
-				static_assert(is_base_of<Constant, T>::value, "template type T of method ConstantPool::get is not subclass of class Constant");
-				if(index < 0 || index >= size)
-					throw ConstantPoolIndexOutOfBoundsException(index, size);
-				T* constant = dynamic_cast<T*>(pool[index]);
+			const T* get(uint16_t index) const {
+				checkTemplate();
+				checkIndex(index);
+				const T* constant = dynamic_cast<const T*>(pool[index]);
+				if(constant == nullptr)
+					throw DynamicCastException("Invalid constant pool reference 0x" + hex<4>(index) + " at " + typeid(T).name());
+				return constant;
+			}
+
+			template<class T>
+			const T* getOrDefault(uint16_t index, function<const T*()> defaultValueGetter) const {
+				checkTemplate();
+				checkIndex(index);
+				if(index == 0)
+					return defaultValueGetter();
+				const T* constant = dynamic_cast<const T*>(pool[index]);
 				if(constant == nullptr)
 					throw DynamicCastException("Invalid constant pool reference 0x" + hex<4>(index) + " at " + typeid(T).name());
 				return constant;
@@ -51,6 +72,8 @@ namespace JDecompiler {
 
 	struct Utf8Constant: Constant, string {
 		Utf8Constant(const char* str, size_t length): string(str, length) {}
+
+		Utf8Constant(const char* str): string(str) {}
 	};
 
 
@@ -82,6 +105,8 @@ namespace JDecompiler {
 
 		ClassConstant(uint16_t nameRef): nameRef(nameRef) {}
 
+		ClassConstant(const Utf8Constant* name): nameRef(0), name(name) {}
+
 		virtual void init(const ConstantPool& constPool) override {
 			name = constPool.get<Utf8Constant>(nameRef);
 		}
@@ -95,6 +120,8 @@ namespace JDecompiler {
 		const Utf8Constant* value;
 
 		StringConstant(uint16_t valueRef): valueRef(valueRef) {}
+
+		StringConstant(const Utf8Constant* value): valueRef(0), value(value) {}
 
 		virtual void init(const ConstantPool& constPool) override {
 			value = constPool.get<Utf8Constant>(valueRef);
@@ -204,7 +231,8 @@ namespace JDecompiler {
 		}
 
 		public:
-			MethodHandleConstant(uint8_t referenceKind, uint16_t referenceRef): referenceKind((ReferenceKind)referenceKind), kindType(getKindType((ReferenceKind)referenceKind)), referenceRef(referenceRef) {
+			MethodHandleConstant(uint8_t referenceKind, uint16_t referenceRef):
+					referenceKind((ReferenceKind)referenceKind), kindType(getKindType((ReferenceKind)referenceKind)), referenceRef(referenceRef) {
 				if(referenceKind < 1 || referenceKind > 9)
 					throw IllegalStateException("referenceKind is " + to_string(referenceKind) + ", must be in the range 1 to 9");
 			}

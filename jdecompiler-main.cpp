@@ -186,6 +186,12 @@ namespace JDecompiler {
 				return instructions;
 			}
 
+			const Instruction* getInstructionNoexcept(uint32_t index) const {
+				if(index >= instructions.size())
+					return nullptr;
+				return instructions[index];
+			}
+
 			const vector<uint32_t>& getPosMap() const {
 				return posMap;
 			}
@@ -230,7 +236,9 @@ namespace JDecompiler {
 				pos += count;
 			}
 
-			inline Instruction* getInstruction(uint32_t index) const {
+			const Instruction* getInstruction(uint32_t index) const {
+				if(index >= instructions.size())
+					throw IndexOutOfBoundsException(index, instructions.size());
 				return instructions[index];
 			}
 
@@ -587,7 +595,12 @@ namespace JDecompiler {
 					attributes(*new Attributes(instream, constPool, instream.readShort())), constantValueAttribute(attributes.get<ConstantValueAttribute>()) {}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
-				return (string)(modifiersToString(modifiers) + type.toString(classinfo)) + ' ' + name +
+				string str;
+
+				if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
+					str += annotationsAttribute->toString(classinfo);
+
+				return str + (string)(modifiersToString(modifiers) + type.toString(classinfo)) + ' ' + name +
 						(constantValueAttribute != nullptr ? " = " + constantValueAttribute->toString(classinfo) :
 						initializer != nullptr ? " = " + initializer->toString(*environment) : EMPTY_STRING);
 			}
@@ -696,17 +709,15 @@ namespace JDecompiler {
 		public:
 			typedef MethodDescriptor::MethodType MethodType;
 
-			Method(const ClassInfo& classinfo, const ConstantPool& constPool, BinaryInputStream& instream):
-					modifiers(instream.readShort()),
-					descriptor(*new MethodDescriptor(constPool.getUtf8Constant(instream.readShort()), constPool.getUtf8Constant(instream.readShort()))),
-					attributes(*new Attributes(instream, constPool, instream.readShort())), codeAttribute(attributes.get<CodeAttribute>()),
+			Method(uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, const ClassInfo& classinfo):
+					modifiers(modifiers), descriptor(descriptor), attributes(attributes), codeAttribute(attributes.get<CodeAttribute>()),
 					environment(decompileCode(classinfo)), scope(environment.scope) {
 				const bool hasCodeAttribute = codeAttribute != nullptr;
 
 				if(modifiers & ACC_ABSTRACT && hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Abstract method mustn't have Code attribute");
+					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Abstract method cannot have Code attribute");
 				if(modifiers & ACC_NATIVE && hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Native method mustn't have Code attribute");
+					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Native method cannot have Code attribute");
 				if(!(modifiers & ACC_ABSTRACT) && !(modifiers & ACC_NATIVE) && !hasCodeAttribute)
 					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Non-abstract and non-native method must have Code attribute");
 			}
@@ -716,8 +727,7 @@ namespace JDecompiler {
 			virtual string toString(const ClassInfo& classinfo) const override {
 				string str;
 
-				const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>();
-				if(annotationsAttribute != nullptr)
+				if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
 					str += annotationsAttribute->toString(classinfo);
 
 				if(descriptor.type == MethodType::STATIC_INITIALIZER) {
@@ -753,9 +763,12 @@ namespace JDecompiler {
 
 					str += "(" + join<const Type*>(descriptor.arguments, concater) + ")";
 
-					if(attributes.has<ExceptionsAttribute>())
-						str += " throws " + join<const ClassConstant*>(attributes.get<ExceptionsAttribute>()->exceptions,
+					if(const ExceptionsAttribute* exceptionsAttr = attributes.get<ExceptionsAttribute>())
+						str += " throws " + join<const ClassConstant*>(exceptionsAttr->exceptions,
 								[&classinfo] (auto clazz) { return ClassType(*clazz->name).toString(classinfo); });
+
+					if(const AnnotationDefaultAttribute* annotationDefaultAttr = attributes.get<AnnotationDefaultAttribute>())
+						str += " default " + annotationDefaultAttr->toString(environment.classinfo);
 				}
 
 				return str + (codeAttribute == nullptr ? ";" : " " + scope->toString(environment));
@@ -809,14 +822,33 @@ namespace JDecompiler {
 	}
 
 
+
+	struct MethodDataHolder {
+		public:
+			const uint16_t modifiers;
+			const MethodDescriptor& descriptor;
+			const Attributes& attributes;
+
+			MethodDataHolder(const ConstantPool& constPool, BinaryInputStream& instream):
+					modifiers(instream.readShort()),
+					descriptor(*new MethodDescriptor(constPool.getUtf8Constant(instream.readShort()), constPool.getUtf8Constant(instream.readShort()))),
+					attributes(*new Attributes(instream, constPool, instream.readShort())) {}
+
+			const Method* createMethod(const ClassInfo& classinfo) const {
+				return new Method(modifiers, descriptor, attributes, classinfo);
+			}
+	};
+
+
+
 	struct Class: Stringified {
 		public:
 			const ClassType *thisType, *superType;
 			uint16_t modifiers;
 			uint16_t interfacesCount;
 			vector<const ClassType*> interfaces;
-			vector<Field*> fields;
-			vector<Method*> methods;
+			vector<const Field*> fields;
+			vector<const Method*> methods;
 			const Attributes* const attributes = 0;
 			const ClassInfo* classinfo;
 
@@ -890,7 +922,8 @@ namespace JDecompiler {
 							constPool[i] = new InvokeDynamicConstant(instream.readShort(), instream.readShort());
 							break;
 						default:
-							throw ClassFormatError("Illegal constant type 0x" + hex<2>(constType) + " at pos 0x" + hex((int32_t)instream.getPos()));
+							throw ClassFormatError("Illegal constant type 0x" + hex<2>(constType) + " at index #" + to_string(i) +
+									" at pos 0x" + hex((int32_t)instream.getPos()));
 					};
 				}
 
@@ -904,8 +937,6 @@ namespace JDecompiler {
 
 				thisType = new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name);
 				superType = new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name);
-
-				const ClassInfo& classinfo = *(this->classinfo = new ClassInfo(*this, thisType, superType, constPool, *attributes, modifiers, "    "));
 
 				interfacesCount = instream.readShort();
 				interfaces.reserve(interfacesCount);
@@ -925,12 +956,19 @@ namespace JDecompiler {
 
 
 				const uint16_t methodsCount = instream.readShort();
-				methods.reserve(methodsCount);
+				vector<MethodDataHolder> methodDataHolders;
+				methodDataHolders.reserve(methodsCount);
 
 				for(uint16_t i = 0; i < methodsCount; i++)
-					methods.push_back(new Method(classinfo, constPool, instream));
+					methodDataHolders.push_back(MethodDataHolder(constPool, instream));
 
 				*((const Attributes**)&attributes) = new Attributes(instream, constPool, instream.readShort());
+
+				const ClassInfo& classinfo = *(this->classinfo = new ClassInfo(*this, thisType, superType, constPool, *attributes, modifiers, "    "));
+
+				methods.reserve(methodsCount);
+				for(const MethodDataHolder methodData : methodDataHolders)
+					methods.push_back(methodData.createMethod(classinfo));
 			}
 
 
@@ -951,9 +989,14 @@ namespace JDecompiler {
 
 
 			virtual string toString(const ClassInfo& classinfo) const override {
+				string str;
+
+				if(const AnnotationsAttribute* annotationsAttribute = attributes->get<AnnotationsAttribute>())
+					str += annotationsAttribute->toString(classinfo) + '\n';
+
 				classinfo.increaseIndent();
 
-				string str = modifiersToString(modifiers) + " " + thisType->simpleName +
+				str += modifiersToString(modifiers) + " " + thisType->simpleName +
 						(superType->name == "java.lang.Object" || (modifiers & ACC_ENUM && superType->name == "java.lang.Enum") ?
 								EMPTY_STRING : " extends " + superType->toString(classinfo));
 
@@ -967,20 +1010,21 @@ namespace JDecompiler {
 				}
 
 				str += " {";
-				size_t baseSize = str.size();
 
 				for(const Field* field : fields)
 					if(field->canStringify(classinfo))
 						str += (string)"\n" + classinfo.getIndent() + field->toString(classinfo) + ";";
+				if(fields.size() > 0)
+					str += '\n';
 
 				for(const Method* method : methods)
 					if(method->canStringify(classinfo))
-						str += (string)"\n\n" + classinfo.getIndent() + method->toString(classinfo);
+						str += (string)"\n" + classinfo.getIndent() + method->toString(classinfo) + "\n";
 
 
 				classinfo.reduceIndent();
 
-				str += (baseSize == str.size() ? EMPTY_STRING : "\n") + classinfo.getIndent() + "}";
+				str += (str.back() == '\n' ? EMPTY_STRING : "\n") + classinfo.getIndent() + "}";
 
 
 				string headers;

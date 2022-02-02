@@ -4,7 +4,7 @@
 #include <algorithm>
 
 #undef LOG_PREFIX
-#define LOG_PREFIX "[ jdecompiler-operations.cpp ]"
+#define LOG_PREFIX "jdecompiler-operations.cpp"
 
 namespace JDecompiler {
 	namespace Operations {
@@ -186,7 +186,7 @@ namespace JDecompiler {
 
 		struct AALoadOperation: ArrayLoadOperation {
 			AALoadOperation(const CodeEnvironment& environment):
-					ArrayLoadOperation(safe_cast<const ArrayType*>(environment.stack.lookup(1)->getReturnType())->memberType, environment) {} // TOCHECK
+					ArrayLoadOperation(safe_cast<const ArrayType*>(environment.stack.lookup(1)->getReturnType())->elementType, environment) {}
 		};
 
 		struct BALoadOperation: ArrayLoadOperation {
@@ -901,7 +901,7 @@ namespace JDecompiler {
 
 			public:
 				NewOperation(const CodeEnvironment& environment, uint16_t classIndex):
-						clazz(new ClassType(*environment.constPool.get<ClassConstant>(classIndex)->name)) {}
+						clazz(new ClassType(environment.constPool.get<ClassConstant>(classIndex))) {}
 
 				NewOperation(const CodeEnvironment& environment, const ClassConstant* classConstant): clazz(new ClassType(*classConstant->name)) {}
 
@@ -934,28 +934,52 @@ namespace JDecompiler {
 		};
 
 
-		struct NewArrayOperation: ReturnableOperation<> {
+		struct NewArrayOperation: Operation {
 			protected:
-				const Type* const elementType;
-				const Operation* const length;
+				const ArrayType* const arrayType;
+				vector<const Operation*> lengths;
 
 				mutable vector<const Operation*> initializer;
 				friend ArrayStoreOperation::ArrayStoreOperation(const Type*, const CodeEnvironment&);
 
 			public:
-				NewArrayOperation(const CodeEnvironment& environment, const Type* elementType):
-						ReturnableOperation(new ArrayType(elementType)), elementType(elementType), length(environment.stack.pop()) {}
+				NewArrayOperation(const CodeEnvironment& environment, const ArrayType* arrayType): arrayType(arrayType) {
+					const uint16_t dimensions = arrayType->nestingLevel;
+					lengths.reserve(dimensions);
+					for(uint16_t i = 0; i < dimensions; i++)
+						lengths.push_back(environment.stack.pop());
+				}
+
+				NewArrayOperation(const CodeEnvironment& environment, const Type* memberType, uint16_t dimensions = 1):
+						NewArrayOperation(environment, new ArrayType(memberType, dimensions)) {}
+
+
+				virtual const Type* getReturnType() const override {
+					return arrayType;
+				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return "new " + elementType->toString(environment.classinfo) + (initializer.empty() ?
-							"[" + length->toString(environment) + "]" :
-							"[] { " + join<const Operation*>(initializer, [&environment] (auto element) { return element->toString(environment); }) + " }");
+					if(initializer.empty())
+						return "new " + arrayType->memberType->toString(environment.classinfo) +
+								rjoin<const Operation*>(lengths, [&environment] (auto length) { return "[" + length->toString(environment) + "]"; }, "");
+					return "new " + arrayType->toString(environment.classinfo) + " " + toArrayInitString(environment);
+				}
+
+				virtual string toArrayInitString(const CodeEnvironment& environment) const override {
+					return "{ " + join<const Operation*>(initializer,
+							[&environment] (auto element) { return element->toArrayInitString(environment); }) + " }";
 				}
 		};
 
 		struct ANewArrayOperation: NewArrayOperation {
 			ANewArrayOperation(const CodeEnvironment& environment, uint16_t index):
-					NewArrayOperation(environment, new ClassType(*environment.constPool.get<ClassConstant>(index)->name)) {}
+					NewArrayOperation(environment, parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name)) {}
+		};
+
+
+		struct MultiANewArrayOperation: NewArrayOperation {
+			MultiANewArrayOperation(const CodeEnvironment& environment, uint16_t index, uint16_t dimensions):
+					NewArrayOperation(environment, new ArrayType(*environment.constPool.get<ClassConstant>(index)->name)) {}
 		};
 
 
@@ -964,7 +988,7 @@ namespace JDecompiler {
 				value(environment.stack.pop()), index(environment.stack.pop()), array(environment.stack.pop()) {
 			if(const DupOperation* dupArray = dynamic_cast<const DupOperation*>(array)) {
 				if(const NewArrayOperation* newArray = dynamic_cast<const NewArrayOperation*>(dupArray->operation)) {
-					newArray->initializer.push_back(this);
+					newArray->initializer.push_back(value);
 					isInitializer = true;
 				}
 				/*else
@@ -1037,7 +1061,9 @@ namespace JDecompiler {
 			protected: const Operation* const object;
 
 			public:
-				CheckCastOperation(const CodeEnvironment& environment, uint16_t index): ReturnableOperation(parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name), 13), object(environment.stack.pop()) {}
+				CheckCastOperation(const CodeEnvironment& environment, uint16_t index):
+						ReturnableOperation(parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name), 13),
+						object(environment.stack.pop()) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return "(" + returnType->toString(environment.classinfo) + ")" + object->toString(environment, priority, Associativity::RIGHT);
@@ -1050,28 +1076,11 @@ namespace JDecompiler {
 				const Operation* const object;
 
 			public:
-				InstanceofOperation(const CodeEnvironment& environment, uint16_t index): ReturnableOperation(BOOLEAN, 9), type(parseType(*environment.constPool.get<ClassConstant>(index)->name)), object(environment.stack.pop()) {}
+				InstanceofOperation(const CodeEnvironment& environment, uint16_t index): ReturnableOperation(BOOLEAN, 9),
+						type(parseType(*environment.constPool.get<ClassConstant>(index)->name)), object(environment.stack.pop()) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return object->toString(environment, priority, Associativity::LEFT) + " instanceof " + type->toString(environment.classinfo);
-				}
-		};
-
-
-		struct MultiANewArrayOperation: ReturnableOperation<ArrayType> {
-			protected:
-				vector<const Operation*> indexes;
-
-			public:
-				MultiANewArrayOperation(const CodeEnvironment& environment, uint16_t index, uint16_t dimensions): ReturnableOperation(new ArrayType(*environment.constPool.get<ClassConstant>(index)->name, dimensions)) {
-					indexes.reserve(dimensions);
-					for(uint16_t i = 0; i < dimensions; i++)
-						indexes.push_back(environment.stack.pop());
-				}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return "new " + returnType->memberType->toString(environment.classinfo) +
-							rjoin<const Operation*>(indexes, [&environment] (const Operation* index) { return "[" + index->toString(environment) + "]"; }, EMPTY_STRING);
 				}
 		};
 
@@ -1081,7 +1090,8 @@ namespace JDecompiler {
 				const Operation* const operand;
 
 			public:
-				CompareWithNullOperation(const CodeEnvironment& environment, const EqualsCompareType& compareType): CompareOperation(compareType), operand(environment.stack.pop()) {}
+				CompareWithNullOperation(const CodeEnvironment& environment, const EqualsCompareType& compareType):
+						CompareOperation(compareType), operand(environment.stack.pop()) {}
 
 				virtual string toString(const CodeEnvironment& environment) const {
 					return operand->toString(environment) + " " + compareType.stringOperator + " null";
@@ -1090,11 +1100,13 @@ namespace JDecompiler {
 
 
 		struct IfNullScope: IfScope {
-			public: IfNullScope(const CodeEnvironment& environment, int16_t offset): IfScope(environment, offset, new CompareWithNullOperation(environment, CompareType::EQUALS)) {}
+			public: IfNullScope(const CodeEnvironment& environment, int16_t offset):
+					IfScope(environment, offset, new CompareWithNullOperation(environment, CompareType::EQUALS)) {}
 		};
 
 		struct IfNonNullScope: IfScope {
-			public: IfNonNullScope(const CodeEnvironment& environment, int16_t offset): IfScope(environment, offset, new CompareWithNullOperation(environment, CompareType::NOT_EQUALS)) {}
+			public: IfNonNullScope(const CodeEnvironment& environment, int16_t offset):
+					IfScope(environment, offset, new CompareWithNullOperation(environment, CompareType::NOT_EQUALS)) {}
 		};
 
 

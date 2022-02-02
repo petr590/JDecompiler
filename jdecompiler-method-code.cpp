@@ -110,11 +110,11 @@ namespace JDecompiler {
 			case 0x57: return new PopInstruction();
 			case 0x58: return new PopInstruction(); // pop2
 			case 0x59: return new DupInstruction();
-			/*case 0x5A: return "DUP_X1";
-			case 0x5B: return "DUP_X2";
-			case 0x5C: return "DUP2";
-			case 0x5D: return "DUP2_X1";
-			case 0x5E: return "DUP2_X2";*/
+			case 0x5A: return nullptr; // DUP_X1
+			case 0x5B: return nullptr; // DUP_X2
+			case 0x5C: return nullptr; // DUP2
+			case 0x5D: return nullptr; // DUP2_X1
+			case 0x5E: return nullptr; // DUP2_X2
 			case 0x5F: return new SwapInstruction();
 			case 0x60: case 0x61: case 0x62: case 0x63: return new AddOperatorInstruction(current() & 3);
 			case 0x64: case 0x65: case 0x66: case 0x67: return new SubOperatorInstruction(current() & 3);
@@ -210,8 +210,8 @@ namespace JDecompiler {
 			case 0xBF: return new AThrowInstruction();
 			case 0xC0: return new CheckCastInstruction(nextUShort());
 			case 0xC1: return new InstanceofInstruction(nextUShort());
-			/*case 0xC2: return "MONITORENTER";
-			case 0xC3: return "MONITOREXIT";*/
+			case 0xC2: return nullptr; // MonitorEnter
+			case 0xC3: return nullptr; // MonitorExit
 			case 0xC4: switch(nextUByte()) {
 				case 0x15: return new ILoadInstruction(nextUShort());
 				case 0x16: return new LLoadInstruction(nextUShort());

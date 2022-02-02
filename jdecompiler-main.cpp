@@ -134,6 +134,10 @@ namespace JDecompiler {
 
 		virtual string toString(const CodeEnvironment& environment) const = 0;
 
+		virtual string toArrayInitString(const CodeEnvironment& environment) const {
+			return toString(environment);
+		}
+
 		virtual const Type* getReturnType() const = 0;
 
 		string toString(const CodeEnvironment& environment, uint16_t priority, const Associativity& associativity) const {
@@ -967,8 +971,13 @@ namespace JDecompiler {
 				const ClassInfo& classinfo = *(this->classinfo = new ClassInfo(*this, thisType, superType, constPool, *attributes, modifiers, "    "));
 
 				methods.reserve(methodsCount);
-				for(const MethodDataHolder methodData : methodDataHolders)
-					methods.push_back(methodData.createMethod(classinfo));
+				for(const MethodDataHolder methodData : methodDataHolders) {
+					try {
+						methods.push_back(methodData.createMethod(classinfo));
+					} catch(DecompilationException& ex) {
+						cerr << typeid(ex).name() << ": " << ex.what() << endl;
+					}
+				}
 			}
 
 

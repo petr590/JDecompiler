@@ -128,9 +128,20 @@ struct IllegalConstantPointerException: DecompilationException {
 	IllegalConstantPointerException(const string& message): DecompilationException(message) {}
 };
 
-struct EmptyStackException: DecompilationException {
-	EmptyStackException(): DecompilationException() {}
-	EmptyStackException(const string& message): DecompilationException(message) {}
+struct IllegalStackStateException: DecompilationException {
+	IllegalStackStateException() {}
+	IllegalStackStateException(const string& message): DecompilationException(message) {}
+};
+
+struct EmptyStackException: IllegalStackStateException {
+	EmptyStackException() {}
+	EmptyStackException(const string& message): IllegalStackStateException(message) {}
+};
+
+struct TypeSizeMismatchException: DecompilationException {
+	TypeSizeMismatchException(const string& message): DecompilationException(message) {}
+	TypeSizeMismatchException(const string& requiredSizeName, const string& sizeName, const string& typeName):
+			DecompilationException("Required " + requiredSizeName + ", got " + sizeName + " of type " + typeName) {}
 };
 
 

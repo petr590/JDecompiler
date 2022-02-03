@@ -7,6 +7,19 @@
 #define LOG_PREFIX "[ jdecompiler-types.cpp ]"
 
 namespace JDecompiler {
+	enum class TypeSize {
+		ZERO_BYTES, FOUR_BYTES, EIGHT_BYTES
+	};
+
+	static string TypeSize_nameOf(TypeSize typeSize) {
+		switch(typeSize) {
+			case TypeSize::ZERO_BYTES: return "FOUR_BYTES";
+			case TypeSize::FOUR_BYTES: return "FOUR_BYTES";
+			case TypeSize::EIGHT_BYTES: return "EIGHT_BYTES";
+			default: throw IllegalStateException("Illegal typeSize " + to_string((unsigned int)typeSize));
+		}
+	}
+
 	struct Type: Stringified {
 		public:
 			string encodedName, name;
@@ -23,6 +36,10 @@ namespace JDecompiler {
 
 			virtual bool isPrimitive() const = 0;
 
+			virtual TypeSize getSize() const {
+				return TypeSize::EIGHT_BYTES;
+			}
+
 			virtual const Type* getGeneralTypeFor(const Type*) const = 0;
 
 			bool operator==(const Type& type) const {
@@ -34,13 +51,23 @@ namespace JDecompiler {
 	struct AmbigousType: Type {
 		private:
 			const vector<const Type*> types;
-			const bool fieldIsPrimitive;
+			const bool isPrimitiveTypes;
+			const TypeSize size;
 
 		public:
 			AmbigousType(const vector<const Type*>& types): Type(EMPTY_STRING, EMPTY_STRING), types(types),
-					fieldIsPrimitive(all_of(types.begin(), types.end(), [] (const Type* type) { return type->isPrimitive(); })) {
+					isPrimitiveTypes(
+						all_of(types.begin(), types.end(), [](auto type) { return  type->isPrimitive(); }) ? true :
+						all_of(types.begin(), types.end(), [](auto type) { return !type->isPrimitive(); }) ? false :
+						throw IllegalArgumentException("All types in type list must be only primitive or only non-primitive")
+					),
+					size(
+						all_of(types.begin(), types.end(), [](auto type) { return type->getSize() == TypeSize::FOUR_BYTES; }) ? TypeSize::FOUR_BYTES :
+						all_of(types.begin(), types.end(), [](auto type) { return type->getSize() == TypeSize::EIGHT_BYTES; }) ? TypeSize::EIGHT_BYTES :
+						throw IllegalArgumentException("All types in type list must have same size")
+					) {
 				if(types.empty())
-					throw IllegalArgumentException("type list cannot be empty");
+					throw IllegalArgumentException("Type list cannot be empty");
 			}
 
 			AmbigousType(initializer_list<const Type*> typeList): AmbigousType(vector<const Type*>(typeList)) {}
@@ -53,8 +80,12 @@ namespace JDecompiler {
 				return types.back()->toString();
 			}
 
-			virtual bool isPrimitive() const override {
-				return fieldIsPrimitive;
+			virtual bool isPrimitive() const override final {
+				return isPrimitiveTypes;
+			}
+
+			virtual TypeSize getSize() const override final {
+				return size;
 			}
 
 			virtual const Type* getGeneralTypeFor(const Type* other) const override {
@@ -79,7 +110,8 @@ namespace JDecompiler {
 	};
 
 
-	struct PrimitiveType: Type {
+	template<TypeSize size>
+	struct PrimitiveType final: Type {
 		public:
 			PrimitiveType(const string& encodedName, const string& name): Type(encodedName, name) {}
 
@@ -91,6 +123,10 @@ namespace JDecompiler {
 				return true;
 			}
 
+			virtual TypeSize getSize() const override final {
+				return size;
+			}
+
 			virtual const Type* getGeneralTypeFor(const Type* other) const override {
 				if(*this == *other)
 					return this;
@@ -99,16 +135,19 @@ namespace JDecompiler {
 			}
 	};
 
-	static const PrimitiveType
-			* const BYTE = new PrimitiveType("B", "byte"),
-			* const CHAR = new PrimitiveType("C", "char"),
-			* const SHORT = new PrimitiveType("S", "short"),
-			* const INT = new PrimitiveType("I", "int"),
-			* const LONG = new PrimitiveType("J", "long"),
-			* const DOUBLE = new PrimitiveType("D", "double"),
-			* const FLOAT = new PrimitiveType("F", "float"),
-			* const BOOLEAN = new PrimitiveType("Z", "boolean"),
-			* const VOID = new PrimitiveType("V", "void");
+	static const PrimitiveType<TypeSize::FOUR_BYTES>
+			*const BYTE = new PrimitiveType<TypeSize::FOUR_BYTES>("B", "byte"),
+			*const CHAR = new PrimitiveType<TypeSize::FOUR_BYTES>("C", "char"),
+			*const SHORT = new PrimitiveType<TypeSize::FOUR_BYTES>("S", "short"),
+			*const INT = new PrimitiveType<TypeSize::FOUR_BYTES>("I", "int"),
+			*const FLOAT = new PrimitiveType<TypeSize::FOUR_BYTES>("F", "float"),
+			*const BOOLEAN = new PrimitiveType<TypeSize::FOUR_BYTES>("Z", "boolean");
+	static const PrimitiveType<TypeSize::ZERO_BYTES>
+			*const VOID = new PrimitiveType<TypeSize::ZERO_BYTES>("V", "void");
+
+	static const PrimitiveType<TypeSize::EIGHT_BYTES>
+			*const LONG = new PrimitiveType<TypeSize::EIGHT_BYTES>("J", "long"),
+			*const DOUBLE = new PrimitiveType<TypeSize::EIGHT_BYTES>("D", "double");
 
 
 	struct ReferenceType: Type {
@@ -116,11 +155,15 @@ namespace JDecompiler {
 
 		ReferenceType(): Type(EMPTY_STRING, EMPTY_STRING) {}
 
-		virtual bool isPrimitive() const override {
+		virtual bool isPrimitive() const override final {
 			return false;
 		}
 
-		virtual const Type* getGeneralTypeFor(const Type* other) const override {
+		virtual TypeSize getSize() const override final {
+			return TypeSize::FOUR_BYTES;
+		}
+
+		virtual const Type* getGeneralTypeFor(const Type* other) const override final {
 			if(*this == *other)
 				return this;
 
@@ -132,7 +175,7 @@ namespace JDecompiler {
 	static vector<const ReferenceType*> parseParameters(const char* str);
 
 
-	struct ClassType: ReferenceType {
+	struct ClassType final: ReferenceType {
 		public:
 			string simpleName, packageName;
 			vector<const ReferenceType*> parameters;
@@ -193,7 +236,7 @@ namespace JDecompiler {
 			*const EXCEPTION = new ClassType("java/lang/Exception");
 
 
-	struct ArrayType: ReferenceType {
+	struct ArrayType final: ReferenceType {
 		public:
 			const Type *memberType, *elementType;
 			uint16_t nestingLevel = 0;
@@ -235,7 +278,7 @@ namespace JDecompiler {
 	};
 
 
-	struct ParameterType: ReferenceType {
+	struct ParameterType final: ReferenceType {
 		ParameterType(const char* encodedName) {
 			string name;
 			uint32_t i = 0;

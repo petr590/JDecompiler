@@ -304,9 +304,9 @@ namespace JDecompiler {
 				length++;
 			}
 
-			void push(initializer_list<const Operation*> operations) {
-				for(const Operation* operation : operations)
-					push(operation);
+			inline void push(const Operation* operation, const Operation* operations...) {
+				push(operation);
+				push(operations);
 			}
 
 			const Operation* pop() {
@@ -975,7 +975,8 @@ namespace JDecompiler {
 					try {
 						methods.push_back(methodData.createMethod(classinfo));
 					} catch(DecompilationException& ex) {
-						cerr << typeid(ex).name() << ": " << ex.what() << endl;
+						cerr << "Exception while decompiling method " + thisType->name + "." + methodData.descriptor.name << ": "
+								<< typeid(ex).name() << ": " << ex.what() << endl;
 					}
 				}
 			}

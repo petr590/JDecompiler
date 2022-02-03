@@ -90,6 +90,7 @@ namespace JDecompiler {
 		};
 
 
+		template<TypeSize size>
 		struct LdcOperation: ReturnableOperation<> {
 			protected:
 				const uint16_t index;
@@ -110,7 +111,10 @@ namespace JDecompiler {
 				}
 
 			public:
-				LdcOperation(uint16_t index, const ConstValueConstant* value): ReturnableOperation(getReturnType(index, value)), index(index), value(value) {}
+				LdcOperation(uint16_t index, const ConstValueConstant* value): ReturnableOperation(getReturnType(index, value)), index(index), value(value) {
+					if(returnType->getSize() != size)
+						throw TypeSizeMismatchException(TypeSize_nameOf(size), TypeSize_nameOf(returnType->getSize()), returnType->toString());
+				}
 				LdcOperation(const CodeEnvironment& environment, uint16_t index): LdcOperation(index, environment.constPool.get<ConstValueConstant>(index)) {}
 
 				LdcOperation(const StringConstant* value): ReturnableOperation(STRING), index(0), value(value) {}
@@ -236,33 +240,127 @@ namespace JDecompiler {
 		};
 
 
-		struct PopOperation: VoidOperation {
-			protected: const Operation* const operation;
+		template<TypeSize size>
+		struct TypeSizeTemplatedOperation {
+			protected:
+				template<TypeSize S>
+				void checkTypeSize(const Type* type) const {
+					if(type->getSize() != S)
+						throw TypeSizeMismatchException(TypeSize_nameOf(S), TypeSize_nameOf(type->getSize()), type->toString());
+				}
 
-			public:
-				PopOperation(const CodeEnvironment& environment): operation(environment.stack.pop()) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return operation->toString(environment);
+				inline void checkTypeSize(const Type* type) const {
+					return checkTypeSize<size>(type);
 				}
 		};
 
 
-		struct DupOperation: Operation {
-			public:
-				const Operation* const operation;
+		template<TypeSize size>
+		struct PopOperation: VoidOperation, TypeSizeTemplatedOperation<size> {
+			const Operation* const operation;
 
-				DupOperation(const CodeEnvironment& environment): operation(environment.stack.top()) {}
+			PopOperation(const CodeEnvironment& environment): operation(environment.stack.pop()) {
+				checkTypeSize(operation->getReturnType());
+			}
 
-				virtual string toString(const CodeEnvironment& environment) const override { return operation->toString(environment); }
-
-				virtual const Type* getReturnType() const override { return operation->getReturnType(); }
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return operation->toString(environment);
+			}
 		};
+
+
+		template<TypeSize size>
+		struct AbstractDupOperation: Operation, TypeSizeTemplatedOperation<size> {
+			const Operation* const operation;
+
+			AbstractDupOperation(const CodeEnvironment& environment): operation(environment.stack.top()) {
+				checkTypeSize(operation->getReturnType());
+			}
+
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return operation->toString(environment);
+			}
+
+			virtual const Type* getReturnType() const override {
+				return operation->getReturnType();
+			}
+		};
+
+
+		template<TypeSize size>
+		struct DupOperation: AbstractDupOperation<size> {
+			DupOperation(const CodeEnvironment& environment): AbstractDupOperation<size>(environment) {}
+		};
+
+
+		struct DupX1Operation: AbstractDupOperation<TypeSize::FOUR_BYTES> {
+			DupX1Operation(const CodeEnvironment& environment): AbstractDupOperation<TypeSize::FOUR_BYTES>(environment) {
+				if(environment.stack.size() < 2)
+					throw IllegalStackStateException("Too less operations on stack for dup_x1: required 2, got " + environment.stack.size());
+
+				const Operation
+					*operation1 = environment.stack.pop(),
+					*operation2 = environment.stack.pop();
+				checkTypeSize(operation2->getReturnType());
+				environment.stack.push(operation1, operation2);
+			}
+		};
+
+
+		struct DupX2Operation: AbstractDupOperation<TypeSize::FOUR_BYTES> {
+			DupX2Operation(const CodeEnvironment& environment): AbstractDupOperation<TypeSize::FOUR_BYTES>(environment) {
+				if(environment.stack.size() < 3)
+					throw IllegalStackStateException("Too less operations on stack for dup_x2: required 3, got " + environment.stack.size());
+
+				const Operation
+					*operation1 = environment.stack.pop(),
+					*operation2 = environment.stack.pop(),
+					*operation3 = environment.stack.pop();
+
+				checkTypeSize(operation2->getReturnType());
+				checkTypeSize(operation3->getReturnType());
+
+				environment.stack.push(operation1, operation3, operation2);
+			}
+		};
+
+
+		struct Dup2X1Operation: AbstractDupOperation<TypeSize::EIGHT_BYTES> {
+			Dup2X1Operation(const CodeEnvironment& environment): AbstractDupOperation<TypeSize::EIGHT_BYTES>(environment) {
+				if(environment.stack.size() < 2)
+					throw IllegalStackStateException("Too less operations on stack for dup2_x1: required 2, got " + environment.stack.size());
+
+				const Operation
+					*operation1 = environment.stack.pop(),
+					*operation2 = environment.stack.pop();
+
+				checkTypeSize<TypeSize::FOUR_BYTES>(operation2->getReturnType());
+
+				environment.stack.push(operation1, operation2);
+			}
+		};
+
+
+		struct Dup2X2Operation: AbstractDupOperation<TypeSize::EIGHT_BYTES> {
+			Dup2X2Operation(const CodeEnvironment& environment): AbstractDupOperation<TypeSize::EIGHT_BYTES>(environment) {
+				if(environment.stack.size() < 2)
+					throw IllegalStackStateException("Too less operations on stack for dup2_x2: required 2, got " + environment.stack.size());
+
+				const Operation
+					*operation1 = environment.stack.pop(),
+					*operation2 = environment.stack.pop();
+
+				checkTypeSize(operation2->getReturnType());
+
+				environment.stack.push(operation1, operation2);
+			}
+		};
+
 
 
 		struct SwapOperation: VoidOperation {
 			SwapOperation(const CodeEnvironment& environment) {
-				environment.stack.push({environment.stack.pop(), environment.stack.pop()});
+				environment.stack.push(environment.stack.pop(), environment.stack.pop());
 			}
 
 			virtual string toString(const CodeEnvironment& environment) const override { return EMPTY_STRING; }
@@ -844,7 +942,7 @@ namespace JDecompiler {
 			public:
 				InvokespecialOperation(const CodeEnvironment& environment, uint16_t index):
 						InvokeNonStaticOperation(environment, index), isConstructor(descriptor.name == "<init>") {
-					if(isConstructor && dynamic_cast<const DupOperation*>(objectOperation))
+					if(isConstructor && dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(objectOperation))
 						environment.stack.pop();
 				}
 
@@ -986,7 +1084,7 @@ namespace JDecompiler {
 
 		ArrayStoreOperation::ArrayStoreOperation(const Type* returnType, const CodeEnvironment& environment):
 				value(environment.stack.pop()), index(environment.stack.pop()), array(environment.stack.pop()) {
-			if(const DupOperation* dupArray = dynamic_cast<const DupOperation*>(array)) {
+			if(const DupOperation<TypeSize::FOUR_BYTES>* dupArray = dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(array)) {
 				if(const NewArrayOperation* newArray = dynamic_cast<const NewArrayOperation*>(dupArray->operation)) {
 					newArray->initializer.push_back(value);
 					isInitializer = true;

@@ -25,12 +25,18 @@ namespace JDecompiler { namespace Instructions {
 	};
 
 
-	struct AConstNull: VoidInstructionAndOperation {
+	struct AConstNull final: InstructionAndOperation {
 		private:
 			AConstNull() {}
 
 		public:
-			virtual string toString(const CodeEnvironment& environment) const override { return "null"; }
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return "null";
+			}
+
+			virtual const Type* getReturnType() const override {
+				return ANY_OBJECT;
+			}
 
 			static inline AConstNull& getInstance() {
 				static AConstNull instance;
@@ -88,10 +94,12 @@ namespace JDecompiler { namespace Instructions {
 	using SIPushInstruction = IPushInstruction<int16_t>;
 
 
+
+	template<TypeSize size>
 	struct LdcInstruction: InstructionWithIndex {
 		LdcInstruction(uint16_t index): InstructionWithIndex(index) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new LdcOperation(environment, index); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new LdcOperation<size>(environment, index); }
 	};
 
 
@@ -246,13 +254,33 @@ namespace JDecompiler { namespace Instructions {
 	};
 
 
+	template<TypeSize size>
 	struct PopInstruction: Instruction {
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new PopOperation(environment); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new PopOperation<size>(environment); }
 	};
 
+
+	template<TypeSize size>
 	struct DupInstruction: Instruction {
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new DupOperation(environment); }
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new DupOperation<size>(environment); }
 	};
+
+	struct DupX1Instruction: Instruction {
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new DupX1Operation(environment); }
+	};
+
+	struct DupX2Instruction: Instruction {
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new DupX2Operation(environment); }
+	};
+
+	struct Dup2X1Instruction: Instruction {
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new Dup2X1Operation(environment); }
+	};
+
+	struct Dup2X2Instruction: Instruction {
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new Dup2X2Operation(environment); }
+	};
+
 
 	struct SwapInstruction: Instruction {
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new SwapOperation(environment); }
@@ -692,15 +720,15 @@ namespace Instructions {
 
 					StringConstant* nameArgument = new StringConstant(invokeDynamicConstant->nameAndType->nameRef);
 					nameArgument->init(environment.constPool);
-					environment.stack.push(new LdcOperation(nameArgument));
+					environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(nameArgument));
 
 					MethodTypeConstant* typeArgument = new MethodTypeConstant(invokeDynamicConstant->nameAndType->descriptorRef);
 					typeArgument->init(environment.constPool);
-					environment.stack.push(new LdcOperation(typeArgument));
+					environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(typeArgument));
 
 					// push static arguments on stack
 					for(uint16_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
-						environment.stack.push(new LdcOperation(bootstrapMethod->argumentIndexes[i], bootstrapMethod->arguments[i]));
+						environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(bootstrapMethod->argumentIndexes[i], bootstrapMethod->arguments[i]));
 
 					// push non-static arguments on stack
 					for(const Operation* operation : arguments)
@@ -730,7 +758,7 @@ namespace Instructions {
 	};
 
 
-	static const PrimitiveType* getArrayTypeByCode(uint8_t code) {
+	static const Type* getArrayTypeByCode(uint8_t code) {
 		switch(code) {
 			case 0x4: return BOOLEAN;
 			case 0x5: return CHAR;
@@ -746,7 +774,7 @@ namespace Instructions {
 
 
 	struct NewArrayInstruction: Instruction {
-		protected: const PrimitiveType *const memberType;
+		protected: const Type *const memberType;
 		public: NewArrayInstruction(uint8_t code): memberType(getArrayTypeByCode(code)) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new NewArrayOperation(environment, memberType); }

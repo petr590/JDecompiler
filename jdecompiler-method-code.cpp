@@ -38,9 +38,9 @@ namespace JDecompiler {
 			case 0x0F: return DCONST_1;
 			case 0x10: return new BIPushInstruction(nextUByte());
 			case 0x11: return new SIPushInstruction(nextUShort());
-			case 0x12: return new LdcInstruction(nextUByte());
-			case 0x13: return new LdcInstruction(nextUShort());
-			case 0x14: return new LdcInstruction(nextUShort());
+			case 0x12: return new LdcInstruction<TypeSize::FOUR_BYTES>(nextUByte());
+			case 0x13: return new LdcInstruction<TypeSize::FOUR_BYTES>(nextUShort());
+			case 0x14: return new LdcInstruction<TypeSize::EIGHT_BYTES>(nextUShort());
 			case 0x15: return new ILoadInstruction(nextUByte());
 			case 0x16: return new LLoadInstruction(nextUByte());
 			case 0x17: return new FLoadInstruction(nextUByte());
@@ -107,14 +107,14 @@ namespace JDecompiler {
 			case 0x54: return new BAStoreInstruction();
 			case 0x55: return new CAStoreInstruction();
 			case 0x56: return new SAStoreInstruction();
-			case 0x57: return new PopInstruction();
-			case 0x58: return new PopInstruction(); // pop2
-			case 0x59: return new DupInstruction();
-			case 0x5A: return nullptr; // DUP_X1
-			case 0x5B: return nullptr; // DUP_X2
-			case 0x5C: return nullptr; // DUP2
-			case 0x5D: return nullptr; // DUP2_X1
-			case 0x5E: return nullptr; // DUP2_X2
+			case 0x57: return new PopInstruction<TypeSize::FOUR_BYTES>();
+			case 0x58: return new PopInstruction<TypeSize::EIGHT_BYTES>();
+			case 0x59: return new DupInstruction<TypeSize::FOUR_BYTES>();
+			case 0x5A: return new DupX1Instruction();
+			case 0x5B: return new DupX2Instruction();
+			case 0x5C: return new DupInstruction<TypeSize::EIGHT_BYTES>();
+			case 0x5D: return new Dup2X1Instruction();
+			case 0x5E: return new Dup2X2Instruction();
 			case 0x5F: return new SwapInstruction();
 			case 0x60: case 0x61: case 0x62: case 0x63: return new AddOperatorInstruction(current() & 3);
 			case 0x64: case 0x65: case 0x66: case 0x67: return new SubOperatorInstruction(current() & 3);
@@ -210,8 +210,8 @@ namespace JDecompiler {
 			case 0xBF: return new AThrowInstruction();
 			case 0xC0: return new CheckCastInstruction(nextUShort());
 			case 0xC1: return new InstanceofInstruction(nextUShort());
-			case 0xC2: return nullptr; // MonitorEnter
-			case 0xC3: return nullptr; // MonitorExit
+			case 0xC2: return nullptr; // TODO: MonitorEnter
+			case 0xC3: return nullptr; // TODO: MonitorExit
 			case 0xC4: switch(nextUByte()) {
 				case 0x15: return new ILoadInstruction(nextUShort());
 				case 0x16: return new LLoadInstruction(nextUShort());
@@ -300,8 +300,6 @@ namespace JDecompiler {
 
 			environment.checkCurrentScope();
 		}
-
-		//LOG("decompileCode end");
 
 		return environment;
 	}

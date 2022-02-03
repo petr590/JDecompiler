@@ -81,8 +81,12 @@ namespace JDecompiler {
 
 	struct ClassInfo;
 
+
+	enum class TypeSize;
+
 	struct Type;
 
+	template<TypeSize>
 	struct PrimitiveType;
 
 	struct ReferenceType;

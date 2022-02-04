@@ -334,7 +334,7 @@ class BinaryInputStream {
 		unsigned short next() { // reads only one byte; returns not char because type expansion for unsigned is same as for signed types
 			check();
 			pos += 1;
-			return buffer[pos - (streampos)1 & 0xFFF] & 0xFF;
+			return buffer[(pos - (streampos)1) & 0xFFF] & 0xFF;
 		}
 
 	public:

@@ -167,7 +167,7 @@ namespace JDecompiler {
 			if(*this == *other)
 				return this;
 
-			throw DecompilationException("incopatible types " + toString() + " and " + other->toString());
+			throw DecompilationException("incopatible types " + this->toString() + " and " + other->toString());
 		}
 	};
 
@@ -177,24 +177,33 @@ namespace JDecompiler {
 
 	struct ClassType final: ReferenceType {
 		public:
-			string simpleName, packageName;
+			string simpleName, fullSimpleName /* fullSimpleName is a class name including enclosing class name */, packageName;
+			const ClassType* enclosingClass;
 			vector<const ReferenceType*> parameters;
 
 			ClassType(const ClassConstant* clazz): ClassType(*clazz->name) {}
 
 			ClassType(string encodedName) {
-				const int length = encodedName.size();
+				const uint32_t length = encodedName.size();
 
 				string name = encodedName;
 
-				int pointPos = 0;
+				uint32_t nameStartPos = 0,
+				         packageEndPos = 0,
+				         enclosingClassNameEndPos = 0;
 
-				for(int i = 0; i < length; i++) {
+				for(uint32_t i = 0; i < length; i++) {
 					char c = name[i];
-					if(isLetterOrDigit(c)) continue;
+					if(isLetterOrDigit(c))
+						continue;
+
 					switch(c) {
-						case '/': case '$':
-							pointPos = i;
+						case '/':
+							nameStartPos = packageEndPos = i;
+							name[i] = '.';
+							break;
+						case '$':
+							nameStartPos = enclosingClassNameEndPos = i;
 							name[i] = '.';
 							break;
 						case '<':
@@ -209,11 +218,19 @@ namespace JDecompiler {
 				ForEnd:
 
 				this->name = name;
-				this->encodedName = "L" + encodedName;
+				this->encodedName = 'L' + encodedName;
 
-				simpleName = pointPos == 0 ? name : string(name, pointPos + 1);
+				simpleName = nameStartPos == 0 ? name : string(name, nameStartPos + 1);
 
-				packageName = string(name, 0, pointPos);
+				packageName = string(name, 0, packageEndPos);
+
+				if(enclosingClassNameEndPos == 0) {
+					enclosingClass = nullptr;
+					fullSimpleName = simpleName;
+				} else {
+					enclosingClass = new ClassType(string(name, 0, enclosingClassNameEndPos));
+					fullSimpleName = simpleName + '.' + enclosingClass->fullSimpleName;
+				}
 			}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
@@ -301,8 +318,8 @@ namespace JDecompiler {
 			case 'S': return SHORT;
 			case 'I': return INT;
 			case 'J': return LONG;
-			case 'D': return DOUBLE;
 			case 'F': return FLOAT;
+			case 'D': return DOUBLE;
 			case 'Z': return BOOLEAN;
 			case 'L': return new ClassType(&encodedName[1]);
 			case '[': return new ArrayType(encodedName);

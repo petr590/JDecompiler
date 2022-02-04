@@ -128,12 +128,11 @@ namespace JDecompiler {
 		}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
-			#define checkLength(n) if(i + n >= length) throw Exception("Unexpected end of the string")
-			const char* bytes = value->c_str();
-			const uint32_t length = strlen(bytes);
+			#define checkLength(n) if(bytes + n >= end) throw DecompilationException("Unexpected end of the string")
 			string str = "\"";
-			for(uint32_t i = 0; i < length; i++) {
-				char32_t ch = bytes[i] & 0xFF;
+			const char* bytes = value->c_str();
+			for(const char* end = bytes + strlen(bytes); bytes < end; bytes++) {
+				char32_t ch = *bytes & 0xFF;
 				char32_t code = ch;
 				switch(ch) {
 					case '"': str += "\\\""; break;
@@ -146,16 +145,16 @@ namespace JDecompiler {
 					default:
 						if((ch & 0xE0) == 0xC0) {
 							checkLength(1);
-							ch = (ch << 8) | (bytes[++i] & 0xFF);
+							ch = (ch << 8) | (*++bytes & 0xFF);
 							code = (ch & 0x1F00) >> 2 | (ch & 0x3F);
 						} else if((ch & 0xF0) == 0xE0) {
 							if(ch == 0xED) {
 								checkLength(5);
-								str += encodeUtf8(0x10000 | (bytes[++i] & 0xF) << 16 | (bytes[++i] & 0x3F) << 10 | (bytes[i+=2] & 0xF) << 6 | (bytes[++i] & 0x3F));
+								str += encodeUtf8(0x10000 | (*++bytes & 0xF) << 16 | (*++bytes & 0x3F) << 10 | (*(bytes += 2) & 0xF) << 6 | (*++bytes & 0x3F));
 								continue;
 							}
 							checkLength(2);
-							ch = (ch << 16) | (bytes[++i] & 0xFF) << 8 | (bytes[++i] & 0xFF);
+							ch = (ch << 16) | (*++bytes & 0xFF) << 8 | (*++bytes & 0xFF);
 							code = (ch & 0xF0000) >> 4 | (ch & 0x3F00) >> 2 | (ch & 0x3F);
 						}
 						str += code < 0x20 ? "\\u" + hex<4>(code) : char32ToString(ch);

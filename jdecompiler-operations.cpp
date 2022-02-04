@@ -260,7 +260,7 @@ namespace JDecompiler {
 			const Operation* const operation;
 
 			PopOperation(const CodeEnvironment& environment): operation(environment.stack.pop()) {
-				checkTypeSize(operation->getReturnType());
+				TypeSizeTemplatedOperation<size>::checkTypeSize(operation->getReturnType());
 			}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
@@ -274,7 +274,7 @@ namespace JDecompiler {
 			const Operation* const operation;
 
 			AbstractDupOperation(const CodeEnvironment& environment): operation(environment.stack.top()) {
-				checkTypeSize(operation->getReturnType());
+				TypeSizeTemplatedOperation<size>::checkTypeSize(operation->getReturnType());
 			}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
@@ -301,7 +301,7 @@ namespace JDecompiler {
 				const Operation
 					*operation1 = environment.stack.pop(),
 					*operation2 = environment.stack.pop();
-				checkTypeSize(operation2->getReturnType());
+				TypeSizeTemplatedOperation<TypeSize::FOUR_BYTES>::checkTypeSize(operation2->getReturnType());
 				environment.stack.push(operation1, operation2);
 			}
 		};

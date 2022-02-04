@@ -847,140 +847,52 @@ namespace JDecompiler {
 
 	struct Class: Stringified {
 		public:
-			const ClassType *thisType, *superType;
-			uint16_t modifiers;
-			uint16_t interfacesCount;
-			vector<const ClassType*> interfaces;
-			vector<const Field*> fields;
-			vector<const Method*> methods;
-			const Attributes* const attributes = 0;
-			const ClassInfo* classinfo;
+			const ClassType *const thisType, *const superType;
+			const ConstantPool& constPool;
+			const uint16_t modifiers;
+			const vector<const ClassType*> interfaces;
+			const Attributes& attributes;
+			const ClassInfo& classinfo;
+			const vector<const Field*> fields;
+			const vector<const Method*> methods;
 
-		private: const ConstantPool* constPool;
+		protected:
+			Class(const ClassType* thisType, const ClassType* superType, const ConstantPool& constPool, uint16_t modifiers,
+					const vector<const ClassType*>& interfaces, const Attributes& attributes, const ClassInfo& classinfo,
+					const vector<const Field*>& fields, const vector<const Method*>& methods):
+					thisType(thisType), superType(superType), constPool(constPool), modifiers(modifiers),
+					interfaces(interfaces), attributes(attributes), classinfo(classinfo),
+					fields(fields), methods(methods) {}
 
-		public:
-			Class(BinaryInputStream& instream) {
-				if(instream.readInt() != CLASS_SIGNATURE)
-					throw ClassFormatError("Wrong class signature");
+			const ClassInfo& createClassInfo() const {
+				return *new ClassInfo(*this, thisType, superType, constPool, attributes, modifiers, "    ");
+			}
 
-				const uint16_t
-						majorVersion = instream.readShort(),
-						minorVersion = instream.readShort();
-
-				cout << "/* Java version: " << majorVersion << "." << minorVersion << " */" << endl;
-
-				const uint16_t constPoolSize = instream.readShort();
-
-				const ConstantPool& constPool = *(this->constPool = new ConstantPool(constPoolSize));
-
-				for(uint16_t i = 1; i < constPoolSize; i++) {
-					uint8_t constType = instream.readByte();
-
-					switch(constType) {
-						case  1: {
-							uint16_t size = instream.readShort();
-							const char* bytes = instream.readBytes(size);
-							constPool[i] = new Utf8Constant(bytes, size);
-							delete[] bytes;
-							break;
-						}
-						case  3:
-							constPool[i] = new IntegerConstant(instream.readInt());
-							break;
-						case  4:
-							constPool[i] = new FloatConstant(instream.readFloat());
-							break;
-						case  5:
-							constPool[i] = new LongConstant(instream.readLong());
-							i++; // Long and Double constants have historically held two positions in the pool
-							break;
-						case  6:
-							constPool[i] = new DoubleConstant(instream.readDouble());
-							i++;
-							break;
-						case  7:
-							constPool[i] = new ClassConstant(instream.readShort());
-							break;
-						case  8:
-							constPool[i] = new StringConstant(instream.readShort());
-							break;
-						case  9:
-							constPool[i] = new FieldrefConstant(instream.readShort(), instream.readShort());
-							break;
-						case 10:
-							constPool[i] = new MethodrefConstant(instream.readShort(), instream.readShort());
-							break;
-						case 11:
-							constPool[i] = new InterfaceMethodrefConstant(instream.readShort(), instream.readShort());
-							break;
-						case 12:
-							constPool[i] = new NameAndTypeConstant(instream.readShort(), instream.readShort());
-							break;
-						case 15:
-							constPool[i] = new MethodHandleConstant(instream.readByte(), instream.readShort());
-							break;
-						case 16:
-							constPool[i] = new MethodTypeConstant(instream.readShort());
-							break;
-						case 18:
-							constPool[i] = new InvokeDynamicConstant(instream.readShort(), instream.readShort());
-							break;
-						default:
-							throw ClassFormatError("Illegal constant type 0x" + hex<2>(constType) + " at index #" + to_string(i) +
-									" at pos 0x" + hex((int32_t)instream.getPos()));
-					};
-				}
-
-				for(uint16_t i = 1; i < constPoolSize; i++) {
-					Constant* constant = constPool[i];
-					if(constant != nullptr)
-						constant->init(constPool);
-				}
-
-				modifiers = instream.readShort();
-
-				thisType = new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name);
-				superType = new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name);
-
-				interfacesCount = instream.readShort();
-				interfaces.reserve(interfacesCount);
-				for(uint16_t i = 0; i < interfacesCount; i++) {
-					string name = *constPool.get<ClassConstant>(instream.readShort())->name;
-					if(modifiers & ACC_ANNOTATION && name == "java/lang/annotation/Annotation") continue;
-					interfaces[i] = new ClassType(name);
-				}
-				interfacesCount = interfaces.size();
-
-
-				const uint16_t fieldsCount = instream.readShort();
-				fields.reserve(fieldsCount);
-
-				for(uint16_t i = 0; i < fieldsCount; i++)
-					fields.push_back(new Field(constPool, instream));
-
-
-				const uint16_t methodsCount = instream.readShort();
-				vector<MethodDataHolder> methodDataHolders;
-				methodDataHolders.reserve(methodsCount);
-
-				for(uint16_t i = 0; i < methodsCount; i++)
-					methodDataHolders.push_back(MethodDataHolder(constPool, instream));
-
-				*((const Attributes**)&attributes) = new Attributes(instream, constPool, instream.readShort());
-
-				const ClassInfo& classinfo = *(this->classinfo = new ClassInfo(*this, thisType, superType, constPool, *attributes, modifiers, "    "));
-
-				methods.reserve(methodsCount);
+			const vector<const Method*> createMethodsFromMethodData(const vector<MethodDataHolder> methodDataHolders) const {
+				vector<const Method*> methods;
+				methods.reserve(methodDataHolders.size());
 				for(const MethodDataHolder methodData : methodDataHolders) {
 					try {
 						methods.push_back(methodData.createMethod(classinfo));
 					} catch(DecompilationException& ex) {
+						const char* message = ex.what();
 						cerr << "Exception while decompiling method " + thisType->name + "." + methodData.descriptor.name << ": "
-								<< typeid(ex).name() << ": " << ex.what() << endl;
+								<< typeid(ex).name() << (*message == '\0' ? "" : (string)": " + message) << endl;
 					}
 				}
+				return methods;
 			}
 
+			Class(const ClassType* thisType, const ClassType* superType, const ConstantPool& constPool, uint16_t modifiers,
+					const vector<const ClassType*>& interfaces, const Attributes& attributes,
+					const vector<const Field*>& fields, const vector<MethodDataHolder>& methodDataHolders):
+					thisType(thisType), superType(superType), constPool(constPool), modifiers(modifiers),
+					interfaces(interfaces), attributes(attributes), classinfo(createClassInfo()),
+					fields(fields), methods(createMethodsFromMethodData(methodDataHolders)) {}
+
+
+		public:
+			static const Class& readClass(BinaryInputStream& instream);
 
 			const Field* getField(const string& name) const {
 				for(const Field* field : fields)
@@ -1001,7 +913,7 @@ namespace JDecompiler {
 			virtual string toString(const ClassInfo& classinfo) const override {
 				string str;
 
-				if(const AnnotationsAttribute* annotationsAttribute = attributes->get<AnnotationsAttribute>())
+				if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
 					str += annotationsAttribute->toString(classinfo) + '\n';
 
 				classinfo.increaseIndent();
@@ -1010,14 +922,8 @@ namespace JDecompiler {
 						(superType->name == "java.lang.Object" || (modifiers & ACC_ENUM && superType->name == "java.lang.Enum") ?
 								EMPTY_STRING : " extends " + superType->toString(classinfo));
 
-				if(interfacesCount > 0) {
-					str += " implements ";
-					for(int i = 0; true; ) {
-						str += interfaces[i]->toString(classinfo);
-						if(++i == interfacesCount) break;
-						str += ", ";
-					}
-				}
+				if(interfaces.size() > 0)
+					str += " implements " + join<const ClassType*>(interfaces, [&classinfo] (auto interface) { return interface->toString(classinfo); });
 
 				str += " {";
 
@@ -1049,8 +955,8 @@ namespace JDecompiler {
 				return headers + classinfo.getIndent() + str;
 			}
 
-			string toString() {
-				return toString(*classinfo);
+			string toString() const {
+				return toString(classinfo);
 			}
 
 
@@ -1088,6 +994,127 @@ namespace JDecompiler {
 				return str;
 			}
 	};
+
+
+
+
+	const Class& Class::readClass(BinaryInputStream& instream) {
+		if(instream.readInt() != CLASS_SIGNATURE)
+			throw ClassFormatError("Wrong class signature");
+
+		const uint16_t
+				majorVersion = instream.readShort(),
+				minorVersion = instream.readShort();
+
+		cout << "/* Java version: " << majorVersion << "." << minorVersion << " */" << endl;
+
+		const uint16_t constPoolSize = instream.readShort();
+
+		const ConstantPool& constPool = *new ConstantPool(constPoolSize);
+
+		for(uint16_t i = 1; i < constPoolSize; i++) {
+			uint8_t constType = instream.readByte();
+
+			switch(constType) {
+				case  1: {
+					uint16_t size = instream.readShort();
+					const char* bytes = instream.readBytes(size);
+					constPool[i] = new Utf8Constant(bytes, size);
+					delete[] bytes;
+					break;
+				}
+				case  3:
+					constPool[i] = new IntegerConstant(instream.readInt());
+					break;
+				case  4:
+					constPool[i] = new FloatConstant(instream.readFloat());
+					break;
+				case  5:
+					constPool[i] = new LongConstant(instream.readLong());
+					i++; // Long and Double constants have historically held two positions in the pool
+					break;
+				case  6:
+					constPool[i] = new DoubleConstant(instream.readDouble());
+					i++;
+					break;
+				case  7:
+					constPool[i] = new ClassConstant(instream.readShort());
+					break;
+				case  8:
+					constPool[i] = new StringConstant(instream.readShort());
+					break;
+				case  9:
+					constPool[i] = new FieldrefConstant(instream.readShort(), instream.readShort());
+					break;
+				case 10:
+					constPool[i] = new MethodrefConstant(instream.readShort(), instream.readShort());
+					break;
+				case 11:
+					constPool[i] = new InterfaceMethodrefConstant(instream.readShort(), instream.readShort());
+					break;
+				case 12:
+					constPool[i] = new NameAndTypeConstant(instream.readShort(), instream.readShort());
+					break;
+				case 15:
+					constPool[i] = new MethodHandleConstant(instream.readByte(), instream.readShort());
+					break;
+				case 16:
+					constPool[i] = new MethodTypeConstant(instream.readShort());
+					break;
+				case 18:
+					constPool[i] = new InvokeDynamicConstant(instream.readShort(), instream.readShort());
+					break;
+				default:
+					throw ClassFormatError("Illegal constant type 0x" + hex<2>(constType) + " at index #" + to_string(i) +
+							" at pos 0x" + hex((int32_t)instream.getPos()));
+			};
+		}
+
+		for(uint16_t i = 1; i < constPoolSize; i++) {
+			Constant* constant = constPool[i];
+			if(constant != nullptr)
+				constant->init(constPool);
+		}
+
+		const uint16_t modifiers = instream.readShort();
+
+		const ClassType
+				* thisType = new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name),
+				* superType = new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name);
+
+		const uint16_t interfacesCount = instream.readShort();
+		vector<const ClassType*> interfaces;
+		interfaces.reserve(interfacesCount);
+		for(uint16_t i = 0; i < interfacesCount; i++) {
+			string name = *constPool.get<ClassConstant>(instream.readShort())->name;
+			if(modifiers & ACC_ANNOTATION && name == "java/lang/annotation/Annotation")
+				continue;
+			interfaces[i] = new ClassType(name);
+		}
+
+
+		const uint16_t fieldsCount = instream.readShort();
+		vector<const Field*> fields;
+		fields.reserve(fieldsCount);
+
+		for(uint16_t i = 0; i < fieldsCount; i++)
+			fields.push_back(new Field(constPool, instream));
+
+
+		const uint16_t methodsCount = instream.readShort();
+		vector<MethodDataHolder> methodDataHolders;
+		methodDataHolders.reserve(methodsCount);
+
+		for(uint16_t i = 0; i < methodsCount; i++)
+			methodDataHolders.push_back(MethodDataHolder(constPool, instream));
+
+		return *new Class(thisType, superType, constPool, modifiers, interfaces, *new Attributes(instream, constPool, instream.readShort()),
+				fields, methodDataHolders);
+	}
+
+
+
+
 
 	// --------------------------------------------------
 

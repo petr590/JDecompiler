@@ -8,7 +8,7 @@ using namespace std;
 using namespace JDecompiler;
 
 int main(int argc, char* args[]) {
-	if(argc == 1) {
+	if(argc <= 1) {
 		cout << "Usage: " << args[0] << " [options] <class-files>" << endl;
 		return 0;
 	}
@@ -17,12 +17,25 @@ int main(int argc, char* args[]) {
 
 	for(int i = 1; i < argc; i++) {
 		const char* arg = args[i];
-		files.push_back(new BinaryInputStream(arg));
+		const size_t length = strlen(arg);
+		if(length > 1 && arg[0] == '-') {
+			const string option(arg);
+			if(option == "-h" || option == "--help" || option == "-?") {
+				cout << "Usage: " << args[0] << " [options] <class-files>" << endl
+					<< "  -h, --help, -?    show this message and exit" << endl;
+				return 0;
+			} else {
+				cerr << arg[0] << ": Unknown option " << arg << endl;
+				cerr << "Use " << arg[0] << " for more information" << endl;
+				return 1;
+			}
+		} else
+			files.push_back(new BinaryInputStream(arg));
 	}
 
 	for(BinaryInputStream* instream : files) {
-		Class* c = new Class(*instream);
-		cout << c->toString() << endl;
+		const Class& c = Class::readClass(*instream);
+		cout << c.toString() << endl;
 	}
 
 	return 0;

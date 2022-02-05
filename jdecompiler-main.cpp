@@ -1139,8 +1139,8 @@ namespace JDecompiler {
 			throw ClassFormatError("Wrong class signature");
 
 		const uint16_t
-				majorVersion = instream.readShort(),
-				minorVersion = instream.readShort();
+				minorVersion = instream.readShort(),
+				majorVersion = instream.readShort();
 
 		cout << "/* Java version: " << majorVersion << '.' << minorVersion << " */" << endl;
 

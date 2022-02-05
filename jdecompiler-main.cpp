@@ -155,7 +155,7 @@ namespace JDecompiler {
 		}
 
 		virtual bool canAddToCode() const {
-		    return true;
+			return true;
 		}
 
 		private: static Associativity getAssociativityByPriority(uint16_t priority) {
@@ -369,7 +369,8 @@ namespace JDecompiler {
 			const ClassInfo& classinfo;
 			const ConstantPool& constPool;
 			Stack& stack;
-			Scope* const scope, *currentScope;
+			Scope& scope;
+			Scope* currentScope;
 			const uint16_t modifiers;
 			const Attributes& attributes;
 			uint32_t pos, index, exprStartIndex;
@@ -415,13 +416,13 @@ namespace JDecompiler {
 				variables.reserve(localsCount);
 			}
 
-			Variable* getVariable(uint32_t index) {
+			Variable* getVariable(uint32_t index) const {
 				if(index >= variables.size() && parentScope == nullptr)
 					throw IndexOutOfBoundsException(index, variables.size());
 				return index >= variables.size() ? parentScope->getVariable(index) : variables[index];
 			}
 
-			bool hasVariable(const string& name) {
+			bool hasVariable(const string& name) const {
 				for(Variable* var : variables)
 					if(name == var->name)
 						return true;
@@ -464,7 +465,7 @@ namespace JDecompiler {
 					return str;
 				}
 
-				return str + environment.classinfo.getIndent() + "}";
+				return str + environment.classinfo.getIndent() + '}';
 			}
 
 		protected:
@@ -587,7 +588,7 @@ namespace JDecompiler {
 			const Type& type;
 			const Attributes& attributes;
 
-		private:
+		protected:
 			const ConstantValueAttribute* constantValueAttribute;
 			mutable const Operation* initializer;
 			mutable const CodeEnvironment* environment;
@@ -607,6 +608,18 @@ namespace JDecompiler {
 				return str + (string)(modifiersToString(modifiers) + type.toString(classinfo)) + ' ' + name +
 						(constantValueAttribute != nullptr ? " = " + constantValueAttribute->toString(classinfo) :
 						initializer != nullptr ? " = " + initializer->toString(*environment) : EMPTY_STRING);
+			}
+
+			virtual bool canStringify(const ClassInfo& classinfo) const {
+				return !(modifiers & ACC_SYNTHETIC);
+			}
+
+			inline bool hasInitializer() const {
+				return initializer != nullptr;
+			}
+
+			inline const Operation* getInitializer() const {
+				return initializer;
 			}
 
 		private:
@@ -696,6 +709,49 @@ namespace JDecompiler {
 
 				End:;
 			}
+
+			MethodDescriptor(const string& name, const Type* returnType, const initializer_list<const Type*> arguments):
+					MethodDescriptor(name, returnType, vector<const Type*>(arguments)) {}
+
+			MethodDescriptor(const string& name, const Type* returnType, const vector<const Type*> arguments):
+					name(name), returnType(returnType), arguments(arguments), type(typeForName(name)) {}
+
+
+			virtual string toString(const ClassInfo& classinfo, uint16_t modifiers, const Scope& scope) const {
+				const bool isNonStatic = !(modifiers & ACC_STATIC);
+
+				string str = type == MethodType::CONSTRUCTOR ? classinfo.type->simpleName : returnType->toString(classinfo) + ' ' + name;
+
+				function<string(const Type*, uint32_t)> concater = [&scope, &classinfo, isNonStatic] (const Type* type, uint32_t i) {
+					return type->toString(classinfo) + ' ' + scope.getVariable(i + isNonStatic)->name;
+				};
+
+				if(modifiers & ACC_VARARGS) {
+					uint32_t varargsIndex;
+					for(int i = arguments.size(); i > 0; i--)
+						if(dynamic_cast<const ArrayType*>(arguments[i])) {
+							varargsIndex = i;
+							break;
+						}
+
+					concater = [&scope, &classinfo, isNonStatic, varargsIndex] (const Type* type, uint32_t i) {
+						return (i == varargsIndex ?
+								safe_cast<const ArrayType*>(type)->elementType->toString(classinfo) + "..." : type->toString(classinfo)) +
+								' ' + scope.getVariable(i + isNonStatic)->name;
+					};
+				}
+
+				return str + '(' + join<const Type*>(arguments, concater) + ')';
+			}
+
+
+			bool operator==(const MethodDescriptor& other) const {
+				if(this == &other)
+					return true;
+
+				return this->name == other.name && *this->returnType == *other.returnType && this->arguments.size() == other.arguments.size() &&
+						equal(this->arguments.begin(), this->arguments.end(), other.arguments.begin(), [] (auto arg1, auto arg2) { return *arg1 == *arg2; });
+			}
 	};
 
 
@@ -708,7 +764,7 @@ namespace JDecompiler {
 			const CodeEnvironment& environment;
 
 		protected:
-			Scope* const scope;
+			Scope& scope;
 
 		public:
 			typedef MethodDescriptor::MethodType MethodType;
@@ -741,31 +797,7 @@ namespace JDecompiler {
 						throw IllegalAttributeException("static initializer cannot have Exceptions attribute");
 					str += "static";
 				} else {
-					const bool isNonStatic = !(modifiers & ACC_STATIC);
-
-					str += modifiersToString(modifiers, classinfo) + (descriptor.type == MethodType::CONSTRUCTOR ?
-							classinfo.type->simpleName : descriptor.returnType->toString(classinfo) + " " + descriptor.name);
-
-					function<string(const Type*, uint32_t)> concater = [this, &classinfo, isNonStatic] (const Type* type, uint32_t i) {
-						return type->toString(classinfo) + " " + scope->getVariable(i + isNonStatic)->name;
-					};
-
-					if(modifiers & ACC_VARARGS) {
-						uint32_t varargsIndex;
-						for(int i = descriptor.arguments.size(); i > 0; i--)
-							if(dynamic_cast<const ArrayType*>(descriptor.arguments[i])) {
-								varargsIndex = i;
-								break;
-							}
-
-						concater = [this, &classinfo, isNonStatic, varargsIndex] (const Type* type, uint32_t i) {
-							return (i == varargsIndex ?
-									safe_cast<const ArrayType*>(type)->elementType->toString(classinfo) + "..." : type->toString(classinfo)) +
-									" " + scope->getVariable(i + isNonStatic)->name;
-						};
-					}
-
-					str += "(" + join<const Type*>(descriptor.arguments, concater) + ")";
+					str += modifiersToString(modifiers, classinfo) + descriptor.toString(classinfo, modifiers, scope);
 
 					if(const ExceptionsAttribute* exceptionsAttr = attributes.get<ExceptionsAttribute>())
 						str += " throws " + join<const ClassConstant*>(exceptionsAttr->exceptions,
@@ -775,12 +807,18 @@ namespace JDecompiler {
 						str += " default " + annotationDefaultAttr->toString(environment.classinfo);
 				}
 
-				return str + (codeAttribute == nullptr ? ";" : " " + scope->toString(environment));
+				return str + (codeAttribute == nullptr ? ";" : ' ' + scope.toString(environment));
 			}
 
 			virtual bool canStringify(const ClassInfo& classinfo) const override {
-				return !(modifiers & (ACC_SYNTHETIC | ACC_BRIDGE)) &&
-						!(descriptor.type == MethodType::STATIC_INITIALIZER && scope->isEmpty());
+				return !(modifiers & (ACC_SYNTHETIC | ACC_BRIDGE) ||
+						descriptor.type == MethodType::STATIC_INITIALIZER && scope.isEmpty() || // empty static {}
+						descriptor.type == MethodType::CONSTRUCTOR && modifiers & ACC_PUBLIC && scope.isEmpty() || // constructor by default
+						classinfo.modifiers & ACC_ENUM && (
+							descriptor == MethodDescriptor("valueOf", classinfo.type, {STRING}) || // Enum valueOf(String name)
+							descriptor == MethodDescriptor("values", new ArrayType(classinfo.type), {}) || // Enum[] values()
+							modifiers & ACC_PRIVATE && descriptor == MethodDescriptor("<init>", VOID, {}) // enum constructor by default
+						));
 			}
 
 		private:
@@ -822,7 +860,7 @@ namespace JDecompiler {
 		const MethodDescriptor descriptor(EMPTY_STRING, *this->descriptor);
 
 		return METHOD_TYPE->toString(classinfo) + ".methodType(" + descriptor.returnType->toString(classinfo) + ".class" +
-				join<const Type*>(descriptor.arguments, [&classinfo] (auto type) { return ", " + type->toString(classinfo) + ".class"; }, EMPTY_STRING) + ")";
+				join<const Type*>(descriptor.arguments, [&classinfo] (auto type) { return ", " + type->toString(classinfo) + ".class"; }, EMPTY_STRING) + ')';
 	}
 
 
@@ -837,6 +875,9 @@ namespace JDecompiler {
 					modifiers(instream.readShort()),
 					descriptor(*new MethodDescriptor(constPool.getUtf8Constant(instream.readShort()), constPool.getUtf8Constant(instream.readShort()))),
 					attributes(*new Attributes(instream, constPool, instream.readShort())) {}
+
+			MethodDataHolder(uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes):
+					modifiers(modifiers), descriptor(descriptor), attributes(attributes) {}
 
 			const Method* createMethod(const ClassInfo& classinfo) const {
 				return new Method(modifiers, descriptor, attributes, classinfo);
@@ -876,7 +917,7 @@ namespace JDecompiler {
 						methods.push_back(methodData.createMethod(classinfo));
 					} catch(DecompilationException& ex) {
 						const char* message = ex.what();
-						cerr << "Exception while decompiling method " + thisType->name + "." + methodData.descriptor.name << ": "
+						cerr << "Exception while decompiling method " + thisType->name + '.' + methodData.descriptor.name << ": "
 								<< typeid(ex).name() << (*message == '\0' ? "" : (string)": " + message) << endl;
 					}
 				}
@@ -918,29 +959,29 @@ namespace JDecompiler {
 
 				classinfo.increaseIndent();
 
-				str += modifiersToString(modifiers) + " " + thisType->simpleName +
+				str += modifiersToString(modifiers) + ' ' + thisType->simpleName +
 						(superType->name == "java.lang.Object" || (modifiers & ACC_ENUM && superType->name == "java.lang.Enum") ?
 								EMPTY_STRING : " extends " + superType->toString(classinfo));
+				
+				vector<const ClassType*> interfacesToStringify;
+				for(const ClassType* interface : interfaces) {
+					if(modifiers & ACC_ANNOTATION && interface->name == "java.lang.annotation.Annotation")
+						continue;
+					interfacesToStringify.push_back(interface);
+				}
 
-				if(interfaces.size() > 0)
-					str += " implements " + join<const ClassType*>(interfaces, [&classinfo] (auto interface) { return interface->toString(classinfo); });
+				if(interfacesToStringify.size() > 0)
+					str += " implements " + join<const ClassType*>(interfacesToStringify, [&classinfo] (auto interface) { return interface->toString(classinfo); });
 
 				str += " {";
 
-				for(const Field* field : fields)
-					if(field->canStringify(classinfo))
-						str += (string)"\n" + classinfo.getIndent() + field->toString(classinfo) + ";";
-				if(fields.size() > 0)
-					str += '\n';
+				str += fieldsToString(classinfo);
 
-				for(const Method* method : methods)
-					if(method->canStringify(classinfo))
-						str += (string)"\n" + classinfo.getIndent() + method->toString(classinfo) + "\n";
-
+				str += methodsToString(classinfo);
 
 				classinfo.reduceIndent();
 
-				str += (str.back() == '\n' ? EMPTY_STRING : "\n") + classinfo.getIndent() + "}";
+				str += (str.back() == '\n' ? EMPTY_STRING : "\n") + classinfo.getIndent() + '}';
 
 
 				string headers;
@@ -960,6 +1001,32 @@ namespace JDecompiler {
 			}
 
 
+		protected:
+			virtual string fieldsToString(const ClassInfo& classinfo) const {
+				string str;
+
+				bool anyFieldStringified = false;
+
+				for(const Field* field : fields)
+					if(field->canStringify(classinfo)) {
+						str += (string)"\n" + classinfo.getIndent() + field->toString(classinfo) + ';';
+						anyFieldStringified = true;
+					}
+				if(anyFieldStringified)
+					str += '\n';
+
+				return str;
+			}
+
+			virtual string methodsToString(const ClassInfo& classinfo) const {
+				string str;
+
+				for(const Method* method : methods)
+					if(method->canStringify(classinfo))
+						str += (string)"\n" + classinfo.getIndent() + method->toString(classinfo) + '\n';
+
+				return str;
+			}
 
 			static string modifiersToString(uint16_t modifiers) {
 				FormatString str;
@@ -996,6 +1063,75 @@ namespace JDecompiler {
 	};
 
 
+	struct EnumClass final: Class {
+		protected:
+			struct EnumField: Field {
+				const vector<const Operation*> arguments;
+
+				EnumField(const Field& field, const vector<const Operation*>& arguments):
+						Field(field), arguments(arguments.begin(), arguments.end() - 2) {}
+
+				virtual string toString(const ClassInfo& classinfo) const override {
+					string str;
+
+					if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
+						str += annotationsAttribute->toString(classinfo);
+
+					return str + name + (arguments.empty() ? EMPTY_STRING :
+							'(' + rjoin<const Operation*>(arguments, [this] (auto arg) { return arg->toString(*environment); }) + ')');
+				}
+			};
+
+
+			struct EnumConstructorDescriptor: MethodDescriptor {
+				EnumConstructorDescriptor(const MethodDescriptor& other):
+						MethodDescriptor(other.name, other.returnType, vector<const Type*>(other.arguments.begin() + 2, other.arguments.end())) {}
+			};
+
+			vector<const EnumField*> enumFields;
+			vector<const Field*> otherFields;
+
+			static vector<MethodDataHolder> processMethodData(vector<MethodDataHolder>& methodDataHolders) {
+				vector<MethodDataHolder> newMethodDataHolders;
+				newMethodDataHolders.reserve(methodDataHolders.size());
+
+				for(MethodDataHolder& methodData : methodDataHolders) {
+					newMethodDataHolders.push_back(MethodDataHolder(methodData.modifiers,
+							methodData.descriptor.type == MethodDescriptor::MethodType::CONSTRUCTOR ?
+							*new EnumConstructorDescriptor(methodData.descriptor) : methodData.descriptor, methodData.attributes));
+				}
+
+				return newMethodDataHolders;
+			}
+
+		public:
+			EnumClass(const ClassType* thisType, const ClassType* superType, const ConstantPool& constPool, uint16_t modifiers,
+					const vector<const ClassType*>& interfaces, const Attributes& attributes,
+					const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders);
+
+
+		protected:
+			virtual string fieldsToString(const ClassInfo& classinfo) const override {
+				string str;
+
+				if(enumFields.size() > 0)
+					str += (string)"\n" + classinfo.getIndent() +
+							join<const EnumField*>(enumFields, [&classinfo] (auto field) { return field->toString(classinfo); }) + ";\n";
+
+				bool anyFieldStringified = false;
+				for(const Field* field : otherFields)
+					if(field->canStringify(classinfo)) {
+						str += (string)"\n" + classinfo.getIndent() + field->toString(classinfo) + ';';
+						anyFieldStringified = true;
+					}
+				if(anyFieldStringified)
+					str += '\n';
+
+				return str;
+			}
+	};
+
+
 
 
 	const Class& Class::readClass(BinaryInputStream& instream) {
@@ -1006,7 +1142,7 @@ namespace JDecompiler {
 				majorVersion = instream.readShort(),
 				minorVersion = instream.readShort();
 
-		cout << "/* Java version: " << majorVersion << "." << minorVersion << " */" << endl;
+		cout << "/* Java version: " << majorVersion << '.' << minorVersion << " */" << endl;
 
 		const uint16_t constPoolSize = instream.readShort();
 
@@ -1085,12 +1221,8 @@ namespace JDecompiler {
 		const uint16_t interfacesCount = instream.readShort();
 		vector<const ClassType*> interfaces;
 		interfaces.reserve(interfacesCount);
-		for(uint16_t i = 0; i < interfacesCount; i++) {
-			string name = *constPool.get<ClassConstant>(instream.readShort())->name;
-			if(modifiers & ACC_ANNOTATION && name == "java/lang/annotation/Annotation")
-				continue;
-			interfaces[i] = new ClassType(name);
-		}
+		for(uint16_t i = 0; i < interfacesCount; i++)
+			interfaces[i] = new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name);
 
 
 		const uint16_t fieldsCount = instream.readShort();
@@ -1108,8 +1240,11 @@ namespace JDecompiler {
 		for(uint16_t i = 0; i < methodsCount; i++)
 			methodDataHolders.push_back(MethodDataHolder(constPool, instream));
 
-		return *new Class(thisType, superType, constPool, modifiers, interfaces, *new Attributes(instream, constPool, instream.readShort()),
-				fields, methodDataHolders);
+		return *(modifiers & ACC_ENUM ?
+				new EnumClass(thisType, superType, constPool, modifiers, interfaces,
+						*new Attributes(instream, constPool, instream.readShort()), fields, methodDataHolders) :
+				new Class(thisType, superType, constPool, modifiers, interfaces,
+						*new Attributes(instream, constPool, instream.readShort()), fields, methodDataHolders));
 	}
 
 
@@ -1118,7 +1253,7 @@ namespace JDecompiler {
 
 	// --------------------------------------------------
 
-	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, Scope* scope, uint16_t modifiers, const Attributes& attributes, uint32_t codeLength, uint16_t maxLocals): bytecode(bytecode), classinfo(classinfo), constPool(classinfo.constPool), stack(*new Stack()), scope(scope), currentScope(scope), modifiers(modifiers), attributes(attributes) {
+	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, Scope* scope, uint16_t modifiers, const Attributes& attributes, uint32_t codeLength, uint16_t maxLocals): bytecode(bytecode), classinfo(classinfo), constPool(classinfo.constPool), stack(*new Stack()), scope(*scope), currentScope(scope), modifiers(modifiers), attributes(attributes) {
 		for(int i = scope->getVariablesCount(); i < maxLocals; i++)
 			scope->addVariable(ANY_OBJECT /*TODO*/, "x");
 
@@ -1137,7 +1272,7 @@ namespace JDecompiler {
 		while(index >= currentScope->to) {
 			if(currentScope->parentScope == nullptr)
 				throw DecompilationException("Unexpected end of global function scope {" +
-						to_string(currentScope->from) + ".." + to_string(currentScope->to) + "}");
+						to_string(currentScope->from) + ".." + to_string(currentScope->to) + '}');
 			currentScope->finalize(*this);
 			currentScope = currentScope->parentScope;
 		}

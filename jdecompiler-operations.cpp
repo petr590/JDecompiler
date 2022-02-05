@@ -168,7 +168,7 @@ namespace JDecompiler {
 						ReturnableOperation(returnType), index(environment.stack.pop()), array(environment.stack.pop()) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return array->toString(environment) + "[" + index->toString(environment) + "]";
+					return array->toString(environment) + '[' + index->toString(environment) + ']';
 				}
 		};
 
@@ -439,7 +439,7 @@ namespace JDecompiler {
 						ReturnableOperation(type), operation(environment.stack.pop()), type(type) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return required ? "(" + type->name + ")" + operation->toString(environment, priority, Associativity::LEFT) :
+					return required ? '(' + type->name + ')' + operation->toString(environment, priority, Associativity::LEFT) :
 							operation->toString(environment);
 				}
 		};
@@ -526,7 +526,7 @@ namespace JDecompiler {
 					CompareOperation(compareType), operand2(cmpOperation->operand2), operand1(cmpOperation->operand1) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return operand1->toString(environment) + " " + compareType.stringOperator + " " + operand2->toString(environment);
+				return operand1->toString(environment) + ' ' + compareType.stringOperator + ' ' + operand2->toString(environment);
 			}
 		};
 
@@ -538,7 +538,7 @@ namespace JDecompiler {
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return operand->getReturnType() == BOOLEAN ? operand->toString(environment) :
-						operand->toString(environment) + " " + compareType.stringOperator + " 0";
+						operand->toString(environment) + ' ' + compareType.stringOperator + " 0";
 			}
 		};
 
@@ -628,7 +628,7 @@ namespace JDecompiler {
 
 			protected:
 				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return (string)(isLoop ? (hasLabel ? getLabel(environment) + ": while" : "while") : "if") + "(" + condition->toString(environment) + ") ";
+					return (string)(isLoop ? (hasLabel ? getLabel(environment) + ": while" : "while") : "if") + '(' + condition->toString(environment) + ") ";
 				}
 
 				virtual bool printNextOperation(const vector<const Operation*>::const_iterator i) const override {
@@ -761,7 +761,7 @@ namespace JDecompiler {
 						return str;
 					}
 
-					return str + environment.classinfo.getIndent() + "}";
+					return str + environment.classinfo.getIndent() + '}';
 				}
 		};
 
@@ -812,14 +812,14 @@ namespace JDecompiler {
 				string staticFieldToString(const CodeEnvironment& environment) const {
 					ClassType clazz(fieldref->clazz);
 					return clazz == *environment.classinfo.type && !environment.currentScope->hasVariable(*fieldref->nameAndType->name) ?
-							(string)*fieldref->nameAndType->name : clazz.toString(environment.classinfo) + "." + *fieldref->nameAndType->name;
+							(string)*fieldref->nameAndType->name : clazz.toString(environment.classinfo) + '.' + *fieldref->nameAndType->name;
 				}
 
 				string instanceFieldToString(const CodeEnvironment& environment, const Operation* object) const {
 					const ALoadOperation* aloadOperation = dynamic_cast<const ALoadOperation*>(object);
 					return aloadOperation != nullptr && aloadOperation->variable->name == "this" &&
 							!environment.currentScope->hasVariable(*fieldref->nameAndType->name) ?
-							(string)*fieldref->nameAndType->name : object->toString(environment) + "." + *fieldref->nameAndType->name;
+							(string)*fieldref->nameAndType->name : object->toString(environment) + '.' + *fieldref->nameAndType->name;
 				}
 		};
 
@@ -892,18 +892,27 @@ namespace JDecompiler {
 
 
 		struct InvokeOperation: Operation {
-			protected:
+			public:
 				const MethodDescriptor& descriptor;
-				vector<const Operation*> arguments;
+				const vector<const Operation*> arguments;
 
-				InvokeOperation(const CodeEnvironment& environment, const MethodDescriptor& descriptor): descriptor(descriptor) {
+			protected:
+				const vector<const Operation*> popArguments(Stack& stack) const {
+					vector<const Operation*> arguments;
+
 					for(int i = descriptor.arguments.size(); i > 0; i--)
-						arguments.push_back(environment.stack.pop());
+						arguments.push_back(stack.pop());
+
+					return arguments;
 				}
 
-				InvokeOperation(const CodeEnvironment& environment, uint16_t index):
-					InvokeOperation(environment, *new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)) {}
+				InvokeOperation(const CodeEnvironment& environment, const MethodDescriptor& descriptor):
+						descriptor(descriptor), arguments(popArguments(environment.stack)) {}
 
+				InvokeOperation(const CodeEnvironment& environment, uint16_t index):
+						InvokeOperation(environment, *new MethodDescriptor(environment.constPool.get<MethodrefConstant>(index)->nameAndType)) {}
+
+			public:
 				virtual const Type* getReturnType() const override {
 					return descriptor.returnType;
 				}
@@ -911,9 +920,10 @@ namespace JDecompiler {
 
 
 		struct InvokeNonStaticOperation: InvokeOperation {
-			protected:
+			public:
 				const Operation* const objectOperation;
 
+			protected:
 				InvokeNonStaticOperation(const CodeEnvironment& environment, const MethodDescriptor& descriptor):
 						InvokeOperation(environment, descriptor), objectOperation(environment.stack.pop()) {}
 
@@ -925,8 +935,8 @@ namespace JDecompiler {
 
 			public:
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return objectOperation->toString(environment, priority, Associativity::LEFT) + "." + descriptor.name + "(" +
-							rjoin<const Operation*>(arguments, [&environment] (const Operation* operation) { return operation->toString(environment); }) + ")";
+					return objectOperation->toString(environment, priority, Associativity::LEFT) + '.' + descriptor.name + '(' +
+							rjoin<const Operation*>(arguments, [&environment] (const Operation* operation) { return operation->toString(environment); }) + ')';
 				}
 		};
 
@@ -937,22 +947,23 @@ namespace JDecompiler {
 
 
 		struct InvokespecialOperation: InvokeNonStaticOperation {
-			protected: const bool isConstructor;
-
 			public:
+				const bool isConstructor;
+
 				InvokespecialOperation(const CodeEnvironment& environment, uint16_t index):
-						InvokeNonStaticOperation(environment, index), isConstructor(descriptor.name == "<init>") {
+						InvokeNonStaticOperation(environment, index), isConstructor(descriptor.type == MethodDescriptor::MethodType::CONSTRUCTOR) {
 					if(isConstructor && dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(objectOperation))
 						environment.stack.pop();
 				}
 
 				InvokespecialOperation(const CodeEnvironment& environment, const Operation* objectOperation, uint16_t index):
-						InvokeNonStaticOperation(environment, objectOperation, index), isConstructor(descriptor.name == "<init>") {}
+						InvokeNonStaticOperation(environment, objectOperation, index),
+						isConstructor(descriptor.type == MethodDescriptor::MethodType::CONSTRUCTOR) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					if(isConstructor)
-						return objectOperation->toString(environment, priority, Associativity::LEFT) + "(" + rjoin<const Operation*>(arguments,
-								[&environment] (const Operation* operation) { return operation->toString(environment); }) + ")";
+						return objectOperation->toString(environment, priority, Associativity::LEFT) + '(' + rjoin<const Operation*>(arguments,
+								[&environment] (const Operation* operation) { return operation->toString(environment); }) + ')';
 					return InvokeNonStaticOperation::toString(environment);
 				}
 
@@ -975,14 +986,14 @@ namespace JDecompiler {
 						InvokeOperation(environment, descriptor), clazz(clazz) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return staticMethodToString(environment) + "(" +
-							rjoin<const Operation*>(arguments, [&environment] (const Operation* operation) { return operation->toString(environment); }) + ")";
+					return staticMethodToString(environment) + '(' +
+							rjoin<const Operation*>(arguments, [&environment] (const Operation* operation) { return operation->toString(environment); }) + ')';
 				}
 
 			private:
 				string staticMethodToString(const CodeEnvironment& environment) const {
 					return *clazz == *environment.classinfo.type ?
-							descriptor.name : clazz->toString(environment.classinfo) + "." + descriptor.name;
+							descriptor.name : clazz->toString(environment.classinfo) + '.' + descriptor.name;
 				}
 		};
 
@@ -995,9 +1006,9 @@ namespace JDecompiler {
 
 
 		struct NewOperation: Operation {
-			protected: const ClassType* const clazz;
-
 			public:
+				const ClassType* const clazz;
+
 				NewOperation(const CodeEnvironment& environment, uint16_t classIndex):
 						clazz(new ClassType(environment.constPool.get<ClassConstant>(classIndex))) {}
 
@@ -1023,7 +1034,7 @@ namespace JDecompiler {
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return isInitializer ? value->toString(environment) :
-							array->toString(environment) + "[" + index->toString(environment) + "] = " + value->toString(environment);
+							array->toString(environment) + '[' + index->toString(environment) + "] = " + value->toString(environment);
 				}
 
 				virtual bool canAddToCode() const override {
@@ -1059,8 +1070,8 @@ namespace JDecompiler {
 				virtual string toString(const CodeEnvironment& environment) const override {
 					if(initializer.empty())
 						return "new " + arrayType->memberType->toString(environment.classinfo) +
-								rjoin<const Operation*>(lengths, [&environment] (auto length) { return "[" + length->toString(environment) + "]"; }, "");
-					return "new " + arrayType->toString(environment.classinfo) + " " + toArrayInitString(environment);
+								rjoin<const Operation*>(lengths, [&environment] (auto length) { return '[' + length->toString(environment) + ']'; }, "");
+					return "new " + arrayType->toString(environment.classinfo) + ' ' + toArrayInitString(environment);
 				}
 
 				virtual string toArrayInitString(const CodeEnvironment& environment) const override {
@@ -1164,7 +1175,7 @@ namespace JDecompiler {
 						object(environment.stack.pop()) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return "(" + returnType->toString(environment.classinfo) + ")" + object->toString(environment, priority, Associativity::RIGHT);
+					return '(' + returnType->toString(environment.classinfo) + ')' + object->toString(environment, priority, Associativity::RIGHT);
 				}
 		};
 
@@ -1192,7 +1203,7 @@ namespace JDecompiler {
 						CompareOperation(compareType), operand(environment.stack.pop()) {}
 
 				virtual string toString(const CodeEnvironment& environment) const {
-					return operand->toString(environment) + " " + compareType.stringOperator + " null";
+					return operand->toString(environment) + ' ' + compareType.stringOperator + " null";
 				}
 		};
 

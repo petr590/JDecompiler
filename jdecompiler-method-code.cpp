@@ -15,6 +15,32 @@
 using namespace std;
 
 namespace JDecompiler {
+	EnumClass::EnumClass(const ClassType* thisType, const ClassType* superType, const ConstantPool& constPool, uint16_t modifiers,
+			const vector<const ClassType*>& interfaces, const Attributes& attributes,
+			const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders):
+			Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, processMethodData(methodDataHolders)) {
+
+		using namespace Operations;
+
+		for(const Field* field : fields) {
+			const InvokespecialOperation* invokespecialOperation;
+			const DupOperation<TypeSize::FOUR_BYTES>* dupOperation;
+			const NewOperation* newOperation;
+			if(field->modifiers == ACC_PUBLIC | ACC_STATIC | ACC_FINAL && field->type == *thisType &&
+					field->hasInitializer() &&
+					(invokespecialOperation = dynamic_cast<const InvokespecialOperation*>(field->getInitializer())) != nullptr &&
+					(dupOperation = dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(invokespecialOperation->objectOperation)) != nullptr &&
+					(newOperation = dynamic_cast<const NewOperation*>(dupOperation->operation)) != nullptr) {
+				if(invokespecialOperation->arguments.size() < 2)
+					throw DecompilationException("enum constant initializer must have at least two arguments, got " +
+							to_string(invokespecialOperation->arguments.size()));
+				enumFields.push_back(new EnumField(*field, invokespecialOperation->arguments));
+			} else
+				otherFields.push_back(field);
+		}
+	}
+
+
 
 	Instruction* Bytecode::nextInstruction0() {
 		using namespace Instructions;

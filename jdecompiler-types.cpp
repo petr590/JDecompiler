@@ -43,7 +43,7 @@ namespace JDecompiler {
 			virtual const Type* getGeneralTypeFor(const Type*) const = 0;
 
 			bool operator==(const Type& type) const {
-				return this == &type || encodedName == type.encodedName;
+				return this == &type || this->encodedName == type.encodedName;
 			}
 	};
 
@@ -73,11 +73,11 @@ namespace JDecompiler {
 			AmbigousType(initializer_list<const Type*> typeList): AmbigousType(vector<const Type*>(typeList)) {}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
-				return types.back()->toString(classinfo);
+				return types[0]->toString(classinfo);
 			}
 
 			virtual string toString() const override {
-				return types.back()->toString();
+				return types[0]->toString();
 			}
 
 			virtual bool isPrimitive() const override final {
@@ -123,7 +123,7 @@ namespace JDecompiler {
 				return true;
 			}
 
-			virtual TypeSize getSize() const override final {
+			virtual TypeSize getSize() const override {
 				return size;
 			}
 
@@ -135,6 +135,9 @@ namespace JDecompiler {
 			}
 	};
 
+	static const PrimitiveType<TypeSize::ZERO_BYTES>
+			*const VOID = new PrimitiveType<TypeSize::ZERO_BYTES>("V", "void");
+
 	static const PrimitiveType<TypeSize::FOUR_BYTES>
 			*const BYTE = new PrimitiveType<TypeSize::FOUR_BYTES>("B", "byte"),
 			*const CHAR = new PrimitiveType<TypeSize::FOUR_BYTES>("C", "char"),
@@ -142,12 +145,14 @@ namespace JDecompiler {
 			*const INT = new PrimitiveType<TypeSize::FOUR_BYTES>("I", "int"),
 			*const FLOAT = new PrimitiveType<TypeSize::FOUR_BYTES>("F", "float"),
 			*const BOOLEAN = new PrimitiveType<TypeSize::FOUR_BYTES>("Z", "boolean");
-	static const PrimitiveType<TypeSize::ZERO_BYTES>
-			*const VOID = new PrimitiveType<TypeSize::ZERO_BYTES>("V", "void");
 
 	static const PrimitiveType<TypeSize::EIGHT_BYTES>
 			*const LONG = new PrimitiveType<TypeSize::EIGHT_BYTES>("J", "long"),
 			*const DOUBLE = new PrimitiveType<TypeSize::EIGHT_BYTES>("D", "double");
+
+	static const AmbigousType
+			*const ANY_INT_OR_BOOLEAN = new AmbigousType({BYTE, CHAR, SHORT, INT}),
+			*const ANY_INT = new AmbigousType({BOOLEAN, BYTE, CHAR, SHORT, INT});
 
 
 	struct ReferenceType: Type {
@@ -275,12 +280,12 @@ namespace JDecompiler {
 				this->encodedName = string(name, 0, memberType->encodedName.size() + nestingLevel);
 			}
 
-			ArrayType(const Type* const memberType, uint16_t nestingLevel = 1): memberType(memberType), nestingLevel(nestingLevel) {
+			ArrayType(const Type* memberType, uint16_t nestingLevel = 1): memberType(memberType), nestingLevel(nestingLevel) {
 				for(uint16_t i = 0; i < nestingLevel; i++)
 					braces += "[]";
 
 				this->name = memberType->name + braces;
-				this->encodedName = string('[', nestingLevel) + memberType->encodedName;
+				this->encodedName = string(nestingLevel, '[') + memberType->encodedName;
 			}
 
 			ArrayType(const string& memberName, uint16_t nestingLevel): ArrayType(parseType(memberName), nestingLevel) {}

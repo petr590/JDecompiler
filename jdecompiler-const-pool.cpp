@@ -202,8 +202,8 @@ namespace JDecompiler {
 		MethodrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(classRef, nameAndTypeRef) {}
 	};
 
-	struct InterfaceMethodrefConstant: ReferenceConstant {
-		InterfaceMethodrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(classRef, nameAndTypeRef) {}
+	struct InterfaceMethodrefConstant: MethodrefConstant {
+		InterfaceMethodrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): MethodrefConstant(classRef, nameAndTypeRef) {}
 	};
 
 
@@ -221,12 +221,13 @@ namespace JDecompiler {
 			const uint16_t referenceRef;
 			const ReferenceConstant* reference;
 
-		private: static KindType getKindType(const ReferenceKind referenceKind) {
-			switch(referenceKind) {
-				case ReferenceKind::GETFIELD: case ReferenceKind::GETSTATIC: case ReferenceKind::PUTFIELD: case ReferenceKind::PUTSTATIC:
-					return KindType::FIELD;
-				default: return KindType::METHOD;
-			}
+		private:
+			static KindType getKindType(const ReferenceKind referenceKind) {
+				switch(referenceKind) {
+					case ReferenceKind::GETFIELD: case ReferenceKind::GETSTATIC: case ReferenceKind::PUTFIELD: case ReferenceKind::PUTSTATIC:
+						return KindType::FIELD;
+					default: return KindType::METHOD;
+				}
 		}
 
 		public:

@@ -117,10 +117,21 @@ namespace JDecompiler {
 
 
 	struct Variable {
-		const Type* type;
-		string name;
+		public:
+			mutable const Type* type;
 
-		Variable(const Type* type, string name): type(type), name(name) {}
+		protected:
+			vector<string> names;
+
+		public:
+			Variable(const Type* type): type(type) {}
+
+			Variable(const Type* type, const string& name): type(type), names({name}) {}
+
+			string getName() const {
+				return names.size() == 1 ? names[0] : getNameByType(type);
+			}
+
 	};
 
 
@@ -128,42 +139,55 @@ namespace JDecompiler {
 
 
 	struct Operation {
-		const uint16_t priority;
+		public:
+			const uint16_t priority;
 
-		Operation(uint16_t priority = 15): priority(priority) {}
+			Operation(uint16_t priority = 15): priority(priority) {}
 
-		virtual string toString(const CodeEnvironment& environment) const = 0;
+			virtual string toString(const CodeEnvironment& environment) const = 0;
 
-		virtual string toArrayInitString(const CodeEnvironment& environment) const {
-			return toString(environment);
-		}
-
-		virtual const Type* getReturnType() const = 0;
-
-		string toString(const CodeEnvironment& environment, uint16_t priority, const Associativity& associativity) const {
-			if(this->priority < priority || (this->priority == priority && getAssociativityByPriority(this->priority) != associativity))
-				return '(' + this->toString(environment) + ')';
-			return this->toString(environment);
-		}
-
-		virtual inline string getFrontSeparator(const ClassInfo& classinfo) const {
-			return classinfo.getIndent();
-		}
-
-		virtual inline string getBackSeparator(const ClassInfo& classinfo) const {
-			return ";\n";
-		}
-
-		virtual bool canAddToCode() const {
-			return true;
-		}
-
-		private: static Associativity getAssociativityByPriority(uint16_t priority) {
-			switch(priority) {
-				case 1: case 2: case 13: return Associativity::RIGHT;
-				default: return Associativity::LEFT;
+			virtual string toArrayInitString(const CodeEnvironment& environment) const {
+				return toString(environment);
 			}
-		}
+
+			virtual const Type* getReturnType() const = 0;
+
+			template<class T>
+			const T* getReturnTypeAs(const T* type) const {
+				const T* newType = getReturnType()->castTo(type);
+				castReturnTypeTo(newType);
+				return newType;
+			}
+
+		protected:
+			virtual void castReturnTypeTo(const Type* newType) const {}
+
+		public:
+			string toString(const CodeEnvironment& environment, uint16_t priority, const Associativity& associativity) const {
+				if(this->priority < priority || (this->priority == priority && getAssociativityByPriority(this->priority) != associativity))
+					return '(' + this->toString(environment) + ')';
+				return this->toString(environment);
+			}
+
+			virtual inline string getFrontSeparator(const ClassInfo& classinfo) const {
+				return classinfo.getIndent();
+			}
+
+			virtual inline string getBackSeparator(const ClassInfo& classinfo) const {
+				return ";\n";
+			}
+
+
+			virtual bool canAddToCode() const {
+				return true;
+			}
+
+			private: static Associativity getAssociativityByPriority(uint16_t priority) {
+				switch(priority) {
+					case 1: case 2: case 13: return Associativity::RIGHT;
+					default: return Associativity::LEFT;
+				}
+			}
 	};
 
 	struct Instruction {
@@ -424,19 +448,19 @@ namespace JDecompiler {
 
 			bool hasVariable(const string& name) const {
 				for(Variable* var : variables)
-					if(name == var->name)
+					if(name == var->getName())
 						return true;
 				return parentScope == nullptr ? false : parentScope->hasVariable(name);
 			}
 
 			Variable* addVariable(const Type* type, string name) {
-				int n = 1;
-				const string basename = name;
-
-				while(hasVariable(name))
-					name = basename + to_string(++n);
-
 				Variable* var = new Variable(type, name);
+				variables.push_back(var);
+				return var;
+			}
+
+			Variable* addVariable(const Type* type) {
+				Variable* var = new Variable(type);
 				variables.push_back(var);
 				return var;
 			}
@@ -480,7 +504,7 @@ namespace JDecompiler {
 			}
 
 		public:
-			int getVariablesCount() const {
+			uint32_t getVariablesCount() const {
 				return variables.size();
 			}
 
@@ -581,11 +605,20 @@ namespace JDecompiler {
 	};
 
 
+	struct FieldDescriptor {
+		const string name;
+		const Type& type;
+
+		FieldDescriptor(const NameAndTypeConstant* nameAndType): FieldDescriptor(*nameAndType->name, *nameAndType->descriptor) {}
+
+		FieldDescriptor(const string& name, const string& descriptor): name(name), type(*parseType(descriptor)) {}
+	};
+
+
 	struct Field: Stringified {
 		public:
 			const uint16_t modifiers;
-			const string name;
-			const Type& type;
+			const FieldDescriptor& descriptor;
 			const Attributes& attributes;
 
 		protected:
@@ -596,7 +629,7 @@ namespace JDecompiler {
 
 		public:
 			Field(const ConstantPool& constPool, BinaryInputStream& instream): modifiers(instream.readShort()),
-					name(constPool.getUtf8Constant(instream.readShort())), type(*parseType(constPool.getUtf8Constant(instream.readShort()))),
+					descriptor(*new FieldDescriptor(constPool.getUtf8Constant(instream.readShort()), constPool.getUtf8Constant(instream.readShort()))),
 					attributes(*new Attributes(instream, constPool, instream.readShort())), constantValueAttribute(attributes.get<ConstantValueAttribute>()) {}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
@@ -605,7 +638,7 @@ namespace JDecompiler {
 				if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
 					str += annotationsAttribute->toString(classinfo);
 
-				return str + (string)(modifiersToString(modifiers) + type.toString(classinfo)) + ' ' + name +
+				return str + (string)(modifiersToString(modifiers) + descriptor.type.toString(classinfo)) + ' ' + descriptor.name +
 						(constantValueAttribute != nullptr ? " = " + constantValueAttribute->toString(classinfo) :
 						initializer != nullptr ? " = " + initializer->toString(*environment) : EMPTY_STRING);
 			}
@@ -671,11 +704,9 @@ namespace JDecompiler {
 				if(descriptor[0] != '(')
 					throw IllegalMethodDescriptorException(descriptor);
 
-				const int descriptorLength = descriptor.size();
+				const uint32_t descriptorLength = descriptor.size();
 
-				int i = 1;
-
-				while(i < descriptorLength) {
+				for(uint32_t i = 1; i < descriptorLength;) {
 					const Type* argument;
 					switch(descriptor[i]) {
 						case 'B': argument = BYTE; break;
@@ -723,12 +754,12 @@ namespace JDecompiler {
 				string str = type == MethodType::CONSTRUCTOR ? classinfo.type->simpleName : returnType->toString(classinfo) + ' ' + name;
 
 				function<string(const Type*, uint32_t)> concater = [&scope, &classinfo, isNonStatic] (const Type* type, uint32_t i) {
-					return type->toString(classinfo) + ' ' + scope.getVariable(i + isNonStatic)->name;
+					return type->toString(classinfo) + ' ' + scope.getVariable(i + isNonStatic)->getName();
 				};
 
 				if(modifiers & ACC_VARARGS) {
 					uint32_t varargsIndex;
-					for(int i = arguments.size(); i > 0; i--)
+					for(uint32_t i = arguments.size(); i > 0; i--)
 						if(dynamic_cast<const ArrayType*>(arguments[i])) {
 							varargsIndex = i;
 							break;
@@ -737,7 +768,7 @@ namespace JDecompiler {
 					concater = [&scope, &classinfo, isNonStatic, varargsIndex] (const Type* type, uint32_t i) {
 						return (i == varargsIndex ?
 								safe_cast<const ArrayType*>(type)->elementType->toString(classinfo) + "..." : type->toString(classinfo)) +
-								' ' + scope.getVariable(i + isNonStatic)->name;
+								' ' + scope.getVariable(i + isNonStatic)->getName();
 					};
 				}
 
@@ -913,13 +944,13 @@ namespace JDecompiler {
 				vector<const Method*> methods;
 				methods.reserve(methodDataHolders.size());
 				for(const MethodDataHolder methodData : methodDataHolders) {
-					try {
+					//try {
 						methods.push_back(methodData.createMethod(classinfo));
-					} catch(DecompilationException& ex) {
+					/*} catch(DecompilationException& ex) {
 						const char* message = ex.what();
 						cerr << "Exception while decompiling method " + thisType->name + '.' + methodData.descriptor.name << ": "
 								<< typeid(ex).name() << (*message == '\0' ? "" : (string)": " + message) << endl;
-					}
+					}*/
 				}
 				return methods;
 			}
@@ -937,7 +968,7 @@ namespace JDecompiler {
 
 			const Field* getField(const string& name) const {
 				for(const Field* field : fields)
-					if(field->name == name)
+					if(field->descriptor.name == name)
 						return field;
 				return nullptr;
 			}
@@ -962,7 +993,7 @@ namespace JDecompiler {
 				str += modifiersToString(modifiers) + ' ' + thisType->simpleName +
 						(superType->name == "java.lang.Object" || (modifiers & ACC_ENUM && superType->name == "java.lang.Enum") ?
 								EMPTY_STRING : " extends " + superType->toString(classinfo));
-				
+
 				vector<const ClassType*> interfacesToStringify;
 				for(const ClassType* interface : interfaces) {
 					if(modifiers & ACC_ANNOTATION && interface->name == "java.lang.annotation.Annotation")
@@ -971,7 +1002,8 @@ namespace JDecompiler {
 				}
 
 				if(interfacesToStringify.size() > 0)
-					str += " implements " + join<const ClassType*>(interfacesToStringify, [&classinfo] (auto interface) { return interface->toString(classinfo); });
+					str += " implements " +
+							join<const ClassType*>(interfacesToStringify, [&classinfo] (auto interface) { return interface->toString(classinfo); });
 
 				str += " {";
 
@@ -1077,7 +1109,7 @@ namespace JDecompiler {
 					if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
 						str += annotationsAttribute->toString(classinfo);
 
-					return str + name + (arguments.empty() ? EMPTY_STRING :
+					return str + descriptor.name + (arguments.empty() ? EMPTY_STRING :
 							'(' + rjoin<const Operation*>(arguments, [this] (auto arg) { return arg->toString(*environment); }) + ')');
 				}
 			};
@@ -1222,7 +1254,7 @@ namespace JDecompiler {
 		vector<const ClassType*> interfaces;
 		interfaces.reserve(interfacesCount);
 		for(uint16_t i = 0; i < interfacesCount; i++)
-			interfaces[i] = new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name);
+			interfaces.push_back(new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name));
 
 
 		const uint16_t fieldsCount = instream.readShort();
@@ -1254,8 +1286,8 @@ namespace JDecompiler {
 	// --------------------------------------------------
 
 	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, Scope* scope, uint16_t modifiers, const Attributes& attributes, uint32_t codeLength, uint16_t maxLocals): bytecode(bytecode), classinfo(classinfo), constPool(classinfo.constPool), stack(*new Stack()), scope(*scope), currentScope(scope), modifiers(modifiers), attributes(attributes) {
-		for(int i = scope->getVariablesCount(); i < maxLocals; i++)
-			scope->addVariable(ANY_OBJECT /*TODO*/, "x");
+		for(uint32_t i = scope->getVariablesCount(); i < maxLocals; i++)
+			scope->addVariable(&AnyType::getInstance());
 
 		//LOG(maxLocals << ' ' << scope->getVariablesCount());
 

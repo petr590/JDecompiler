@@ -46,20 +46,46 @@ namespace JDecompiler {
 
 
 		template<typename T>
-		struct ConstOperation: ReturnableOperation<> {
+		struct ConstOperation: Operation {
+			protected:
+				mutable const Type* returnType;
+
 			public:
 				const T value;
 
-				ConstOperation(const Type* returnType, T value): ReturnableOperation(returnType), value(value) {}
+				ConstOperation(const Type* returnType, T value): returnType(returnType), value(value) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return primitiveToString(value);
+				}
+
+				virtual const Type* getReturnType() const override {
+					return returnType;
+				}
+
+			protected:
+				virtual void castReturnTypeTo(const Type* newType) const override {
+					returnType = newType;
 				}
 		};
 
 
 		struct IConstOperation: ConstOperation<int32_t> {
-			IConstOperation(int32_t value): ConstOperation(INT, value) {}
+			IConstOperation(int32_t value): ConstOperation(ANY_INT_OR_BOOLEAN, value) {}
+
+			virtual string toString(const CodeEnvironment& environment) const override {
+				if(returnType->isInstanceof(BOOLEAN) && (bool)value == value)
+					return primitiveToString((bool)value);
+				if(returnType->isInstanceof(BYTE) && (int8_t)value == value)
+					return primitiveToString((int8_t)value);
+				if(returnType->isInstanceof(CHAR) && (char16_t)value == value)
+					return primitiveToString((char16_t)value);
+				if(returnType->isInstanceof(SHORT) && (int16_t)value == value)
+					return primitiveToString((int16_t)value);
+				if(returnType->isInstanceof(INT))
+					return primitiveToString(value);
+				throw IllegalStateException("Illegal type of iconst operation: " + returnType->toString());
+			}
 		};
 
 		struct LConstOperation: ConstOperation<int64_t> {
@@ -92,12 +118,12 @@ namespace JDecompiler {
 
 		template<TypeSize size>
 		struct LdcOperation: ReturnableOperation<> {
-			protected:
+			public:
 				const uint16_t index;
 				const ConstValueConstant* const value;
 
 			private:
-				static const Type* getReturnType(uint16_t index, const ConstValueConstant* value) {
+				static const Type* getReturnTypeFor(uint16_t index, const ConstValueConstant* value) {
 					if(dynamic_cast<const StringConstant*>(value)) return STRING;
 					if(dynamic_cast<const ClassConstant*>(value)) return CLASS;
 					if(dynamic_cast<const IntegerConstant*>(value)) return INT;
@@ -111,10 +137,13 @@ namespace JDecompiler {
 				}
 
 			public:
-				LdcOperation(uint16_t index, const ConstValueConstant* value): ReturnableOperation(getReturnType(index, value)), index(index), value(value) {
+				LdcOperation(uint16_t index, const ConstValueConstant* value):
+						ReturnableOperation(getReturnTypeFor(index, value)), index(index), value(value) {
+
 					if(returnType->getSize() != size)
 						throw TypeSizeMismatchException(TypeSize_nameOf(size), TypeSize_nameOf(returnType->getSize()), returnType->toString());
 				}
+
 				LdcOperation(const CodeEnvironment& environment, uint16_t index): LdcOperation(index, environment.constPool.get<ConstValueConstant>(index)) {}
 
 				LdcOperation(const StringConstant* value): ReturnableOperation(STRING), index(0), value(value) {}
@@ -131,15 +160,21 @@ namespace JDecompiler {
 				const Variable* const variable;
 
 				LoadOperation(const Type* returnType, const CodeEnvironment& environment, uint16_t index):
-						ReturnableOperation(returnType), variable(environment.getCurrentScope()->getVariable(index)) {}
+						ReturnableOperation(returnType), variable(environment.getCurrentScope()->getVariable(index)) {
+					variable->type->castTo(returnType);
+				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return variable->name;
+					return variable->getName();
+				}
+
+				virtual void castReturnTypeTo(const Type* newType) const override {
+					variable->type = newType;
 				}
 		};
 
 		struct ILoadOperation: LoadOperation {
-			ILoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(INT, environment, index) {}
+			ILoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(ANY_INT_OR_BOOLEAN, environment, index) {}
 		};
 
 		struct LLoadOperation: LoadOperation {
@@ -189,8 +224,8 @@ namespace JDecompiler {
 		};
 
 		struct AALoadOperation: ArrayLoadOperation {
-			AALoadOperation(const CodeEnvironment& environment):
-					ArrayLoadOperation(safe_cast<const ArrayType*>(environment.stack.lookup(1)->getReturnType())->elementType, environment) {}
+			AALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(
+					environment.stack.lookup(1)->getReturnTypeAs(&AnyType::getArrayTypeInstance())->elementType, environment) {}
 		};
 
 		struct BALoadOperation: ArrayLoadOperation {
@@ -212,10 +247,12 @@ namespace JDecompiler {
 				const Variable* const variable;
 
 				StoreOperation(const CodeEnvironment& environment, uint16_t index):
-						value(environment.stack.pop()), variable(environment.getCurrentScope()->getVariable(index)) {}
+						value(environment.stack.pop()), variable(environment.getCurrentScope()->getVariable(index)) {
+					variable->type = variable->type->castTo(value->getReturnType());
+				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return variable->name + " = " + value->toString(environment);
+					return variable->getName() + " = " + value->toString(environment);
 				}
 		};
 
@@ -418,9 +455,9 @@ namespace JDecompiler {
 				virtual string toString(const CodeEnvironment& environment) const override {
 					if(isShortInc) {
 						const char* inc = value == 1 ? "++" : "--";
-						return isPostInc || returnType == VOID ? variable->name + inc : inc + variable->name;
+						return isPostInc || returnType == VOID ? variable->getName() + inc : inc + variable->getName();
 					}
-					return variable->name + (string)(value < 0 ? " -" : " +") + "= " + to_string(abs(value));
+					return variable->getName() + (string)(value < 0 ? " -" : " +") + "= " + to_string(abs(value));
 				}
 
 				virtual const Type* getReturnType() const override {
@@ -549,7 +586,7 @@ namespace JDecompiler {
 			const bool isShort;
 
 			TernaryOperatorOperation(const Operation* condition, const Operation* trueCase, const Operation* falseCase):
-					ReturnableOperation(trueCase->getReturnType()->getGeneralTypeFor(falseCase->getReturnType())),
+					ReturnableOperation(trueCase->getReturnTypeAs(falseCase->getReturnType())),
 					condition(condition), trueCase(trueCase), falseCase(falseCase),
 					isShort(dynamic_cast<const IConstOperation*>(trueCase) && ((const IConstOperation*)trueCase)->value == 1 &&
 					dynamic_cast<const IConstOperation*>(falseCase) && ((const IConstOperation*)falseCase)->value == 0) {}
@@ -682,7 +719,8 @@ namespace JDecompiler {
 		}
 
 
-		ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope): Scope(environment.index, to, ifScope->parentScope), ifScope(ifScope) {
+		ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope):
+				Scope(environment.index, to, ifScope->parentScope), ifScope(ifScope) {
 			ifScope->elseScope = this;
 		}
 
@@ -797,29 +835,33 @@ namespace JDecompiler {
 		};
 
 		struct AReturnOperation: ReturnOperation {
-			AReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, ANY_OBJECT) {}
+			AReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, &AnyType::getInstance()) {}
 		};
 
 
 
 		struct FieldOperation: Operation {
 			public:
-				const FieldrefConstant* const fieldref;
+				const ClassType clazz;
+				const FieldDescriptor descriptor;
 
 			protected:
-				FieldOperation(const CodeEnvironment& environment, uint16_t index): fieldref(environment.constPool.get<FieldrefConstant>(index)) {}
+				FieldOperation(const FieldrefConstant* fieldref):
+						clazz(fieldref->clazz), descriptor(fieldref->nameAndType) {}
+
+				FieldOperation(const CodeEnvironment& environment, uint16_t index):
+						FieldOperation(environment.constPool.get<FieldrefConstant>(index)) {}
 
 				string staticFieldToString(const CodeEnvironment& environment) const {
-					ClassType clazz(fieldref->clazz);
-					return clazz == *environment.classinfo.type && !environment.currentScope->hasVariable(*fieldref->nameAndType->name) ?
-							(string)*fieldref->nameAndType->name : clazz.toString(environment.classinfo) + '.' + *fieldref->nameAndType->name;
+					return clazz == *environment.classinfo.type && !environment.currentScope->hasVariable(descriptor.name) ?
+							(string)descriptor.name : clazz.toString(environment.classinfo) + '.' + descriptor.name;
 				}
 
 				string instanceFieldToString(const CodeEnvironment& environment, const Operation* object) const {
 					const ALoadOperation* aloadOperation = dynamic_cast<const ALoadOperation*>(object);
-					return aloadOperation != nullptr && aloadOperation->variable->name == "this" &&
-							!environment.currentScope->hasVariable(*fieldref->nameAndType->name) ?
-							(string)*fieldref->nameAndType->name : object->toString(environment) + '.' + *fieldref->nameAndType->name;
+					return aloadOperation != nullptr && aloadOperation->variable->getName() == "this" &&
+							!environment.currentScope->hasVariable(descriptor.name) ?
+							(string)descriptor.name : object->toString(environment) + '.' + descriptor.name;
 				}
 		};
 
@@ -830,7 +872,7 @@ namespace JDecompiler {
 
 			public:
 				virtual const Type* getReturnType() const override {
-					return parseType(*fieldref->nameAndType->descriptor);
+					return &descriptor.type;
 				}
 		};
 
@@ -839,7 +881,9 @@ namespace JDecompiler {
 				const Operation* const value;
 
 			protected:
-				PutFieldOperation(const CodeEnvironment& environment, uint16_t index): FieldOperation(environment, index), value(environment.stack.pop()) {}
+				PutFieldOperation(const CodeEnvironment& environment, uint16_t index): FieldOperation(environment, index), value(environment.stack.pop()) {
+					value->getReturnTypeAs(&descriptor.type);
+				}
 
 			public:
 				virtual const Type* getReturnType() const override { return VOID; }
@@ -900,7 +944,7 @@ namespace JDecompiler {
 				const vector<const Operation*> popArguments(Stack& stack) const {
 					vector<const Operation*> arguments;
 
-					for(int i = descriptor.arguments.size(); i > 0; i--)
+					for(uint32_t i = descriptor.arguments.size(); i > 0; i--)
 						arguments.push_back(stack.pop());
 
 					return arguments;
@@ -1122,8 +1166,8 @@ namespace JDecompiler {
 		};
 
 		struct AAStoreOperation: ArrayStoreOperation {
-			AAStoreOperation(const CodeEnvironment& environment):
-					ArrayStoreOperation(safe_cast<const ArrayType*>(environment.stack.lookup(2)->getReturnType())->elementType, environment) {}
+			AAStoreOperation(const CodeEnvironment& environment): ArrayStoreOperation(
+					environment.stack.lookup(2)->getReturnTypeAs(&AnyType::getArrayTypeInstance())->elementType, environment) {}
 		};
 
 		struct BAStoreOperation: ArrayStoreOperation {
@@ -1246,8 +1290,8 @@ namespace JDecompiler {
 
 		if(!fieldsInitialized) {
 			const PutStaticFieldOperation* putOperation = dynamic_cast<const PutStaticFieldOperation*>(operation);
-			if(putOperation != nullptr && ClassType(putOperation->fieldref->clazz) == *environment.classinfo.type) {
-				if(const Field* field = environment.classinfo.clazz.getField(*putOperation->fieldref->nameAndType->name)) {
+			if(putOperation != nullptr && ClassType(putOperation->clazz) == *environment.classinfo.type) {
+				if(const Field* field = environment.classinfo.clazz.getField(putOperation->descriptor.name)) {
 					field->initializer = putOperation->value;
 					field->environment = &environment;
 				}

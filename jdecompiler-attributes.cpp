@@ -118,22 +118,23 @@ namespace JDecompiler {
 
 		public:
 			const ClassType* const type;
-			const uint16_t elementCount;
 			vector<const Element*> elements;
 
 			Annotation(BinaryInputStream& instream, const ConstantPool& constPool):
-					type(getAnnotationType(constPool.getUtf8Constant(instream.readShort()))), elementCount(instream.readShort()) {
+					type(getAnnotationType(constPool.getUtf8Constant(instream.readShort()))) {
+				const uint16_t elementCount = instream.readShort();
 				elements.reserve(elementCount);
-				for(int i = 0; i < elementCount; i++)
+				for(uint16_t i = 0; i < elementCount; i++)
 					elements.push_back(new Element(instream, constPool));
 			}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
-				return "@" + type->toString(classinfo) + (elementCount == 0 ? "" : "(" + join<const Element*>(elements,
+				return "@" + type->toString(classinfo) + (elements.size() == 0 ? "" : "(" + join<const Element*>(elements,
 						[&classinfo] (auto element) { return element->name + "=" + element->value.toString(classinfo); }) + ")");
 			}
 
-			private: static inline const ClassType* getAnnotationType(const string& descriptor) {
+		private:
+			static inline const ClassType* getAnnotationType(const string& descriptor) {
 				const Type* type = parseType(descriptor);
 				if(const ClassType* classType = dynamic_cast<const ClassType*>(type))
 					return classType;
@@ -175,10 +176,10 @@ namespace JDecompiler {
 	};
 
 	struct EnumAnnotationValue: AnnotationValue {
-		const ClassType* const type;
+		const Type* const type;
 		const string name;
 
-		EnumAnnotationValue(const ClassType* type, const string& name): type(type), name(name) {}
+		EnumAnnotationValue(const Type* type, const string& name): type(type), name(name) {}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
 			return type->toString(classinfo) + "." + name;
@@ -230,7 +231,7 @@ namespace JDecompiler {
 			case 'D': return *new DoubleAnnotationValue(instream, constPool);
 			case 'Z': return *new BooleanAnnotationValue(instream, constPool);
 			case 's': return *new StringAnnotationValue(instream, constPool);
-			case 'e': return *new EnumAnnotationValue(new ClassType(constPool.getUtf8Constant(instream.readShort())),
+			case 'e': return *new EnumAnnotationValue(parseType(constPool.getUtf8Constant(instream.readShort())),
 					constPool.getUtf8Constant(instream.readShort()));
 			case 'c': return *new ClassAnnotationValue(parseReferenceType(*constPool.get<ClassConstant>(instream.readShort())->name));
 			case '@': return *new AnnotationAnnotationValue(instream, constPool);
@@ -242,13 +243,13 @@ namespace JDecompiler {
 
 
 	struct AnnotationsAttribute: Attribute, Stringified {
-		const uint16_t annotationsCount;
 		vector<const Annotation*> annotations;
 
 		AnnotationsAttribute(const string& name, uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
-				Attribute(name, length), annotationsCount(instream.readShort()) {
+				Attribute(name, length) {
+			const uint16_t annotationsCount = instream.readShort();
 			annotations.reserve(annotationsCount);
-			for(int i = 0; i < annotationsCount; i++)
+			for(uint16_t i = 0; i < annotationsCount; i++)
 				annotations.push_back(new Annotation(instream, constPool));
 		}
 

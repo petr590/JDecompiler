@@ -26,7 +26,7 @@ namespace JDecompiler {
 			const InvokespecialOperation* invokespecialOperation;
 			const DupOperation<TypeSize::FOUR_BYTES>* dupOperation;
 			const NewOperation* newOperation;
-			if(field->modifiers == ACC_PUBLIC | ACC_STATIC | ACC_FINAL && field->type == *thisType &&
+			if(field->modifiers == ACC_PUBLIC | ACC_STATIC | ACC_FINAL && field->descriptor.type == *thisType &&
 					field->hasInitializer() &&
 					(invokespecialOperation = dynamic_cast<const InvokespecialOperation*>(field->getInitializer())) != nullptr &&
 					(dupOperation = dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(invokespecialOperation->objectOperation)) != nullptr &&
@@ -195,12 +195,13 @@ namespace JDecompiler {
 			case 0xAA: {
 				skip(3 - pos % 4); // alignment by 4 bytes
 				int32_t defaultOffset = nextInt();
-				uint32_t low = nextUInt(), high = nextUInt();
+				int32_t low = nextUInt(), high = nextUInt();
 				if(high < low)
-					throw InstructionFormatError("Instruction tableswitch: low is less than high (low = 0x" + hex(low) + ", high = 0x" + hex(high) + ")");
+					throw InstructionFormatError("Instruction tableswitch: low is less than high (low = " + to_string(low) +
+							", high = " + to_string(high) + ")");
 
 				map<int32_t, int32_t> offsetTable;
-				for(uint32_t i = 0, size = high - low + 1; i < size; i++)
+				for(int32_t i = 0, size = high - low + 1; i < size; i++)
 					offsetTable[i + low] = nextInt();
 				return new SwitchInstruction(defaultOffset, offsetTable);
 			}
@@ -227,7 +228,7 @@ namespace JDecompiler {
 			case 0xB6: return new InvokevirtualInstruction(nextUShort());
 			case 0xB7: return new InvokespecialInstruction(nextUShort());
 			case 0xB8: return new InvokestaticInstruction(nextUShort());
-			case 0xB9: return new InvokeinterfaceInstruction(nextUShort(), nextUShort(), *this);
+			case 0xB9: return new InvokeinterfaceInstruction(nextUShort(), nextUByte(), nextUByte(), *this);
 			case 0xBA: return new InvokedynamicInstruction(nextUShort(), nextUShort(), *this);
 			case 0xBB: return new NewInstruction(nextUShort());
 			case 0xBC: return new NewArrayInstruction(nextUByte());
@@ -270,6 +271,8 @@ namespace JDecompiler {
 		using namespace Operations;
 		using namespace Instructions;
 
+		//LOG(descriptor.name);
+
 		const bool hasCodeAttribute = codeAttribute != nullptr;
 		const uint32_t to = hasCodeAttribute ? codeAttribute->codeLength : 0;
 		const uint16_t localsCount = hasCodeAttribute ? 0 : descriptor.arguments.size();
@@ -280,8 +283,8 @@ namespace JDecompiler {
 		if(!(modifiers & ACC_STATIC))
 			scope->addVariable(classinfo.type, "this");
 
-		const int argumentsCount = descriptor.arguments.size();
-		for(int i = 0; i < argumentsCount; i++)
+		const uint32_t argumentsCount = descriptor.arguments.size();
+		for(uint32_t i = 0; i < argumentsCount; i++)
 			scope->addVariable(descriptor.arguments[i], getNameByType(descriptor.arguments[i]));
 
 		if(!hasCodeAttribute)

@@ -5,7 +5,7 @@
 #include <cstring>
 #include <vector>
 #include <functional>
-//#include <iostream> // DEBUG
+#include <iostream> // DEBUG
 #include <sstream>
 #include <math.h>
 #include <algorithm>
@@ -21,10 +21,10 @@ template<uint16_t length>
 static string hex(uint64_t n) {
 	static const char* digits = "0123456789ABCDEF";
 
-	char str[length + 1];
+	char str[length + 1u];
 	str[length] = '\0';
 
-	for(int i = length; i-- > 0; ) {
+	for(uint16_t i = length; i-- > 0; ) {
 		str[i] = digits[n & 0xF];
 		n >>= 4;
 	}
@@ -207,7 +207,7 @@ static string toLowerCamelCase(const string& str) {
 
 
 static const char* repeatString(const char* str, uint16_t count) {
-	const uint16_t
+	const size_t
 			strlength = strlen(str),
 			resultlength = strlength * count;
 
@@ -331,10 +331,10 @@ class BinaryInputStream {
 				throw EOFException();
 		}
 
-		unsigned short next() { // reads only one byte; returns not char because type expansion for unsigned is same as for signed types
+		uint8_t next() {
 			check();
 			pos += 1;
-			return buffer[(pos - (streampos)1) & 0xFFF] & 0xFF;
+			return (uint8_t)buffer[(pos - (streampos)1) & 0xFFF];
 		}
 
 	public:
@@ -389,9 +389,9 @@ class BinaryInputStream {
 			return d;
 		}
 
-		const char* readBytes(int size) {
+		const char* readBytes(uint32_t size) {
 			char* bytes = new char[size + 1];
-			for(int i = 0; i < size; i++)
+			for(uint32_t i = 0; i < size; i++)
 				bytes[i] = next();
 			bytes[size] = '\0';
 

@@ -40,11 +40,21 @@ namespace JDecompiler {
 				return TypeSize::EIGHT_BYTES;
 			}
 
-			virtual const Type* getGeneralTypeFor(const Type*) const = 0;
+			virtual bool isInstanceof(const Type* type) const = 0;
 
 			bool operator==(const Type& type) const {
 				return this == &type || this->encodedName == type.encodedName;
 			}
+
+
+			template<class T>
+			const T* castTo(const T* t) const {
+				static_assert(is_base_of<Type, T>::value, "template class T of function Type::castTo is not subclass of class Type");
+				return safe_cast<const T*>(castToImpl(static_cast<const Type*>(t)));
+			}
+
+		protected:
+			virtual const Type* castToImpl(const Type*) const = 0;
 	};
 
 
@@ -77,7 +87,7 @@ namespace JDecompiler {
 			}
 
 			virtual string toString() const override {
-				return types[0]->toString();
+				return "Ambigous type {" + join<const Type*>(types, [](auto type) { return type->toString(); }) + '}';
 			}
 
 			virtual bool isPrimitive() const override final {
@@ -88,7 +98,26 @@ namespace JDecompiler {
 				return size;
 			}
 
-			virtual const Type* getGeneralTypeFor(const Type* other) const override {
+			virtual bool isInstanceof(const Type* type) const override {
+				if(*this == *type)
+					return true;
+
+				for(const Type* type : types)
+					if(*type == *type)
+						return true;
+
+				if(const AmbigousType* ambigousType = dynamic_cast<const AmbigousType*>(type)) {
+					for(const Type* type : ambigousType->types)
+						if(find(types.begin(), types.end(), type) == types.end())
+							return false;
+					return true;
+				}
+
+				return false;
+			}
+
+		protected:
+			virtual const Type* castToImpl(const Type* other) const override {
 				if(*this == *other)
 					return this;
 
@@ -127,7 +156,12 @@ namespace JDecompiler {
 				return size;
 			}
 
-			virtual const Type* getGeneralTypeFor(const Type* other) const override {
+			virtual bool isInstanceof(const Type* type) const override {
+				return this == type;
+			}
+
+		protected:
+			virtual const Type* castToImpl(const Type* other) const override {
 				if(*this == *other)
 					return this;
 
@@ -151,29 +185,36 @@ namespace JDecompiler {
 			*const DOUBLE = new PrimitiveType<TypeSize::EIGHT_BYTES>("D", "double");
 
 	static const AmbigousType
-			*const ANY_INT_OR_BOOLEAN = new AmbigousType({BYTE, CHAR, SHORT, INT}),
-			*const ANY_INT = new AmbigousType({BOOLEAN, BYTE, CHAR, SHORT, INT});
+			*const ANY_INT_OR_BOOLEAN = new AmbigousType({BOOLEAN, BYTE, CHAR, SHORT, INT}),
+			*const ANY_INT = new AmbigousType({BYTE, CHAR, SHORT, INT});
 
 
 	struct ReferenceType: Type {
-		ReferenceType(const string& encodedName, const string& name): Type(encodedName, name) {}
+		protected:
+			ReferenceType(const string& encodedName, const string& name): Type(encodedName, name) {}
 
-		ReferenceType(): Type(EMPTY_STRING, EMPTY_STRING) {}
+			ReferenceType(): Type(EMPTY_STRING, EMPTY_STRING) {}
 
-		virtual bool isPrimitive() const override final {
-			return false;
-		}
+		public:
+			virtual bool isPrimitive() const override final {
+				return false;
+			}
 
-		virtual TypeSize getSize() const override final {
-			return TypeSize::FOUR_BYTES;
-		}
+			virtual TypeSize getSize() const override final {
+				return TypeSize::FOUR_BYTES;
+			}
 
-		virtual const Type* getGeneralTypeFor(const Type* other) const override final {
-			if(*this == *other)
-				return this;
+			virtual bool isInstanceof(const Type* type) const override {
+				return this == type;
+			}
 
-			throw DecompilationException("incopatible types " + this->toString() + " and " + other->toString());
-		}
+		protected:
+			virtual const Type* castToImpl(const Type* other) const override {
+				if(*this == *other)
+					return this;
+
+				throw DecompilationException("incopatible types " + this->toString() + " and " + other->toString());
+			}
 	};
 
 
@@ -250,11 +291,11 @@ namespace JDecompiler {
 	};
 
 	static const ClassType
+			*const OBJECT = new ClassType("java/lang/Object"),
 			*const STRING = new ClassType("java/lang/String"),
 			*const CLASS = new ClassType("java/lang/Class"),
 			*const METHOD_TYPE = new ClassType("java/lang/invoke/MethodType"),
 			*const METHOD_HANDLE = new ClassType("java/lang/invoke/MethodHandle"),
-			*const ANY_OBJECT = new ClassType("java/lang/Object"), // TODO
 			*const EXCEPTION = new ClassType("java/lang/Exception");
 
 
@@ -267,7 +308,7 @@ namespace JDecompiler {
 
 		public:
 			ArrayType(const string& name) {
-				int i = 0;
+				size_t i = 0;
 				for(char c = name[0]; c == '['; c = name[++i]) {
 					nestingLevel++;
 					braces += "[]";
@@ -296,6 +337,35 @@ namespace JDecompiler {
 
 			virtual string toString() const override {
 				return memberType->toString() + braces;
+			}
+	};
+
+
+	struct AnyType final: ReferenceType {
+		private: AnyType(): ReferenceType("Ljava/lang/Object", "java.lang.Object") {}
+
+		protected:
+			virtual const Type* castToImpl(const Type* other) const override {
+				return other;
+			}
+
+		public:
+			virtual string toString(const ClassInfo& classinfo) const override {
+				return OBJECT->toString(classinfo);
+			}
+
+			virtual string toString() const override {
+				return OBJECT->toString();
+			}
+
+			static AnyType& getInstance() {
+				static AnyType instance;
+				return instance;
+			}
+
+			static ArrayType& getArrayTypeInstance() {
+				static ArrayType instance(&AnyType::getInstance());
+				return instance;
 			}
 	};
 
@@ -359,12 +429,12 @@ namespace JDecompiler {
 
 		vector<const ReferenceType*> parameters;
 
-		for(int i = 0; true; i++) {
+		for(size_t i = 0; true; i++) {
 			const ReferenceType* parameter;
 			switch(str[i]) {
 				case 'L':
 					parameter = new ClassType(&str[i + 1]);
-					i += parameter->encodedName.size() + 2;
+					i += parameter->encodedName.size() + 2u;
 					break;
 				case '[':
 					parameter = new ArrayType(&str[i]);
@@ -372,7 +442,7 @@ namespace JDecompiler {
 					break;
 				case 'T':
 					parameter = new ParameterType(&str[i]);
-					i += parameter->encodedName.size() + 1;
+					i += parameter->encodedName.size() + 1u;
 					break;
 				case '>':
 					parameters = parseParameters(&str[i]);

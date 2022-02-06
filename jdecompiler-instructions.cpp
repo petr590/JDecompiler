@@ -26,8 +26,7 @@ namespace JDecompiler { namespace Instructions {
 
 
 	struct AConstNull final: InstructionAndOperation {
-		private:
-			AConstNull() {}
+		private: AConstNull() {}
 
 		public:
 			virtual string toString(const CodeEnvironment& environment) const override {
@@ -35,7 +34,7 @@ namespace JDecompiler { namespace Instructions {
 			}
 
 			virtual const Type* getReturnType() const override {
-				return ANY_OBJECT;
+				return &AnyType::getInstance();
 			}
 
 			static inline AConstNull& getInstance() {
@@ -516,35 +515,46 @@ namespace Instructions {
 		virtual inline const Operation* toOperation(const CodeEnvironment& environment) const override {
 			if(offset == 0) return new EmptyInfiniteLoopScope(environment);
 
-			const uint32_t index = environment.bytecode.posToIndex(offset + environment.pos);
+			const uint32_t index = environment.bytecode.posToIndex(environment.pos + offset);
 
 			const Scope* const currentScope = environment.getCurrentScope();
 
-			const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope);
-
-			if(ifScope) {
-				if(offset > 0 && !ifScope->isLoop && environment.index == ifScope->to) {
+			if(const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope)) {
+				// Here goto instruction creates else scope
+				if(offset > 0 && !ifScope->isLoop && environment.index == ifScope->to /* check if goto instruction in the end of ifScope */) {
 					const Scope* parentScope = ifScope->parentScope;
 
-					if(index <= parentScope->to)
+					/* I don't remember why there is index minus 1 instead of index,
+					   but since I wrote that, then it should be so :) */
+					if(index - 1 <= parentScope->to)
 						return new ElseScope(environment, index - 1, ifScope);
 
 					const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(environment.bytecode.getInstructions()[parentScope->to]);
 					if(gotoInstruction && environment.bytecode.posToIndex(gotoInstruction->offset + environment.bytecode.indexToPos(parentScope->to)) == index)
 						return new ElseScope(environment, parentScope->to - 1, ifScope);
+				} else {
+					// Here goto creates operator continue
+					do {
+						if(index == ifScope->from) {
+							ifScope->isLoop = true;
+							return new ContinueOperation(environment, ifScope);
+						}
+						ifScope = dynamic_cast<const IfScope*>(ifScope->parentScope);
+					} while(ifScope);
 				}
+			} /*else if(const TryScope* tryScope = dynamic_cast<const TryScope*>(currentScope)) {
 
-				do {
-					if(index == ifScope->from) {
-						ifScope->isLoop = true;
-						return new ContinueOperation(environment, ifScope);
-					}
-					ifScope = dynamic_cast<const IfScope*>(ifScope->parentScope);
-				} while(ifScope);
+			}*/
+
+			//cerr << "GOTO LOG!!! " << offset << ' ' << index << ' ' << currentScope->from << "  " << index << ' ' << currentScope->to << '\n' << typeid(*currentScope).name() << endl;
+
+			if(offset > 0 && index >= currentScope->from && index - 1 <= currentScope->to) { // goto in the borders of current scope
+				const_cast<Bytecode&>(environment.bytecode).skip(offset);
+				return nullptr;
 			}
 
-			//LOG(typeid(*currentScope).name() << ": " << currentScope->from << ", " << currentScope->to);
-			throw DecompilationException("illegal using of goto instruction: goto " + to_string(environment.pos + offset));
+			throw DecompilationException("illegal using of goto instruction: goto from " +
+					to_string(environment.pos) + " to " + to_string(environment.pos + offset));
 		}
 	};
 
@@ -590,7 +600,7 @@ namespace Instructions {
 	};
 
 	struct AReturnInstruction: ReturnInstruction {
-		AReturnInstruction(): ReturnInstruction(ANY_OBJECT) {}
+		AReturnInstruction(): ReturnInstruction(&AnyType::getInstance()) {}
 	};
 
 
@@ -669,9 +679,13 @@ namespace Instructions {
 
 
 	struct InvokeinterfaceInstruction: InvokeInstruction {
-		InvokeinterfaceInstruction(uint16_t index, uint16_t zeroInt, const Bytecode& bytecode): InvokeInstruction(index) {
-			if(zeroInt != 0)
-				cerr << "warning: illegal format of instruction invokeinterface at pos " << hex(bytecode.getPos()) << ": by specification, two bytes must be zero" << endl;
+		InvokeinterfaceInstruction(uint16_t index, uint16_t count, uint16_t zeroByte, const Bytecode& bytecode): InvokeInstruction(index) {
+			if(count == 0)
+				cerr << "warning: illegal format of instruction invokeinterface at pos 0x" << hex(bytecode.getPos()) <<
+						": by specification, count must not be zero" << endl;
+			if(zeroByte != 0)
+				cerr << "warning: illegal format of instruction invokeinterface at pos 0x" << hex(bytecode.getPos()) <<
+						": by specification, fourth byte must be zero" << endl;
 		}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
@@ -681,9 +695,10 @@ namespace Instructions {
 
 
 	struct InvokedynamicInstruction: InvokeInstruction {
-		InvokedynamicInstruction(uint16_t index, uint16_t zeroInt, const Bytecode& bytecode): InvokeInstruction(index) {
-			if(zeroInt != 0)
-				cerr << "warning: illegal format of instruction invokedynamic at pos " << hex(bytecode.getPos()) << ": by specification, two bytes must be zero" << endl;
+		InvokedynamicInstruction(uint16_t index, uint16_t zeroShort, const Bytecode& bytecode): InvokeInstruction(index) {
+			if(zeroShort != 0)
+				cerr << "warning: illegal format of instruction invokedynamic at pos " << hex(bytecode.getPos()) <<
+						": by specification, third and fourth bytes must be zero" << endl;
 		}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
@@ -703,7 +718,8 @@ namespace Instructions {
 						case RefKind::GETSTATIC: return new GetStaticFieldOperation(environment, index);
 						case RefKind::PUTFIELD: return new PutInstanceFieldOperation(environment, index);
 						case RefKind::PUTSTATIC: return new PutStaticFieldOperation(environment, index);
-						default: throw IllegalStateException((string)"Illegal reference kind " + to_string((int)bootstrapMethod->methodHandle->referenceKind));
+						default: throw IllegalStateException((string)"Illegal reference kind " +
+								to_string((unsigned int)bootstrapMethod->methodHandle->referenceKind));
 					}
 				case KindType::METHOD: {
 					const MethodDescriptor descriptor(invokeDynamicConstant->nameAndType);
@@ -711,7 +727,7 @@ namespace Instructions {
 					vector<const Operation*> arguments;
 
 					// pop arguments that already on stack
-					for(int i = descriptor.arguments.size(); i > 0; i--)
+					for(uint32_t i = descriptor.arguments.size(); i > 0; i--)
 						arguments.push_back(environment.stack.pop());
 
 					// push lookup argument
@@ -741,10 +757,11 @@ namespace Instructions {
 						case RefKind::NEWINVOKESPECIAL: return new InvokespecialOperation(environment,
 									new NewOperation(environment, bootstrapMethod->methodHandle->reference->clazz), index);
 						case RefKind::INVOKEINTERFACE: return new InvokeinterfaceOperation(environment, index);
-						default: throw IllegalStateException((string)"Illegal reference kind " + to_string((int)bootstrapMethod->methodHandle->referenceKind));
+						default: throw IllegalStateException((string)"Illegal reference kind " +
+								to_string((unsigned int)bootstrapMethod->methodHandle->referenceKind));
 					}
 				}
-				default: throw IllegalStateException((string)"Illegal kind type " + to_string((int)bootstrapMethod->methodHandle->kindType));
+				default: throw IllegalStateException((string)"Illegal kind type " + to_string((unsigned int)bootstrapMethod->methodHandle->kindType));
 			}
 		}
 	};

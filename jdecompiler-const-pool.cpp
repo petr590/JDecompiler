@@ -48,7 +48,7 @@ namespace JDecompiler {
 				checkIndex(index);
 				const T* constant = dynamic_cast<const T*>(pool[index]);
 				if(constant == nullptr)
-					throw DynamicCastException("Invalid constant pool reference 0x" + hex<4>(index) + " at " + typeid(T).name());
+					throw DynamicCastException("Invalid constant pool referenceConstant 0x" + hex<4>(index) + " at " + typeid(T).name());
 				return constant;
 			}
 
@@ -60,7 +60,7 @@ namespace JDecompiler {
 					return defaultValueGetter();
 				const T* constant = dynamic_cast<const T*>(pool[index]);
 				if(constant == nullptr)
-					throw DynamicCastException("Invalid constant pool reference 0x" + hex<4>(index) + " at " + typeid(T).name());
+					throw DynamicCastException("Invalid constant pool referenceConstant 0x" + hex<4>(index) + " at " + typeid(T).name());
 				return constant;
 			}
 
@@ -127,40 +127,8 @@ namespace JDecompiler {
 			value = constPool.get<Utf8Constant>(valueRef);
 		}
 
-		virtual string toString(const ClassInfo& classinfo) const override {
-			#define checkLength(n) if(bytes + n >= end) throw DecompilationException("Unexpected end of the string")
-			string str = "\"";
-			const char* bytes = value->c_str();
-			for(const char* end = bytes + strlen(bytes); bytes < end; bytes++) {
-				char32_t ch = *bytes & 0xFF;
-				char32_t code = ch;
-				switch(ch) {
-					case '"': str += "\\\""; break;
-					case '\b': str += "\\b"; break;
-					case '\t': str += "\\t"; break;
-					case '\n': str += "\\n"; break;
-					case '\f': str += "\\f"; break;
-					case '\r': str += "\\r"; break;
-					case '\\': str += "\\\\"; break;
-					default:
-						if((ch & 0xE0) == 0xC0) {
-							checkLength(1);
-							ch = (ch << 8) | (*++bytes & 0xFF);
-							code = (ch & 0x1F00) >> 2 | (ch & 0x3F);
-						} else if((ch & 0xF0) == 0xE0) {
-							if(ch == 0xED) {
-								checkLength(5);
-								str += encodeUtf8(0x10000 | (*++bytes & 0xF) << 16 | (*++bytes & 0x3F) << 10 | (*(bytes += 2) & 0xF) << 6 | (*++bytes & 0x3F));
-								continue;
-							}
-							checkLength(2);
-							ch = (ch << 16) | (*++bytes & 0xFF) << 8 | (*++bytes & 0xFF);
-							code = (ch & 0xF0000) >> 4 | (ch & 0x3F00) >> 2 | (ch & 0x3F);
-						}
-						str += code < 0x20 ? "\\u" + hex<4>(code) : char32ToString(ch);
-				}
-			}
-			return str + '"';
+		virtual string toString(const ClassInfo&) const override {
+			return stringToLiteral(*value);
 		}
 	};
 
@@ -219,7 +187,7 @@ namespace JDecompiler {
 			const KindType kindType;
 
 			const uint16_t referenceRef;
-			const ReferenceConstant* reference;
+			const ReferenceConstant* referenceConstant;
 
 		private:
 			static KindType getKindType(const ReferenceKind referenceKind) {
@@ -238,7 +206,7 @@ namespace JDecompiler {
 			}
 
 			virtual void init(const ConstantPool& constPool) override {
-				reference = constPool.get<ReferenceConstant>(referenceRef);
+				referenceConstant = constPool.get<ReferenceConstant>(referenceRef);
 			}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
@@ -267,7 +235,8 @@ namespace JDecompiler {
 
 		const NameAndTypeConstant* nameAndType;
 
-		InvokeDynamicConstant(uint16_t bootstrapMethodAttrIndex, uint16_t nameAndTypeRef): bootstrapMethodAttrIndex(bootstrapMethodAttrIndex), nameAndTypeRef(nameAndTypeRef) {}
+		InvokeDynamicConstant(uint16_t bootstrapMethodAttrIndex, uint16_t nameAndTypeRef):
+				bootstrapMethodAttrIndex(bootstrapMethodAttrIndex), nameAndTypeRef(nameAndTypeRef) {}
 
 		virtual void init(const ConstantPool& constPool) override {
 			nameAndType = constPool.get<NameAndTypeConstant>(nameAndTypeRef);

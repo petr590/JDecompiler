@@ -9,6 +9,7 @@
 #include <sstream>
 #include <math.h>
 #include <algorithm>
+#include "jdecompiler.h"
 
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-util.cpp ]"
@@ -183,7 +184,7 @@ struct CastException: Exception {
 };
 
 template<class T, class B>
-T safe_cast(B o) {
+static T safe_cast(B o) {
 	T t = dynamic_cast<T>(o);
 	if(t == nullptr && o != nullptr)
 		throw CastException((string)"cannot cast " + typeid(B).name() + " to " + typeid(T).name());
@@ -302,16 +303,6 @@ static string encodeUtf8(char32_t c) {
 }
 
 
-/*
-template<typename Base, typename T>
-inline bool instanceof(const T*) {
-	return is_base_of<Base, T>::value;
-}
-*/
-
-namespace JDecompiler {
-	struct Utf8Constant;
-}
 
 class BinaryInputStream {
 	#define bufferSize 4096
@@ -346,33 +337,33 @@ class BinaryInputStream {
 			infile.seekg(0, ios::beg);
 		}
 
-		inline streampos getPos() const {
+		inline const streampos& getPos() const {
 			return pos;
 		}
 
-		inline void setPosTo(streampos pos) {
+		inline void setPosTo(const streampos& pos) {
 			this->pos = pos;
 		}
 
-		uint8_t readByte() {
+		inline uint8_t readByte() {
 			return next();
 		}
 
-		char readChar() {
-			return next();
+		inline char readChar() {
+			return (char)next();
 		}
 
-		uint16_t readShort() {
-			return next() << 8 | next();
+		inline uint16_t readShort() {
+			return (uint16_t)(next() << 8 | next());
 		}
 
-		uint32_t readInt() {
-			return next() << 24 | next() << 16 | next() << 8 | next();
+		inline uint32_t readInt() {
+			return (uint32_t)(next() << 24 | next() << 16 | next() << 8 | next());
 		}
 
-		uint64_t readLong() {
+		inline uint64_t readLong() {
 			return (uint64_t)next() << 56 | (uint64_t)next() << 48 | (uint64_t)next() << 40 | (uint64_t)next() << 32 |
-					(uint64_t)next() << 24 | (uint64_t)next() << 16 | (uint64_t)next() << 8 | (uint64_t)next();
+					(uint64_t)(next() << 24 | next() << 16 | next() << 8 | next());
 		}
 
 		float readFloat() {
@@ -434,27 +425,27 @@ namespace JDecompiler {
 			}
 	};
 
-	static string primitiveToString(bool value) {
+	static inline string primitiveToString(bool value) {
 		return value ? "true" : "false";
 	}
 
-	static string primitiveToString(char16_t c) {
-		return "'" + (c < 0x20 ? "\\u" + hex<4>(c) : encodeUtf8(c)) + "'";
+	static inline string primitiveToString(char16_t c) {
+		return '\'' + (c < 0x20 ? "\\u" + hex<4>(c) : encodeUtf8(c)) + '\'';
 	}
 
-	static string primitiveToString(int8_t num) { // byte
+	static inline string primitiveToString(int8_t num) { // byte
 		return to_string(num);
 	}
 
-	static string primitiveToString(int16_t num) { // short
+	static inline string primitiveToString(int16_t num) { // short
 		return to_string(num);
 	}
 
-	static string primitiveToString(int32_t num) { // int
+	static inline string primitiveToString(int32_t num) { // int
 		return to_string(num);
 	}
 
-	static string primitiveToString(int64_t num) { // long
+	static inline string primitiveToString(int64_t num) { // long
 		return to_string(num) + "l";
 	}
 
@@ -472,6 +463,42 @@ namespace JDecompiler {
 		ostringstream out;
 		out << num;
 		return out.str();
+	}
+
+	static string stringToLiteral(const string& str) {
+		#define checkLength(n) if(bytes + n >= end) throw DecompilationException("Unexpected end of the string")
+		string result = "\"";
+		const char* bytes = str.c_str();
+		for(const char* end = bytes + strlen(bytes); bytes < end; bytes++) {
+			char32_t ch = *bytes & 0xFF;
+			char32_t code = ch;
+			switch(ch) {
+				case '"': result += "\\\""; break;
+				case '\b': result += "\\b"; break;
+				case '\t': result += "\\t"; break;
+				case '\n': result += "\\n"; break;
+				case '\f': result += "\\f"; break;
+				case '\r': result += "\\r"; break;
+				case '\\': result += "\\\\"; break;
+				default:
+					if((ch & 0xE0) == 0xC0) {
+						checkLength(1);
+						ch = (ch << 8) | (*++bytes & 0xFF);
+						code = (ch & 0x1F00) >> 2 | (ch & 0x3F);
+					} else if((ch & 0xF0) == 0xE0) {
+						if(ch == 0xED) {
+							checkLength(5);
+							result += encodeUtf8(0x10000 | (*++bytes & 0xF) << 16 | (*++bytes & 0x3F) << 10 | (*(bytes += 2) & 0xF) << 6 | (*++bytes & 0x3F));
+							continue;
+						}
+						checkLength(2);
+						ch = (ch << 16) | (*++bytes & 0xFF) << 8 | (*++bytes & 0xFF);
+						code = (ch & 0xF0000) >> 4 | (ch & 0x3F00) >> 2 | (ch & 0x3F);
+					}
+					result += code < 0x20 ? "\\u" + hex<4>(code) : char32ToString(ch);
+			}
+		}
+		return result + '"';
 	}
 }
 

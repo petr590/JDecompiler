@@ -311,7 +311,17 @@ namespace JDecompiler { namespace Instructions {
 		BinaryOperatorInstruction(uint16_t typeCode): OperatorInstruction<operation, priority>(typeCode) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-			return new BinaryOperatorOperation(OperatorInstruction<operation, priority>::type, environment, operation, priority);
+			return new BinaryOperatorOperation(this->OperatorInstruction<operation, priority>::type, environment, operation, priority);
+		}
+	};
+
+
+	template<char32_t operation, uint16_t priority>
+	struct ShiftOperatorInstruction: BinaryOperatorInstruction<operation, priority> {
+		ShiftOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction<operation, priority>(typeCode) {}
+
+		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+			return new BinaryOperatorOperation(this->BinaryOperatorInstruction<operation, priority>::type, INT, environment, operation, priority);
 		}
 	};
 
@@ -321,7 +331,7 @@ namespace JDecompiler { namespace Instructions {
 		UnaryOperatorInstruction(uint16_t typeCode): OperatorInstruction<operation, priority>(typeCode) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-			return new UnaryOperatorOperation(OperatorInstruction<operation, priority>::type, environment, operation, priority);
+			return new UnaryOperatorOperation(this->OperatorInstruction<operation, priority>::type, environment, operation, priority);
 		}
 	};
 
@@ -337,17 +347,44 @@ namespace JDecompiler { namespace Instructions {
 
 	using NegOperatorInstruction = UnaryOperatorInstruction<'-', 13>;
 
-	using ShiftLeftOperatorInstruction = BinaryOperatorInstruction<'<<', 10>;
+	using ShiftLeftOperatorInstruction = ShiftOperatorInstruction<'<<', 10>;
 
-	using ShiftRightOperatorInstruction = BinaryOperatorInstruction<'>>', 10>;
+	using ShiftRightOperatorInstruction = ShiftOperatorInstruction<'>>', 10>;
 
-	using UShiftRightOperatorInstruction = BinaryOperatorInstruction<'>>>', 10>;
+	using UShiftRightOperatorInstruction = ShiftOperatorInstruction<'>>>', 10>;
 
 	using AndOperatorInstruction = BinaryOperatorInstruction<'&', 7>;
 
 	using OrOperatorInstruction = BinaryOperatorInstruction<'|', 5>;
 
 	using XorOperatorInstruction = BinaryOperatorInstruction<'^', 6>;
+
+
+	/* maybe TODO
+	template<PrimitiveType type> using AddOperatorInstruction = BinaryOperatorInstruction<type, '+', 11>;
+
+	template<PrimitiveType type> using SubOperatorInstruction = BinaryOperatorInstruction<type, '-', 11>;
+
+	template<PrimitiveType type> using MulOperatorInstruction = BinaryOperatorInstruction<type, '*', 12>;
+
+	template<PrimitiveType type> using DivOperatorInstruction = BinaryOperatorInstruction<type, '/', 12>;
+
+	template<PrimitiveType type> using RemOperatorInstruction = BinaryOperatorInstruction<type, '%', 12>;
+
+	template<PrimitiveType type> using NegOperatorInstruction = UnaryOperatorInstruction<type, '-', 13>;
+
+	template<PrimitiveType type> using ShiftLeftOperatorInstruction = BinaryOperatorInstruction<type, '<<', 10>;
+
+	template<PrimitiveType type> using ShiftRightOperatorInstruction = BinaryOperatorInstruction<type, '>>', 10>;
+
+	template<PrimitiveType type> using UShiftRightOperatorInstruction = BinaryOperatorInstruction<type, '>>>', 10>;
+
+	template<PrimitiveType type> using AndOperatorInstruction = BinaryOperatorInstruction<type, '&', 7>;
+
+	template<PrimitiveType type> using OrOperatorInstruction = BinaryOperatorInstruction<type, '|', 5>;
+
+	template<PrimitiveType type> using XorOperatorInstruction = BinaryOperatorInstruction<type, '^', 6>;
+	*/
 
 
 
@@ -542,9 +579,10 @@ namespace Instructions {
 						ifScope = dynamic_cast<const IfScope*>(ifScope->parentScope);
 					} while(ifScope);
 				}
-			} /*else if(const TryScope* tryScope = dynamic_cast<const TryScope*>(currentScope)) {
-
-			}*/
+			} else if(const TryScope* tryScope = dynamic_cast<const TryScope*>(currentScope)) {
+				if(environment.index == tryScope->to) return nullptr;
+					//return new CatchScope(environment, tryScope);
+			}
 
 			//cerr << "GOTO LOG!!! " << offset << ' ' << index << ' ' << currentScope->from << "  " << index << ' ' << currentScope->to << '\n' << typeid(*currentScope).name() << endl;
 
@@ -573,35 +611,18 @@ namespace Instructions {
 	};
 
 
+	template<class ReturnOperation>
 	struct ReturnInstruction: Instruction {
-		const Type* const type;
-
-		ReturnInstruction(const Type* type): type(type) {}
-
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-			return new ReturnOperation(environment, type);
+			return new ReturnOperation(environment);
 		}
 	};
 
-	struct IReturnInstruction: ReturnInstruction {
-		IReturnInstruction(): ReturnInstruction(INT) {}
-	};
-
-	struct LReturnInstruction: ReturnInstruction {
-		LReturnInstruction(): ReturnInstruction(LONG) {}
-	};
-
-	struct FReturnInstruction: ReturnInstruction {
-		FReturnInstruction(): ReturnInstruction(FLOAT) {}
-	};
-
-	struct DReturnInstruction: ReturnInstruction {
-		DReturnInstruction(): ReturnInstruction(DOUBLE) {}
-	};
-
-	struct AReturnInstruction: ReturnInstruction {
-		AReturnInstruction(): ReturnInstruction(&AnyType::getInstance()) {}
-	};
+	using IReturnInstruction = ReturnInstruction<IReturnOperation>;
+	using LReturnInstruction = ReturnInstruction<LReturnOperation>;
+	using FReturnInstruction = ReturnInstruction<FReturnOperation>;
+	using DReturnInstruction = ReturnInstruction<DReturnOperation>;
+	using AReturnInstruction = ReturnInstruction<AReturnOperation>;
 
 
 	struct VReturn: VoidInstructionAndOperation {
@@ -610,7 +631,7 @@ namespace Instructions {
 		public:
 			virtual string toString(const CodeEnvironment& environment) const override { return "return"; }
 
-			static inline VReturn& getInstance() {
+			static VReturn& getInstance() {
 				static VReturn instance;
 				return instance;
 			}
@@ -718,21 +739,44 @@ namespace Instructions {
 						case RefKind::GETSTATIC: return new GetStaticFieldOperation(environment, index);
 						case RefKind::PUTFIELD: return new PutInstanceFieldOperation(environment, index);
 						case RefKind::PUTSTATIC: return new PutStaticFieldOperation(environment, index);
-						default: throw IllegalStateException((string)"Illegal reference kind " +
+						default: throw IllegalStateException((string)"Illegal referenceConstant kind " +
 								to_string((unsigned int)bootstrapMethod->methodHandle->referenceKind));
 					}
 				case KindType::METHOD: {
-					const MethodDescriptor descriptor(invokeDynamicConstant->nameAndType);
+					const MethodDescriptor descriptor(*bootstrapMethod->methodHandle->referenceConstant->clazz->name,
+							*invokeDynamicConstant->nameAndType->name, *invokeDynamicConstant->nameAndType->descriptor);
 
 					vector<const Operation*> arguments;
+
+					static const ArrayType OBJECT_ARRAY(OBJECT);
+					static const ClassType CALL_SITE("java/lang/invoke/CallSite");
+					static const ClassType LOOKUP("java/lang/invoke/MethodHandles$Lookup");
+					static const ClassType STRING_CONCAT_FACTORY("java/lang/invoke/StringConcatFactory");
 
 					// pop arguments that already on stack
 					for(uint32_t i = descriptor.arguments.size(); i > 0; i--)
 						arguments.push_back(environment.stack.pop());
 
+
+					if(bootstrapMethod->methodHandle->referenceKind == RefKind::INVOKESTATIC && descriptor.name == "makeConcatWithConstants" &&
+						MethodDescriptor(bootstrapMethod->methodHandle->referenceConstant) ==
+						MethodDescriptor(STRING_CONCAT_FACTORY, "makeConcatWithConstants", &CALL_SITE, {&LOOKUP, STRING, METHOD_TYPE, STRING, &OBJECT_ARRAY}))
+					{
+						// push static arguments on stack
+						for(uint16_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
+							environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(bootstrapMethod->argumentIndexes[i], bootstrapMethod->arguments[i]));
+
+						// push non-static arguments on stack
+						for(const Operation* operation : arguments)
+							environment.stack.push(operation);
+
+						return new ConcatStringsOperation(environment, *new MethodDescriptor(descriptor));
+					}
+
+
 					// push lookup argument
 					environment.stack.push(new InvokestaticOperation(environment,
-							*new MethodDescriptor("publicLookup", "()Ljava/lang/invoke/CallSite;"), METHOD_HANDLE));
+							*new MethodDescriptor(STRING_CONCAT_FACTORY, "publicLookup", CALL_SITE, {})));
 
 					StringConstant* nameArgument = new StringConstant(invokeDynamicConstant->nameAndType->nameRef);
 					nameArgument->init(environment.constPool);
@@ -755,9 +799,9 @@ namespace Instructions {
 						case RefKind::INVOKESTATIC: return new InvokestaticOperation(environment, index);
 						case RefKind::INVOKESPECIAL: return new InvokespecialOperation(environment, index);
 						case RefKind::NEWINVOKESPECIAL: return new InvokespecialOperation(environment,
-									new NewOperation(environment, bootstrapMethod->methodHandle->reference->clazz), index);
+									new NewOperation(environment, bootstrapMethod->methodHandle->referenceConstant->clazz), index);
 						case RefKind::INVOKEINTERFACE: return new InvokeinterfaceOperation(environment, index);
-						default: throw IllegalStateException((string)"Illegal reference kind " +
+						default: throw IllegalStateException((string)"Illegal referenceConstant kind " +
 								to_string((unsigned int)bootstrapMethod->methodHandle->referenceKind));
 					}
 				}

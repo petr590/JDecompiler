@@ -4,9 +4,13 @@
 #define LOG_PREFIX
 #define LOG(s) cout << LOG_PREFIX << ": " << s << endl;
 
+//UNDEF_INLINE_ATTR TODO
+
 #include <string>
 #include <vector>
 #include <stdint.h>
+
+//DEF_INLINE_ATTR
 
 using namespace std;
 
@@ -17,6 +21,8 @@ class Exception;
 class BinaryInputStream;
 
 namespace JDecompiler {
+	//#define inline __attribute__((always_inline)) TODO
+
 	class FormatString;
 
 	// jdecompiler-const-pool
@@ -86,6 +92,10 @@ namespace JDecompiler {
 
 	struct Type;
 
+	struct BasicType;
+
+	struct SpecialType;
+
 	template<TypeSize>
 	struct PrimitiveType;
 
@@ -95,15 +105,13 @@ namespace JDecompiler {
 
 	struct ArrayType;
 
-	static const Type* parseType(const char* encodedName);
+	static const BasicType* parseType(const char* encodedName);
 
-	static const Type* parseType(const string& encodedName);
+	static const BasicType* parseType(const string& encodedName);
 
-	static const Type* parseReturnType(const char* encodedName);
+	static const BasicType* parseReturnType(const char* encodedName);
 
 	static const ReferenceType* parseReferenceType(const string& encodedName);
-
-	static string getNameByType(const Type* const type);
 
 	struct ClassEntry;
 

@@ -68,16 +68,18 @@ namespace JDecompiler {
 	struct CodeAttribute: Attribute {
 		struct ExceptionAttribute {
 			const uint16_t startPos, endPos, handlerPos;
-			const ClassConstant* const catchType;
+			const ClassType catchType;
 
 			ExceptionAttribute(BinaryInputStream& instream, const ConstantPool& constPool):
 					startPos(instream.readShort()), endPos(instream.readShort()), handlerPos(instream.readShort()),
 					catchType(constPool.getOrDefault<ClassConstant>(instream.readShort(),
-							[] () { return new ClassConstant(new Utf8Constant("java/lang/Exception")); })) {}
+							[] () { return new ClassConstant(new Utf8Constant("java/lang/Throwable")); })) {}
 		};
 
-		static vector<ExceptionAttribute*> readExceptionTable(BinaryInputStream& instream, const ConstantPool& constPool, uint16_t length) {
-			vector<ExceptionAttribute*> exceptionTable;
+		static const vector<const ExceptionAttribute*> readExceptionTable(BinaryInputStream& instream, const ConstantPool& constPool) {
+			const uint16_t length = instream.readShort();
+
+			vector<const ExceptionAttribute*> exceptionTable;
 			exceptionTable.reserve(length);
 
 			for(uint16_t i = 0; i < length; i++)
@@ -89,14 +91,13 @@ namespace JDecompiler {
 		const uint16_t maxStack, maxLocals;
 		const uint32_t codeLength;
 		const char* const code;
-		const uint16_t exceptionTableLength;
-		vector<ExceptionAttribute*> exceptionTable;
+		const vector<const ExceptionAttribute*> exceptionTable;
 		const Attributes& attributes;
 
 		CodeAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
 				Attribute("Code", length), maxStack(instream.readShort()), maxLocals(instream.readShort()),
 				codeLength(instream.readInt()), code(instream.readBytes(codeLength)),
-				exceptionTableLength(instream.readShort()), exceptionTable(readExceptionTable(instream, constPool, exceptionTableLength)),
+				exceptionTable(readExceptionTable(instream, constPool)),
 				attributes(*new Attributes(instream, constPool, instream.readShort())) {}
 	};
 
@@ -129,8 +130,8 @@ namespace JDecompiler {
 			}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
-				return "@" + type->toString(classinfo) + (elements.size() == 0 ? "" : "(" + join<const Element*>(elements,
-						[&classinfo] (auto element) { return element->name + "=" + element->value.toString(classinfo); }) + ")");
+				return '@' + type->toString(classinfo) + (elements.size() == 0 ? "" : '(' + join<const Element*>(elements,
+						[&classinfo] (auto element) { return element->name + '=' + element->value.toString(classinfo); }) + ')');
 			}
 
 		private:
@@ -182,7 +183,7 @@ namespace JDecompiler {
 		EnumAnnotationValue(const Type* type, const string& name): type(type), name(name) {}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
-			return type->toString(classinfo) + "." + name;
+			return type->toString(classinfo) + '.' + name;
 		}
 	};
 
@@ -217,7 +218,7 @@ namespace JDecompiler {
 		}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
-			return "{" + join<const AnnotationValue*>(elements, [&classinfo] (const AnnotationValue* element) { return element->toString(classinfo); }) + "}";
+			return '{' + join<const AnnotationValue*>(elements, [&classinfo] (const AnnotationValue* element) { return element->toString(classinfo); }) + '}';
 		}
 	};
 
@@ -237,7 +238,7 @@ namespace JDecompiler {
 			case '@': return *new AnnotationAnnotationValue(instream, constPool);
 			case '[': return *new ArrayAnnotationValue(instream, constPool);
 			default:
-				throw IllegalAttributeException((string)"Illegal annotation element value type: '" + (char)typeTag + "' (0x" + hex(typeTag) + ")");
+				throw IllegalAttributeException((string)"Illegal annotation element value type: '" + (char)typeTag + "' (0x" + hex(typeTag) + ')');
 		}
 	}
 
@@ -256,7 +257,7 @@ namespace JDecompiler {
 		virtual string toString(const ClassInfo& classinfo) const override {
 			string str;
 			for(const Annotation* annotation : annotations)
-				str += annotation->toString(classinfo) + "\n" + classinfo.getIndent();
+				str += annotation->toString(classinfo) + '\n' + classinfo.getIndent();
 			return str;
 		}
 	};
@@ -300,6 +301,33 @@ namespace JDecompiler {
 
 	struct ClassSignature {
 		vector<ReferenceType> parameters;
+	};
+
+
+
+	struct LocalVariableTableAttribute: Attribute {
+		private:
+			struct LocalVariable {
+				const uint16_t startPos, endPos;
+				const string& name;
+				const Type& type;
+				const uint16_t index;
+
+				LocalVariable(BinaryInputStream& instream, const ConstantPool& constPool):
+						startPos(instream.readShort()), endPos(startPos + instream.readShort()), name(constPool.getUtf8Constant(instream.readShort())),
+						type(*parseType(constPool.getUtf8Constant(instream.readShort()))), index(instream.readShort()) {}
+			};
+
+			vector<const LocalVariable*> localVariableTable;
+
+		public:
+			LocalVariableTableAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+					Attribute("LocalVariableTable", length) {
+				const uint16_t localVariableTableLength = instream.readShort();
+				localVariableTable.reserve(localVariableTableLength);
+				for(int i = localVariableTableLength; i > 0; i--)
+					localVariableTable.push_back(new LocalVariable(instream, constPool));
+			}
 	};
 
 
@@ -372,6 +400,8 @@ namespace JDecompiler {
 				attribute = new BootstrapMethodsAttribute(length, instream, constPool);
 			else if(name == "AnnotationDefault")
 				attribute = new AnnotationDefaultAttribute(length, instream, constPool);
+			else if(name == "LocalVariableTable")
+				attribute = new LocalVariableTableAttribute(length, instream, constPool);
 			else
 				attribute = new UnknownAttribute(name, length, instream);
 

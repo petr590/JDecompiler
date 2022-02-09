@@ -15,10 +15,10 @@
 using namespace std;
 
 namespace JDecompiler {
-	EnumClass::EnumClass(const ClassType* thisType, const ClassType* superType, const ConstantPool& constPool, uint16_t modifiers,
+	EnumClass::EnumClass(const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 			const vector<const ClassType*>& interfaces, const Attributes& attributes,
 			const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders):
-			Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, processMethodData(methodDataHolders)) {
+			Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, processMethodData(methodDataHolders, thisType)) {
 
 		using namespace Operations;
 
@@ -26,7 +26,7 @@ namespace JDecompiler {
 			const InvokespecialOperation* invokespecialOperation;
 			const DupOperation<TypeSize::FOUR_BYTES>* dupOperation;
 			const NewOperation* newOperation;
-			if(field->modifiers == ACC_PUBLIC | ACC_STATIC | ACC_FINAL && field->descriptor.type == *thisType &&
+			if(field->modifiers == (ACC_PUBLIC | ACC_STATIC | ACC_FINAL) && field->descriptor.type == thisType &&
 					field->hasInitializer() &&
 					(invokespecialOperation = dynamic_cast<const InvokespecialOperation*>(field->getInitializer())) != nullptr &&
 					(dupOperation = dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(invokespecialOperation->objectOperation)) != nullptr &&
@@ -62,8 +62,8 @@ namespace JDecompiler {
 			case 0x0D: return FCONST_2;
 			case 0x0E: return DCONST_0;
 			case 0x0F: return DCONST_1;
-			case 0x10: return new BIPushInstruction(nextUByte());
-			case 0x11: return new SIPushInstruction(nextUShort());
+			case 0x10: return new BIPushInstruction(nextByte());
+			case 0x11: return new SIPushInstruction(nextShort());
 			case 0x12: return new LdcInstruction<TypeSize::FOUR_BYTES>(nextUByte());
 			case 0x13: return new LdcInstruction<TypeSize::FOUR_BYTES>(nextUShort());
 			case 0x14: return new LdcInstruction<TypeSize::EIGHT_BYTES>(nextUShort());
@@ -154,7 +154,7 @@ namespace JDecompiler {
 			case 0x7E: case 0x7F: return new AndOperatorInstruction(current() & 1);
 			case 0x80: case 0x81: return new OrOperatorInstruction(current() & 1);
 			case 0x82: case 0x83: return new XorOperatorInstruction(current() & 1);
-			case 0x84: return new IIncInstruction(nextUByte(), nextUByte());
+			case 0x84: return new IIncInstruction(nextUByte(), nextByte());
 			case 0x85: return new CastInstruction<false>(LONG); // int -> long
 			case 0x86: return new CastInstruction<false>(FLOAT); // int -> float
 			case 0x87: return new CastInstruction<false>(DOUBLE); // int -> double
@@ -175,27 +175,27 @@ namespace JDecompiler {
 			case 0x96: return new FCmpInstruction();
 			case 0x97: return new DCmpInstruction();
 			case 0x98: return new DCmpInstruction();
-			case 0x99: return new IfNotEqInstruction(nextUShort());
-			case 0x9A: return new IfEqInstruction(nextUShort());
-			case 0x9B: return new IfGeInstruction(nextUShort());
-			case 0x9C: return new IfLtInstruction(nextUShort());
-			case 0x9D: return new IfLeInstruction(nextUShort());
-			case 0x9E: return new IfGtInstruction(nextUShort());
-			case 0x9F: return new IfINotEqInstruction(nextUShort());
-			case 0xA0: return new IfIEqInstruction(nextUShort());
-			case 0xA1: return new IfIGeInstruction(nextUShort());
-			case 0xA2: return new IfILtInstruction(nextUShort());
-			case 0xA3: return new IfILeInstruction(nextUShort());
-			case 0xA4: return new IfIGtInstruction(nextUShort());
-			case 0xA5: return new IfANotEqInstruction(nextUShort());
-			case 0xA6: return new IfAEqInstruction(nextUShort());
+			case 0x99: return new IfNotEqInstruction(nextShort());
+			case 0x9A: return new IfEqInstruction(nextShort());
+			case 0x9B: return new IfGeInstruction(nextShort());
+			case 0x9C: return new IfLtInstruction(nextShort());
+			case 0x9D: return new IfLeInstruction(nextShort());
+			case 0x9E: return new IfGtInstruction(nextShort());
+			case 0x9F: return new IfINotEqInstruction(nextShort());
+			case 0xA0: return new IfIEqInstruction(nextShort());
+			case 0xA1: return new IfIGeInstruction(nextShort());
+			case 0xA2: return new IfILtInstruction(nextShort());
+			case 0xA3: return new IfILeInstruction(nextShort());
+			case 0xA4: return new IfIGtInstruction(nextShort());
+			case 0xA5: return new IfANotEqInstruction(nextShort());
+			case 0xA6: return new IfAEqInstruction(nextShort());
 			case 0xA7: return new GotoInstruction(nextShort());
 			/*case 0xA8: i+=2; return "JSR";
 			case 0xA9: i++ ; return "RET";*/
 			case 0xAA: {
 				skip(3 - pos % 4); // alignment by 4 bytes
 				int32_t defaultOffset = nextInt();
-				int32_t low = nextUInt(), high = nextUInt();
+				int32_t low = nextInt(), high = nextInt();
 				if(high < low)
 					throw InstructionFormatError("Instruction tableswitch: low is less than high (low = " + to_string(low) +
 							", high = " + to_string(high) + ")");
@@ -250,7 +250,7 @@ namespace JDecompiler {
 				case 0x38: return new FStoreInstruction(nextUShort());
 				case 0x39: return new DStoreInstruction(nextUShort());
 				case 0x3A: return new AStoreInstruction(nextUShort());
-				case 0x84: return new IIncInstruction(nextUShort(), nextUShort());
+				case 0x84: return new IIncInstruction(nextUShort(), nextShort());
 				//case 0xA9: i+=2 ; return "RET";
 				default: throw IllegalOpcodeException("Illegal wide opcode: 0x" + hex(current()));
 			}
@@ -271,9 +271,10 @@ namespace JDecompiler {
 		using namespace Operations;
 		using namespace Instructions;
 
-		//LOG(descriptor.name);
+		//LOG("decompiling of " << descriptor.name);
 
 		const bool hasCodeAttribute = codeAttribute != nullptr;
+
 		const uint32_t to = hasCodeAttribute ? codeAttribute->codeLength : 0;
 		const uint16_t localsCount = hasCodeAttribute ? 0 : descriptor.arguments.size();
 
@@ -281,23 +282,45 @@ namespace JDecompiler {
 				new StaticInitializerScope(0, to, localsCount) : new Scope(0, to, localsCount);
 
 		if(!(modifiers & ACC_STATIC))
-			scope->addVariable(classinfo.type, "this");
+			scope->addVariable(new NamedVariable(&classinfo.thisType, "this"));
 
 		const uint32_t argumentsCount = descriptor.arguments.size();
 		for(uint32_t i = 0; i < argumentsCount; i++)
-			scope->addVariable(descriptor.arguments[i], getNameByType(descriptor.arguments[i]));
+			scope->addVariable(new UnnamedVariable(descriptor.arguments[i]));
 
 		if(!hasCodeAttribute)
-			return *new CodeEnvironment(*new Bytecode(0, ""), classinfo, scope, modifiers, attributes, 0, 0);
+			return *new CodeEnvironment(*new Bytecode(0, ""), classinfo, scope, modifiers, descriptor, attributes, 0, 0);
 
 		Bytecode& bytecode = *new Bytecode(codeAttribute->codeLength, codeAttribute->code);
 
 		CodeEnvironment& environment =
-				*new CodeEnvironment(bytecode, classinfo, scope, modifiers, attributes, codeAttribute->codeLength, codeAttribute->maxLocals);
+				*new CodeEnvironment(bytecode, classinfo, scope, modifiers, descriptor, attributes, codeAttribute->codeLength, codeAttribute->maxLocals);
 
 		while(bytecode.available()) {
 			bytecode.nextInstruction();
 			bytecode.nextUByte();
+		}
+
+		vector<TryScope*> tryScopes;
+
+		for(const CodeAttribute::ExceptionAttribute* exceptionAttribute : codeAttribute->exceptionTable) {
+			const uint32_t
+					from = environment.bytecode.posToIndex(exceptionAttribute->startPos),
+					to = environment.bytecode.posToIndex(exceptionAttribute->endPos);
+
+			auto findResult = find_if(tryScopes.begin(), tryScopes.end(),
+					[from, to] (TryScope* tryScope) { return tryScope->from == from && tryScope->to == to; });
+
+			TryScope* tryScope;
+
+			if(findResult == tryScopes.end()) {
+				tryScope = new TryScope(from, to, scope, exceptionAttribute->catchType);
+				tryScopes.push_back(tryScope);
+				environment.addScope(tryScope);
+			} else
+				tryScope = *findResult;
+
+			tryScope->handlersData.push_back(CatchScopeDataHolder(bytecode.posToIndex(exceptionAttribute->handlerPos), exceptionAttribute->catchType));
 		}
 
 		const vector<Instruction*>& instructions = bytecode.getInstructions();
@@ -321,10 +344,8 @@ namespace JDecompiler {
 					exprIndex++;
 				}
 
-				if(Scope* scope = const_cast<Scope*>(dynamic_cast<const Scope*>(operation))) {
-					//LOG(typeid(*scope).name() << " {" << scope->from << ", " << scope->to << "}");
+				if(Scope* scope = const_cast<Scope*>(dynamic_cast<const Scope*>(operation)))
 					environment.addScope(scope);
-				}
 			}
 
 			environment.checkCurrentScope();

@@ -5,6 +5,8 @@
 #include "jdecompiler-util.cpp"
 #include "jdecompiler-const-pool.cpp"
 
+#define inline INLINE_ATTR
+
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-attributes.cpp ]"
 
@@ -67,13 +69,19 @@ namespace JDecompiler {
 
 	struct CodeAttribute: Attribute {
 		struct ExceptionAttribute {
-			const uint16_t startPos, endPos, handlerPos;
-			const ClassType catchType;
+			public:
+				const uint16_t startPos, endPos, handlerPos;
+				const ClassType* const catchType;
 
-			ExceptionAttribute(BinaryInputStream& instream, const ConstantPool& constPool):
-					startPos(instream.readShort()), endPos(instream.readShort()), handlerPos(instream.readShort()),
-					catchType(constPool.getOrDefault<ClassConstant>(instream.readShort(),
-							[] () { return new ClassConstant(new Utf8Constant("java/lang/Throwable")); })) {}
+			protected:
+				static inline const ClassType* const getCatchType(const ClassConstant* classConstant) {
+					return classConstant == nullptr ? nullptr : new ClassType(classConstant);
+				}
+
+			public:
+				ExceptionAttribute(BinaryInputStream& instream, const ConstantPool& constPool):
+						startPos(instream.readShort()), endPos(instream.readShort()), handlerPos(instream.readShort()),
+						catchType(getCatchType(constPool.getNullablle<ClassConstant>(instream.readShort()))) {}
 		};
 
 		static const vector<const ExceptionAttribute*> readExceptionTable(BinaryInputStream& instream, const ConstantPool& constPool) {
@@ -148,7 +156,16 @@ namespace JDecompiler {
 	struct NumberAnnotationValue: AnnotationValue {
 		const T value;
 
-		NumberAnnotationValue(const NumberConstant<ConstT>* constant): value(constant->value) {}
+		static inline T castExact(ConstT value) {
+			if((ConstT)(T)value != value)
+				cerr << "warning: integer overflow while reaing value from constant pool: value " << to_string(value)
+						<< " is out of bounds for size " << sizeof(T) << endl;
+			return (T)value;
+		}
+
+		NumberAnnotationValue(const NumberConstant<ConstT>* constant):
+				value(sizeof(ConstT) > sizeof(T) ? castExact(constant->value) : constant->value) {}
+
 		NumberAnnotationValue(BinaryInputStream& instream, const ConstantPool& constPool):
 				NumberAnnotationValue(constPool.get<NumberConstant<ConstT>>(instream.readShort())) {}
 
@@ -409,7 +426,9 @@ namespace JDecompiler {
 
 			this->push_back(attribute);
 		}
-	};
+	}
 }
+
+#undef inline
 
 #endif

@@ -1,6 +1,8 @@
 #ifndef JDECOMPILER_INSTRUCTIONS_CPP
 #define JDECOMPILER_INSTRUCTIONS_CPP
 
+#define inline INLINE_ATTR
+
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-instructions.cpp ]"
 
@@ -449,7 +451,7 @@ namespace Instructions {
 
 
 	struct IfInstruction: Instruction {
-		const int16_t offset;
+		const int32_t offset;
 
 		IfInstruction(const int32_t offset): offset(offset) {}
 	};
@@ -457,7 +459,7 @@ namespace Instructions {
 	struct IfCmpInstruction: IfInstruction {
 		const CompareType& compareType;
 
-		IfCmpInstruction(const int16_t offset, const CompareType& compareType): IfInstruction(offset), compareType(compareType) {}
+		IfCmpInstruction(const int32_t offset, const CompareType& compareType): IfInstruction(offset), compareType(compareType) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
 			return new IfCmpScope(environment, offset, compareType);
@@ -466,32 +468,32 @@ namespace Instructions {
 
 
 	struct IfEqInstruction: IfCmpInstruction {
-		IfEqInstruction(const int16_t offset): IfCmpInstruction(offset, CompareType::EQUALS) {};
+		IfEqInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::EQUALS) {};
 	};
 
 	struct IfNotEqInstruction: IfCmpInstruction {
-		IfNotEqInstruction(const int16_t offset): IfCmpInstruction(offset, CompareType::NOT_EQUALS) {}
+		IfNotEqInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::NOT_EQUALS) {}
 	};
 
 	struct IfGtInstruction: IfCmpInstruction {
-		IfGtInstruction(const int16_t offset): IfCmpInstruction(offset, CompareType::GREATER) {}
+		IfGtInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::GREATER) {}
 	};
 
 	struct IfGeInstruction: IfCmpInstruction {
-		IfGeInstruction(const int16_t offset): IfCmpInstruction(offset, CompareType::GREATER_OR_EQUALS) {}
+		IfGeInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::GREATER_OR_EQUALS) {}
 	};
 
 	struct IfLtInstruction: IfCmpInstruction {
-		IfLtInstruction(const int16_t offset): IfCmpInstruction(offset, CompareType::LESS) {}
+		IfLtInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::LESS) {}
 	};
 
 	struct IfLeInstruction: IfCmpInstruction {
-		IfLeInstruction(const int16_t offset): IfCmpInstruction(offset, CompareType::LESS_OR_EQUALS) {}
+		IfLeInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::LESS_OR_EQUALS) {}
 	};
 
 
 	struct IfICmpInstruction: IfCmpInstruction {
-		IfICmpInstruction(int16_t offset, const CompareType& compareType): IfCmpInstruction(offset, compareType) {}
+		IfICmpInstruction(int32_t offset, const CompareType& compareType): IfCmpInstruction(offset, compareType) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
 			environment.stack.push(new ICmpOperation(environment));
@@ -501,32 +503,32 @@ namespace Instructions {
 
 
 	struct IfIEqInstruction: IfICmpInstruction {
-		IfIEqInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::EQUALS) {}
+		IfIEqInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::EQUALS) {}
 	};
 
 	struct IfINotEqInstruction: IfICmpInstruction {
-		IfINotEqInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::NOT_EQUALS) {}
+		IfINotEqInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::NOT_EQUALS) {}
 	};
 
 	struct IfIGtInstruction: IfICmpInstruction {
-		IfIGtInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::GREATER) {}
+		IfIGtInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::GREATER) {}
 	};
 
 	struct IfIGeInstruction: IfICmpInstruction {
-		IfIGeInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::GREATER_OR_EQUALS) {}
+		IfIGeInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::GREATER_OR_EQUALS) {}
 	};
 
 	struct IfILtInstruction: IfICmpInstruction {
-		IfILtInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::LESS) {}
+		IfILtInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::LESS) {}
 	};
 
 	struct IfILeInstruction: IfICmpInstruction {
-		IfILeInstruction(int16_t offset): IfICmpInstruction(offset, CompareType::LESS_OR_EQUALS) {}
+		IfILeInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::LESS_OR_EQUALS) {}
 	};
 
 
 	struct IfACmpInstruction: IfCmpInstruction {
-		IfACmpInstruction(int16_t offset, const EqualsCompareType& compareType): IfCmpInstruction(offset, compareType) {}
+		IfACmpInstruction(int32_t offset, const EqualsCompareType& compareType): IfCmpInstruction(offset, compareType) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
 			environment.stack.push(new ACmpOperation(environment));
@@ -536,11 +538,11 @@ namespace Instructions {
 
 
 	struct IfAEqInstruction: IfACmpInstruction {
-		IfAEqInstruction(int16_t offset): IfACmpInstruction(offset, CompareType::EQUALS) {}
+		IfAEqInstruction(int32_t offset): IfACmpInstruction(offset, CompareType::EQUALS) {}
 	};
 
 	struct IfANotEqInstruction: IfACmpInstruction {
-		IfANotEqInstruction(int16_t offset): IfACmpInstruction(offset, CompareType::NOT_EQUALS) {}
+		IfANotEqInstruction(int32_t offset): IfACmpInstruction(offset, CompareType::NOT_EQUALS) {}
 	};
 
 
@@ -763,7 +765,7 @@ namespace Instructions {
 						MethodDescriptor(STRING_CONCAT_FACTORY, "makeConcatWithConstants", &CALL_SITE, {&LOOKUP, STRING, METHOD_TYPE, STRING, &OBJECT_ARRAY}))
 					{
 						// push static arguments on stack
-						for(uint16_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
+						for(uint32_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
 							environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(bootstrapMethod->argumentIndexes[i], bootstrapMethod->arguments[i]));
 
 						// push non-static arguments on stack
@@ -787,7 +789,7 @@ namespace Instructions {
 					environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(typeArgument));
 
 					// push static arguments on stack
-					for(uint16_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
+					for(uint32_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
 						environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(bootstrapMethod->argumentIndexes[i], bootstrapMethod->arguments[i]));
 
 					// push non-static arguments on stack
@@ -880,13 +882,13 @@ namespace Instructions {
 
 
 	struct IfNullInstruction: IfInstruction {
-		IfNullInstruction(const uint16_t offset): IfInstruction(offset) {}
+		IfNullInstruction(const int32_t offset): IfInstruction(offset) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new IfNullScope(environment, offset); }
 	};
 
 	struct IfNonNullInstruction: IfInstruction {
-		IfNonNullInstruction(const uint16_t offset): IfInstruction(offset) {}
+		IfNonNullInstruction(const int32_t offset): IfInstruction(offset) {}
 
 		virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new IfNonNullScope(environment, offset); }
 	};
@@ -912,5 +914,7 @@ namespace Instructions {
 			*const DCONST_0 = new DConstInstruction(0),
 			*const DCONST_1 = new DConstInstruction(1);
 } }
+
+#undef inline
 
 #endif

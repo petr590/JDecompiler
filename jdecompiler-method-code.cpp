@@ -8,6 +8,7 @@
 #include "jdecompiler-operations.cpp"
 #include "jdecompiler-instructions.cpp"
 
+#define inline INLINE_ATTR
 
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-method-code.cpp ]"
@@ -18,7 +19,7 @@ namespace JDecompiler {
 	EnumClass::EnumClass(const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 			const vector<const ClassType*>& interfaces, const Attributes& attributes,
 			const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders):
-			Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, processMethodData(methodDataHolders, thisType)) {
+			Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, processMethodData(methodDataHolders)) {
 
 		using namespace Operations;
 
@@ -278,23 +279,23 @@ namespace JDecompiler {
 		const uint32_t to = hasCodeAttribute ? codeAttribute->codeLength : 0;
 		const uint16_t localsCount = hasCodeAttribute ? 0 : descriptor.arguments.size();
 
-		Scope* scope = descriptor.type == MethodDescriptor::MethodType::STATIC_INITIALIZER ?
-				new StaticInitializerScope(0, to, localsCount) : new Scope(0, to, localsCount);
+		MethodScope* methodScope = descriptor.type == MethodDescriptor::MethodType::STATIC_INITIALIZER ?
+				new StaticInitializerScope(0, to, localsCount) : new MethodScope(0, to, localsCount);
 
 		if(!(modifiers & ACC_STATIC))
-			scope->addVariable(new NamedVariable(&classinfo.thisType, "this"));
+			methodScope->addVariable(new NamedVariable(&classinfo.thisType, "this"));
 
 		const uint32_t argumentsCount = descriptor.arguments.size();
 		for(uint32_t i = 0; i < argumentsCount; i++)
-			scope->addVariable(new UnnamedVariable(descriptor.arguments[i]));
+			methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i]));
 
 		if(!hasCodeAttribute)
-			return *new CodeEnvironment(*new Bytecode(0, ""), classinfo, scope, modifiers, descriptor, attributes, 0, 0);
+			return *new CodeEnvironment(*new Bytecode(0, ""), classinfo, methodScope, modifiers, descriptor, attributes, 0);
 
 		Bytecode& bytecode = *new Bytecode(codeAttribute->codeLength, codeAttribute->code);
 
 		CodeEnvironment& environment =
-				*new CodeEnvironment(bytecode, classinfo, scope, modifiers, descriptor, attributes, codeAttribute->codeLength, codeAttribute->maxLocals);
+				*new CodeEnvironment(bytecode, classinfo, methodScope, modifiers, descriptor, attributes, codeAttribute->maxLocals);
 
 		while(bytecode.available()) {
 			bytecode.nextInstruction();
@@ -314,19 +315,20 @@ namespace JDecompiler {
 			TryScope* tryScope;
 
 			if(findResult == tryScopes.end()) {
-				tryScope = new TryScope(from, to, scope, exceptionAttribute->catchType);
+				tryScope = new TryScope(from, to, methodScope, exceptionAttribute->catchType);
 				tryScopes.push_back(tryScope);
 				environment.addScope(tryScope);
 			} else
 				tryScope = *findResult;
 
-			tryScope->handlersData.push_back(CatchScopeDataHolder(bytecode.posToIndex(exceptionAttribute->handlerPos), exceptionAttribute->catchType));
+			tryScope->handlersData.push_back(CatchScopeDataHolder(bytecode.posToIndex(exceptionAttribute->handlerPos) - 1, exceptionAttribute->catchType));
 		}
 
 		const vector<Instruction*>& instructions = bytecode.getInstructions();
-		const uint32_t instructionsSize = instructions.size();
 
-		for(uint32_t i = 0, exprIndex = 0; i < instructionsSize; i++) {
+		for(uint32_t i = 0, exprIndex = 0, instructionsSize = instructions.size(); i < instructionsSize; i++) {
+			//LOG("------------------------------");
+
 			environment.index = i;
 			environment.pos = bytecode.getPosMap()[i];
 
@@ -340,7 +342,7 @@ namespace JDecompiler {
 				if(operation->getReturnType() != VOID)
 					environment.stack.push(operation);
 				else if(operation->canAddToCode() && (i != instructionsSize - 1 || operation != &VReturn::getInstance())) {
-					environment.currentScope->add(operation, environment);
+					environment.getCurrentScope()->add(operation, environment);
 					exprIndex++;
 				}
 
@@ -354,5 +356,7 @@ namespace JDecompiler {
 		return environment;
 	}
 }
+
+#undef inline
 
 #endif

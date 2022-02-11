@@ -4,13 +4,17 @@
 #define LOG_PREFIX
 #define LOG(s) cout << LOG_PREFIX << ": " << s << endl;
 
-//UNDEF_INLINE_ATTR TODO
+#ifdef FORCE_INLINE
+#define INLINE_ATTR inline __attribute__((always_inline))
+#else
+#define INLINE_ATTR inline
+#endif
 
 #include <string>
 #include <vector>
 #include <stdint.h>
 
-//DEF_INLINE_ATTR
+#define inline INLINE_ATTR
 
 using namespace std;
 
@@ -21,7 +25,6 @@ class Exception;
 class BinaryInputStream;
 
 namespace JDecompiler {
-	//#define inline __attribute__((always_inline)) TODO
 
 	class FormatString;
 
@@ -85,6 +88,8 @@ namespace JDecompiler {
 
 	struct Scope;
 
+	struct MethodScope;
+
 	struct ClassInfo;
 
 
@@ -126,6 +131,7 @@ namespace JDecompiler {
 
 	// jdecompiler-method-code
 
+	template<typename T>
 	struct Stack;
 
 	struct Bytecode;
@@ -459,5 +465,7 @@ namespace JDecompiler {
 	struct MultiANewArrayInstruction;*/
 
 }
+
+#undef inline
 
 #endif

@@ -10,6 +10,8 @@
 #include "jdecompiler-util.cpp"
 #include "jdecompiler-const-pool.cpp"
 
+#define inline INLINE_ATTR
+
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-main.cpp ]"
 
@@ -388,14 +390,15 @@ namespace JDecompiler {
 			private: Instruction* nextInstruction0();
 	};
 
+	template<typename T>
 	struct Stack {
 		private:
 			class Entry {
 				public:
-					const Operation* const value;
+					const T value;
 					const Entry* const next;
 
-					Entry(const Operation* value, const Entry* next): value(value), next(next) {}
+					Entry(T value, const Entry* next): value(value), next(next) {}
 
 					void deleteNext() const {
 						if(next != nullptr) {
@@ -408,23 +411,28 @@ namespace JDecompiler {
 			const Entry* firstEntry;
 			uint16_t length;
 
+		protected:
 			inline void checkEmptyStack() const {
 				if(firstEntry == nullptr)
 					throw EmptyStackException();
 			}
 
 		public:
-			void push(const Operation* operation) {
-				firstEntry = new Entry(operation, firstEntry);
+			Stack(): firstEntry(nullptr), length(0) {}
+
+			Stack(T value): firstEntry(new Entry(value, nullptr)), length(1) {}
+
+			void push(T value) {
+				firstEntry = new Entry(value, firstEntry);
 				length++;
 			}
 
-			inline void push(const Operation* operation, const Operation* operations...) {
-				push(operation);
+			inline void push(T value, T operations...) {
+				push(value);
 				push(operations);
 			}
 
-			const Operation* pop() {
+			T pop() {
 				checkEmptyStack();
 
 				const Entry copiedEntry = *firstEntry;
@@ -434,34 +442,12 @@ namespace JDecompiler {
 				return copiedEntry.value;
 			}
 
-			template<class T>
-			const T* pop() {
-				checkEmptyStack();
-
-				const Operation* operation = pop();
-				if(const T* t = dynamic_cast<const T*>(operation))
-					return t;
-				throw DecompilationException((string)"Illegal operation type " + typeid(T).name() + " for operation " + typeid(*operation).name());
-			}
-
-			const Operation* popAs(const Type* type) {
-				checkEmptyStack();
-
-				const Operation* operation = pop();
-				operation->getReturnTypeAs(type);
-				return operation;
-			}
-
-			inline const Operation* popAs(const Type& type) {
-				return popAs(&type);
-			}
-
-			const Operation* top() const {
+			T top() const {
 				checkEmptyStack();
 				return firstEntry->value;
 			}
 
-			const Operation* lookup(uint16_t index) const {
+			T lookup(uint16_t index) const {
 				checkEmptyStack();
 
 				if(index >= length)
@@ -490,14 +476,43 @@ namespace JDecompiler {
 	};
 
 
+	struct CodeStack: Stack<const Operation*> {
+		const Operation* popAs(const Type* type) {
+			checkEmptyStack();
+
+			const Operation* operation = Stack<const Operation*>::pop();
+			operation->getReturnTypeAs(type);
+			return operation;
+		}
+
+		inline const Operation* popAs(const Type& type) {
+			return popAs(&type);
+		}
+
+		inline const Operation* pop() {
+			return Stack<const Operation*>::pop();
+		}
+
+		template<class O>
+		O pop() {
+			checkEmptyStack();
+
+			O operation = Stack<const Operation*>::pop();
+			if(const O* t = dynamic_cast<const O*>(operation))
+				return t;
+			throw DecompilationException((string)"Illegal operation type " + typeid(O).name() + " for operation " + typeid(*operation).name());
+		}
+	};
+
+
 	struct CodeEnvironment {
 		public:
 			const Bytecode& bytecode;
 			const ClassInfo& classinfo;
 			const ConstantPool& constPool;
-			Stack& stack;
-			Scope& scope;
-			Scope* currentScope;
+			CodeStack& stack;
+			MethodScope& methodScope;
+			Stack<Scope*> currentScopes;
 			const uint16_t modifiers;
 			const MethodDescriptor& descriptor;
 			const Attributes& attributes;
@@ -508,14 +523,16 @@ namespace JDecompiler {
 			mutable vector<Scope*> scopes;
 
 		public:
-			CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, Scope* scope, uint16_t modifiers,
-					const MethodDescriptor& descriptor, const Attributes& attributes, uint32_t codeLength, uint16_t maxLocals);
+			CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers,
+					const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals);
 
 			void checkCurrentScope();
 
-			inline Scope* getCurrentScope() const;
+			inline Scope* getCurrentScope() const {
+				return currentScopes.top();
+			}
 
-			void addScope(Scope* scope) const {
+			inline void addScope(Scope* scope) const {
 				scopes.push_back(scope);
 			}
 
@@ -542,11 +559,6 @@ namespace JDecompiler {
 			vector<Scope*> innerScopes;
 
 			Scope(uint32_t from, uint32_t to, Scope* parentScope): from(from), to(to), parentScope(parentScope) {}
-
-		public:
-			Scope(uint32_t from, uint32_t to, uint16_t localsCount): Scope(from, to, nullptr) {
-				variables.reserve(localsCount);
-			}
 
 			virtual const Variable& getVariable(uint32_t index) const {
 				if(index >= variables.size() && parentScope == nullptr)
@@ -631,13 +643,21 @@ namespace JDecompiler {
 	// --------------------------------------------------
 
 
-	struct StaticInitializerScope: Scope {
+	struct MethodScope: Scope {
+		public:
+			MethodScope(uint32_t from, uint32_t to, uint16_t localsCount): Scope(from, to, nullptr) {
+				variables.reserve(localsCount);
+			}
+	};
+
+
+	struct StaticInitializerScope: MethodScope {
 		private:
 			bool fieldsInitialized = false;
 
 		public:
 			StaticInitializerScope(uint32_t from, uint32_t to, uint16_t localsCount):
-					Scope(from, to, localsCount) {}
+					MethodScope(from, to, localsCount) {}
 
 			virtual void add(const Operation* operation, const CodeEnvironment& environment) override;
 
@@ -846,14 +866,14 @@ namespace JDecompiler {
 			const CodeEnvironment& environment;
 
 		protected:
-			Scope& scope;
+			MethodScope& scope;
 
 		public:
 			typedef MethodDescriptor::MethodType MethodType;
 
 			Method(uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, const ClassInfo& classinfo):
 					modifiers(modifiers), descriptor(descriptor), attributes(attributes), codeAttribute(attributes.get<CodeAttribute>()),
-					environment(decompileCode(classinfo)), scope(environment.scope) {
+					environment(decompileCode(classinfo)), scope(environment.methodScope) {
 				const bool hasCodeAttribute = codeAttribute != nullptr;
 
 				if(modifiers & ACC_ABSTRACT && hasCodeAttribute)
@@ -1176,7 +1196,7 @@ namespace JDecompiler {
 			vector<const EnumField*> enumFields;
 			vector<const Field*> otherFields;
 
-			static vector<MethodDataHolder> processMethodData(vector<MethodDataHolder>& methodDataHolders, const ClassType& thisType) {
+			static vector<MethodDataHolder> processMethodData(vector<MethodDataHolder>& methodDataHolders) {
 				vector<MethodDataHolder> newMethodDataHolders;
 				newMethodDataHolders.reserve(methodDataHolders.size());
 
@@ -1338,34 +1358,27 @@ namespace JDecompiler {
 
 	// --------------------------------------------------
 
-	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, Scope* scope, uint16_t modifiers,
-			const MethodDescriptor& descriptor, const Attributes& attributes, uint32_t codeLength, uint16_t maxLocals):
-			bytecode(bytecode), classinfo(classinfo), constPool(classinfo.constPool), stack(*new Stack()),
-			scope(*scope), currentScope(scope), modifiers(modifiers), descriptor(descriptor), attributes(attributes) {
-		for(uint32_t i = scope->getVariablesCount(); i < maxLocals; i++)
-			scope->addVariable(new UnnamedVariable(&AnyType::getInstance()));
-
-		//LOG(maxLocals << ' ' << scope->getVariablesCount());
-
-		// DEBUG
-		/*for(Attribute* attribute : *method->attributes)
-			LOG("Attribute " << attribute->name);
-
-		for(Attribute* attribute : *method->codeAttribute->attributes)
-			LOG("Code attribute " << attribute->name);*/
+	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers,
+			const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals):
+			bytecode(bytecode), classinfo(classinfo), constPool(classinfo.constPool), stack(*new CodeStack()),
+			methodScope(*methodScope), currentScopes(methodScope), modifiers(modifiers), descriptor(descriptor), attributes(attributes) {
+		for(uint32_t i = methodScope->getVariablesCount(); i < maxLocals; i++)
+			methodScope->addVariable(new UnnamedVariable(&AnyType::getInstance()));
 	}
 
 
 	void CodeEnvironment::checkCurrentScope() {
-		while(index >= currentScope->to) {
+		for(Scope* currentScope = currentScopes.top(); index >= currentScope->to; currentScope = currentScopes.top()) {
 			if(currentScope->parentScope == nullptr)
 				throw DecompilationException("Unexpected end of global function scope {" +
 						to_string(currentScope->from) + ".." + to_string(currentScope->to) + '}');
-			Scope* finalizingCurrentScope = currentScope;
-			currentScope = currentScope->parentScope;
-			finalizingCurrentScope->finalize(*this);
+			currentScopes.pop();
+			currentScope->finalize(*this);
 		}
 
+		Scope* currentScope = getCurrentScope();
+
+		//LOG("scopes.size() = " << scopes.size())
 		for(auto i = scopes.begin(); i != scopes.end(); ) {
 			Scope* scope = *i;
 			if(scope->from <= index) {
@@ -1374,16 +1387,14 @@ namespace JDecompiler {
 						to_string(scope->from) + ".." + to_string(scope->to) + ", " + to_string(currentScope->from) + ".." + to_string(currentScope->to));
 				currentScope->add(scope, *this);
 				//scope->initiate(*this);
-				currentScope = scope;
+				currentScopes.push(currentScope = scope);
 				scopes.erase(i);
 			} else
 				++i;
 		}
 	}
-
-	inline Scope* CodeEnvironment::getCurrentScope() const {
-		return currentScope;
-	}
 }
+
+#undef inline
 
 #endif

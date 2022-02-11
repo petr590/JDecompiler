@@ -3,6 +3,8 @@
 
 #include "jdecompiler.h"
 
+#define inline INLINE_ATTR
+
 namespace JDecompiler {
 	namespace JavaSE {
 		namespace java {
@@ -20,5 +22,7 @@ namespace JDecompiler {
 		}
 	}
 }
+
+#undef inline
 
 #endif

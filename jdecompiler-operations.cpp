@@ -3,6 +3,8 @@
 
 #include <algorithm>
 
+#define inline INLINE_ATTR
+
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-operations.cpp ]"
 
@@ -254,11 +256,14 @@ namespace JDecompiler {
 		struct StoreOperation: VoidOperation {
 			public:
 				const Operation* const value;
+				const uint16_t index;
 				const Variable& variable;
 
-				StoreOperation(const CodeEnvironment& environment, uint16_t index):
-						value(environment.stack.pop()), variable(environment.getCurrentScope()->getVariable(index)) {
-					variable.type = variable.type->castTo(value->getReturnType());
+				StoreOperation(const Type* requiredType, const CodeEnvironment& environment, uint16_t index):
+						value(environment.stack.popAs(requiredType)), index(index), variable(environment.getCurrentScope()->getVariable(index)) {
+
+					//LOG("constructor StoreOperation 0x" << hex((uint64_t)this * (uint64_t)this) << ' ' << typeid(*environment.getCurrentScope()).name());
+					variable.type = variable.type->castTo(requiredType->castTo(value->getReturnType()));
 				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
@@ -267,23 +272,23 @@ namespace JDecompiler {
 		};
 
 		struct IStoreOperation: StoreOperation {
-			IStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(environment, index) {}
+			IStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(ANY_INT_OR_BOOLEAN, environment, index) {}
 		};
 
 		struct LStoreOperation: StoreOperation {
-			LStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(environment, index) {}
+			LStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(LONG, environment, index) {}
 		};
 
 		struct FStoreOperation: StoreOperation {
-			FStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(environment, index) {}
+			FStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(FLOAT, environment, index) {}
 		};
 
 		struct DStoreOperation: StoreOperation {
-			DStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(environment, index) {}
+			DStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(DOUBLE, environment, index) {}
 		};
 
 		struct AStoreOperation: StoreOperation {
-			AStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(environment, index) {}
+			AStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(&AnyObjectType::getInstance(), environment, index) {}
 		};
 
 
@@ -507,31 +512,31 @@ namespace JDecompiler {
 		struct ICmpOperation: CmpOperation {
 			ICmpOperation(const CodeEnvironment& environment): CmpOperation(environment) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("illegal using of icmp: toString()"); }
+			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of icmp: toString()"); }
 		};
 
 		struct LCmpOperation: CmpOperation {
 			LCmpOperation(const CodeEnvironment& environment): CmpOperation(environment) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("illegal using of lcmp: toString()"); }
+			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of lcmp: toString()"); }
 		};
 
 		struct FCmpOperation: CmpOperation {
 			FCmpOperation(const CodeEnvironment& environment): CmpOperation(environment) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("illegal using of fcmp: toString()"); }
+			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of fcmp: toString()"); }
 		};
 
 		struct DCmpOperation: CmpOperation {
 			DCmpOperation(const CodeEnvironment& environment): CmpOperation(environment) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("illegal using of dcmp: toString()"); }
+			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of dcmp: toString()"); }
 		};
 
 		struct ACmpOperation: CmpOperation {
 			ACmpOperation(const CodeEnvironment& environment): CmpOperation(environment) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("illegal using of acmp: toString()"); }
+			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of acmp: toString()"); }
 		};
 
 
@@ -673,7 +678,7 @@ namespace JDecompiler {
 			public: mutable bool isLoop = false;
 
 			public:
-				IfScope(const CodeEnvironment& environment, const int16_t offset, const CompareOperation* condition):
+				IfScope(const CodeEnvironment& environment, const int32_t offset, const CompareOperation* condition):
 						Scope(environment.exprStartIndex, environment.bytecode.posToIndex(offset + environment.pos) - 1, environment.getCurrentScope()),
 						condition(condition) {}
 
@@ -715,7 +720,7 @@ namespace JDecompiler {
 			public:
 				const CompareType& compareType;
 
-				IfCmpScope(const CodeEnvironment& environment, const int16_t offset, const CompareType& compareType):
+				IfCmpScope(const CodeEnvironment& environment, const int32_t offset, const CompareType& compareType):
 						IfScope(environment, offset, getCondition(environment, compareType)), compareType(compareType) {}
 
 			private: static const CompareOperation* getCondition(const CodeEnvironment& environment, const CompareType& compareType) {
@@ -827,24 +832,24 @@ namespace JDecompiler {
 			uint32_t from;
 			const ClassType* catchType;
 
-			CatchScopeDataHolder(uint32_t from, const ClassType& catchType): from(from), catchType(&catchType) {}
+			CatchScopeDataHolder(uint32_t from, const ClassType* catchType): from(from), catchType(catchType) {}
 		};
 
 
 		struct TryScope: Scope {
 			public:
-				const ClassType& catchType;
+				const ClassType* const catchType;
 
 			protected:
 				vector<CatchScopeDataHolder> handlersData;
 				friend const CodeEnvironment& Method::decompileCode(const ClassInfo&);
 
 			public:
-				TryScope(uint32_t from, uint32_t to, Scope* parentScope, const ClassType& catchType):
+				TryScope(uint32_t from, uint32_t to, Scope* parentScope, const ClassType* catchType):
 						Scope(from, to, parentScope), catchType(catchType) {}
 
 				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return "try";
+					return "try ";
 				}
 
 				virtual string getBackSeparator(const ClassInfo& classinfo) const override {
@@ -857,34 +862,59 @@ namespace JDecompiler {
 
 		struct CatchScope: Scope {
 			public:
-				const ClassType& catchType;
+				const ClassType* const catchType;
 
 			protected:
 				vector<const Operation*> tmpStack;
-				mutable Variable* exceptionVariable;
+				Variable* exceptionVariable;
+				uint16_t exceptionVariableIndex;
 				CatchScope* const nextHandler;
 
 			public:
-				CatchScope(const CodeEnvironment& environment, uint32_t from, uint32_t to, const ClassType& catchType, CatchScope* nextHandler):
+				CatchScope(const CodeEnvironment& environment, uint32_t from, uint32_t to, const ClassType* catchType, CatchScope* nextHandler):
 						Scope(from, to, environment.getCurrentScope()), catchType(catchType), nextHandler(nextHandler) {
 					//LOG("constructor CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " }");
 				}
 
-				CatchScope(const CodeEnvironment& environment, const CatchScopeDataHolder& dataHolder, uint16_t to, CatchScope* nextHandler):
-						CatchScope(environment, dataHolder.from, to, *dataHolder.catchType, nextHandler) {}
+				CatchScope(const CodeEnvironment& environment, const CatchScopeDataHolder& dataHolder, uint32_t to, CatchScope* nextHandler):
+						CatchScope(environment, dataHolder.from, to, dataHolder.catchType, nextHandler) {}
 
+
+				virtual void add(const Operation* operation, const CodeEnvironment& environment) override {
+					const StoreOperation* storeOperation;
+
+					//LOG("add         CatchScope 0x" << hex<4>((uint64_t)this * (uint64_t)this) << ' '\
+							<< (exceptionVariable != nullptr ? "not null" : "null") << ' '  << from << ".." << to << ' ' << typeid(*operation).name());
+
+					if(exceptionVariable == nullptr && (storeOperation = dynamic_cast<const StoreOperation*>(operation)) != nullptr) {
+						exceptionVariableIndex = storeOperation->index;
+						exceptionVariable = new NamedVariable(catchType, "ex");
+						return;
+					}
+					Scope::add(operation, environment);
+				}
 
 				virtual const Variable& getVariable(uint32_t index) const {
-					if(exceptionVariable == nullptr) {
-						exceptionVariable = new NamedVariable(&catchType, "ex");
+					//LOG("getVariable CatchScope 0x" << hex<4>((uint64_t)this * (uint64_t)this) << ' '\
+							<< (exceptionVariable != nullptr ? "not null" : "null"));
+
+					if(index == exceptionVariableIndex)
 						return *exceptionVariable;
-					}
 					return Scope::getVariable(index);
 				}
 
 
+				virtual string getFrontSeparator(const ClassInfo& classinfo) const override {
+					return " ";
+				}
+
 				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return "catch(" + catchType.toString(environment.classinfo) + ' ' + exceptionVariable->getName() + ')';
+					//LOG("getHeader   CatchScope 0x" << hex<4>((uint64_t)this * (uint64_t)this) << ' '\
+							<< (exceptionVariable != nullptr ? "not null" : "null"));
+
+					//assert(exceptionVariable != nullptr);
+					return catchType == nullptr ? "finally" :
+							"catch(" + catchType->toString(environment.classinfo) + ' ' + exceptionVariable->getName() + ") ";
 				}
 
 				virtual string getBackSeparator(const ClassInfo& classinfo) const override {
@@ -892,21 +922,42 @@ namespace JDecompiler {
 				}
 
 				void initiate(const CodeEnvironment& environment) {
-					//LOG("initiate    CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " }");
+					//LOG("initiate    CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " } at "\
+							<< environment.index);
 
 					tmpStack.reserve(environment.stack.size());
 					while(!environment.stack.empty())
 						tmpStack.push_back(environment.stack.pop());
 
-					environment.stack.push(new ALoadOperation(environment, 2));
+					environment.stack.push(new LoadCatchedExceptionOperation(catchType));
 				}
 
+			protected:
+				struct LoadCatchedExceptionOperation: Operation {
+					const ClassType* const catchType;
+
+					LoadCatchedExceptionOperation(const ClassType* catchType): catchType(catchType) {}
+
+					virtual const Type* getReturnType() const override {
+						return catchType;
+					}
+
+					virtual string toString(const CodeEnvironment& environment) const override {
+						throw Exception("Illegal using of LoadCatchedExceptionOperation: toString()");
+					}
+				};
+
+			public:
 				virtual void finalize(const CodeEnvironment& environment) override {
-					//LOG("finalize    CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " }");
+					//LOG("finalize    CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " } at "\
+							<< environment.index);
 					reverse(tmpStack.begin(), tmpStack.end());
 					for(const Operation* operation : tmpStack)
 						environment.stack.push(operation);
+
 					if(nextHandler != nullptr) {
+						//LOG("environment.addScope(nextHandler) CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " (0x"\
+								<< hex((uint64_t)nextHandler * (uint64_t)nextHandler) << ")");
 						environment.addScope(nextHandler);
 						nextHandler->initiate(environment);
 					}
@@ -915,18 +966,16 @@ namespace JDecompiler {
 
 
 		void TryScope::finalize(const CodeEnvironment& environment) {
-			LOG("finalize    TryScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " }");
+			//LOG("finalize    TryScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " }");
 
 			assert(handlersData.size() > 0);
 			sort(handlersData.begin(), handlersData.end(), [](auto& handler1, auto& handler2) { return handler1.from > handler2.from; });
 
 			CatchScope* lastHandler = nullptr;
 
-			for(const CatchScopeDataHolder& handlerData : handlersData) {
-				LOG(typeid(*environment.getCurrentScope()).name());
+			for(const CatchScopeDataHolder& handlerData : handlersData)
 				lastHandler = new CatchScope(environment, handlerData,
-						lastHandler == nullptr ? environment.getCurrentScope()->to : lastHandler->from - 1, lastHandler);
-			}
+						lastHandler == nullptr ? environment.getCurrentScope()->to : lastHandler->from, lastHandler);
 
 			environment.addScope(lastHandler);
 			lastHandler->initiate(environment);
@@ -982,14 +1031,14 @@ namespace JDecompiler {
 						FieldOperation(environment.constPool.get<FieldrefConstant>(index)) {}
 
 				string staticFieldToString(const CodeEnvironment& environment) const {
-					return clazz == environment.classinfo.thisType && !environment.currentScope->hasVariable(descriptor.name) ?
+					return clazz == environment.classinfo.thisType && !environment.getCurrentScope()->hasVariable(descriptor.name) ?
 							(string)descriptor.name : clazz.toString(environment.classinfo) + '.' + descriptor.name;
 				}
 
 				string instanceFieldToString(const CodeEnvironment& environment, const Operation* object) const {
 					const ALoadOperation* aloadOperation = dynamic_cast<const ALoadOperation*>(object);
 					return aloadOperation != nullptr && aloadOperation->variable.getName() == "this" &&
-							!environment.currentScope->hasVariable(descriptor.name) ?
+							!environment.getCurrentScope()->hasVariable(descriptor.name) ?
 							(string)descriptor.name : object->toString(environment) + '.' + descriptor.name;
 				}
 		};
@@ -1072,7 +1121,7 @@ namespace JDecompiler {
 				const vector<const Operation*> arguments;
 
 			protected:
-				const vector<const Operation*> popArguments(Stack& stack) const {
+				const vector<const Operation*> popArguments(CodeStack& stack) const {
 					const uint32_t size = descriptor.arguments.size();
 
 					vector<const Operation*> arguments;
@@ -1433,12 +1482,12 @@ namespace JDecompiler {
 
 
 		struct IfNullScope: IfScope {
-			IfNullScope(const CodeEnvironment& environment, int16_t offset):
+			IfNullScope(const CodeEnvironment& environment, int32_t offset):
 					IfScope(environment, offset, new CompareWithNullOperation(environment, CompareType::EQUALS)) {}
 		};
 
 		struct IfNonNullScope: IfScope {
-			IfNonNullScope(const CodeEnvironment& environment, int16_t offset):
+			IfNonNullScope(const CodeEnvironment& environment, int32_t offset):
 					IfScope(environment, offset, new CompareWithNullOperation(environment, CompareType::NOT_EQUALS)) {}
 		};
 
@@ -1483,5 +1532,7 @@ namespace JDecompiler {
 			code.push_back(operation);
 	}
 }
+
+#undef inline
 
 #endif

@@ -3,9 +3,11 @@
 
 #include <string>
 #include <vector>
+#include <iostream>
 #include "jdecompiler.h"
 #include "jdecompiler-util.cpp"
-#include <iostream>
+
+#define inline INLINE_ATTR
 
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-const-pool.cpp ]"
@@ -35,6 +37,13 @@ namespace JDecompiler {
 					throw ConstantPoolIndexOutOfBoundsException(index, size);
 			}
 
+			template<class T>
+			inline const T* get0(uint16_t index) const {
+				if(const T* constant = dynamic_cast<const T*>(pool[index]))
+					return constant;
+				throw DynamicCastException("Invalid constant pool referenceConstant 0x" + hex<4>(index) + " at " + typeid(T).name());
+			}
+
 		public:
 
 			Constant*& operator[](uint16_t index) const {
@@ -43,13 +52,17 @@ namespace JDecompiler {
 			}
 
 			template<class T>
+			const T* getNullablle(uint16_t index) const {
+				checkTemplate();
+				checkIndex(index);
+				return dynamic_cast<const T*>(pool[index]);
+			}
+
+			template<class T>
 			const T* get(uint16_t index) const {
 				checkTemplate();
 				checkIndex(index);
-				const T* constant = dynamic_cast<const T*>(pool[index]);
-				if(constant == nullptr)
-					throw DynamicCastException("Invalid constant pool referenceConstant 0x" + hex<4>(index) + " at " + typeid(T).name());
-				return constant;
+				return get0<T>(index);
 			}
 
 			template<class T>
@@ -58,10 +71,7 @@ namespace JDecompiler {
 				checkIndex(index);
 				if(index == 0)
 					return defaultValueGetter();
-				const T* constant = dynamic_cast<const T*>(pool[index]);
-				if(constant == nullptr)
-					throw DynamicCastException("Invalid constant pool referenceConstant 0x" + hex<4>(index) + " at " + typeid(T).name());
-				return constant;
+				return get0<T>(index);
 			}
 
 			inline const Utf8Constant& getUtf8Constant(uint16_t index) const {
@@ -243,5 +253,7 @@ namespace JDecompiler {
 		}
 	};
 }
+
+#undef inline
 
 #endif

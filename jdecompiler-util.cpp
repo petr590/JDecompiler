@@ -11,6 +11,8 @@
 #include <algorithm>
 #include "jdecompiler.h"
 
+#define inline INLINE_ATTR
+
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-util.cpp ]"
 
@@ -502,5 +504,6 @@ namespace JDecompiler {
 	}
 }
 
+#undef inline
 
 #endif

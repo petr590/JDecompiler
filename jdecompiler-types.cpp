@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cassert>
 
+#define inline INLINE_ATTR
+
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-types.cpp ]"
 
@@ -620,5 +622,7 @@ namespace JDecompiler {
 		return parameters;
 	}
 }
+
+#undef inline
 
 #endif

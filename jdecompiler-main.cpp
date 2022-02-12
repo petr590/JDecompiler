@@ -125,14 +125,14 @@ namespace JDecompiler {
 		protected:
 			static string getRawNameByType(const Type* type, bool& unchecked) {
 				if(type->isPrimitive()) {
-					if(type == BOOLEAN) return "bool";
-					if(type == BYTE) return "b";
-					if(type == CHAR) return "c";
-					if(type == SHORT) return "s";
-					if(type == INT) return "n";
-					if(type == LONG) return "l";
-					if(type == FLOAT) return "f";
-					if(type == DOUBLE) return "d";
+					if(type->isInstanceof(BOOLEAN)) return "bool";
+					if(type->isInstanceof(BYTE)) return "b";
+					if(type->isInstanceof(CHAR)) return "c";
+					if(type->isInstanceof(SHORT)) return "s";
+					if(type->isInstanceof(INT)) return "n";
+					if(type->isInstanceof(LONG)) return "l";
+					if(type->isInstanceof(FLOAT)) return "f";
+					if(type->isInstanceof(DOUBLE)) return "d";
 				}
 				if(const ClassType* classType = dynamic_cast<const ClassType*>(type)) {
 					if(classType->simpleName == "Boolean") return "bool";
@@ -248,12 +248,39 @@ namespace JDecompiler {
 			template<class T>
 			const T* getReturnTypeAs(const T* type) const {
 				const T* newType = getReturnType()->castTo(type);
-				castReturnTypeTo(newType);
+				onCastReturnType(newType);
 				return newType;
 			}
 
 		protected:
-			virtual void castReturnTypeTo(const Type* newType) const {}
+			virtual void onCastReturnType(const Type* newType) const {}
+
+
+			template<class O>
+			static inline O castOperationTo(const Operation* operation);
+
+
+			template<class D, class... Ds>
+			static bool checkDup(const CodeEnvironment& environment, const Operation* operation) {
+				if(const D* dupOperation = dynamic_cast<const D*>(operation)) {
+					if(dupOperation->operation != environment.stack.pop())
+						throw DecompilationException("Illegal stack state after dup operation");
+					return true;
+				}
+
+				if constexpr(sizeof...(Ds) == 0)
+					return false;
+				else
+					return checkDup<Ds...>(environment, operation);
+		}
+
+
+			template<class D, class... Ds>
+			static inline const Type* getDupReturnType(const CodeEnvironment& environment, const Operation* operation, const Type* defaultType = VOID) {
+				bool r = checkDup<D, Ds...>(environment, operation);
+				return r ? operation->getReturnType() : defaultType;
+			}
+
 
 		public:
 			string toString(const CodeEnvironment& environment, uint16_t priority, const Associativity& associativity) const {
@@ -554,6 +581,7 @@ namespace JDecompiler {
 		protected:
 			vector<Variable*> variables;
 			vector<const Operation*> code;
+			map<const Variable*, string> varNames;
 
 		public:
 			vector<Scope*> innerScopes;
@@ -575,6 +603,27 @@ namespace JDecompiler {
 
 			void addVariable(Variable* var) {
 				variables.push_back(var);
+			}
+
+			inline string getNameFor(const Variable& var) {
+				return getNameFor(&var);
+			}
+
+			string getNameFor(const Variable* var) {
+				auto findResult = varNames.find(var);
+				if(findResult != varNames.end())
+					return findResult->second;
+
+				const string baseName = var->getName();
+				string name = baseName;
+				unsigned int i = 1;
+
+				while(find_if(varNames.begin(), varNames.end(), [&name] (const auto& it) { return it.second == name; }) != varNames.end())
+					name = baseName + to_string(++i);
+
+				varNames[var] = name;
+
+				return name;
 			}
 
 			//virtual void initiate(const CodeEnvironment&) {}
@@ -819,16 +868,18 @@ namespace JDecompiler {
 					clazz(clazz), name(name), returnType(returnType), arguments(arguments), type(typeForName(name)) {}
 
 
-			virtual string toString(const ClassInfo& classinfo, uint16_t modifiers, const Scope& scope) const {
-				const bool isNonStatic = !(modifiers & ACC_STATIC);
+			virtual string toString(const CodeEnvironment& environment) const {
+				const bool isNonStatic = !(environment.modifiers & ACC_STATIC);
 
-				string str = type == MethodType::CONSTRUCTOR ? classinfo.thisType.simpleName : returnType->toString(classinfo) + ' ' + name;
+				string str = type == MethodType::CONSTRUCTOR ? environment.classinfo.thisType.simpleName :
+						returnType->toString(environment.classinfo) + ' ' + name;
 
-				function<string(const Type*, uint32_t)> concater = [&scope, &classinfo, isNonStatic] (const Type* type, uint32_t i) {
-					return type->toString(classinfo) + ' ' + scope.getVariable(i + isNonStatic).getName();
+				function<string(const Type*, uint32_t)> concater = [&environment, isNonStatic] (const Type* type, uint32_t i) {
+					return type->toString(environment.classinfo) + ' ' +
+							environment.getCurrentScope()->getNameFor(environment.methodScope.getVariable(i + isNonStatic));
 				};
 
-				if(modifiers & ACC_VARARGS) {
+				if(environment.modifiers & ACC_VARARGS) {
 					uint32_t varargsIndex;
 					for(uint32_t i = arguments.size(); i > 0; ) {
 						if(dynamic_cast<const ArrayType*>(arguments[--i])) {
@@ -837,10 +888,10 @@ namespace JDecompiler {
 						}
 					}
 
-					concater = [&scope, &classinfo, isNonStatic, varargsIndex] (const Type* type, uint32_t i) {
-						return (i == varargsIndex ?
-								safe_cast<const ArrayType*>(type)->elementType->toString(classinfo) + "..." : type->toString(classinfo)) +
-								' ' + scope.getVariable(i + isNonStatic).getName();
+					concater = [&environment, isNonStatic, varargsIndex] (const Type* type, uint32_t i) {
+						return (i == varargsIndex ? safe_cast<const ArrayType*>(type)->elementType->toString(environment.classinfo) + "..." :
+										type->toString(environment.classinfo)) +
+										' ' + environment.methodScope.getVariable(i + isNonStatic).getName();
 					};
 				}
 
@@ -899,7 +950,7 @@ namespace JDecompiler {
 						throw IllegalAttributeException("static initializer cannot have Exceptions attribute");
 					str += "static";
 				} else {
-					str += modifiersToString(modifiers, classinfo) + descriptor.toString(classinfo, modifiers, scope);
+					str += modifiersToString(modifiers, classinfo) + descriptor.toString(environment);
 
 					if(const ExceptionsAttribute* exceptionsAttr = attributes.get<ExceptionsAttribute>())
 						str += " throws " + join<const ClassConstant*>(exceptionsAttr->exceptions,
@@ -1017,13 +1068,17 @@ namespace JDecompiler {
 				vector<const Method*> methods;
 				methods.reserve(methodDataHolders.size());
 				for(const MethodDataHolder methodData : methodDataHolders) {
-					//try {
+					if(Config::globalConfig.isFailOnError()) {
 						methods.push_back(methodData.createMethod(classinfo));
-					/*} catch(DecompilationException& ex) {
-						const char* message = ex.what();
-						cerr << "Exception while decompiling method " + thisType.getName() + '.' + methodData.descriptor.name << ": "
-								<< typeid(ex).name() << (*message == '\0' ? "" : (string)": " + message) << endl;
-					}*/
+					} else {
+						try {
+							methods.push_back(methodData.createMethod(classinfo));
+						} catch(DecompilationException& ex) {
+							const char* message = ex.what();
+							cerr << "Exception while decompiling method " + thisType.getName() + '.' + methodData.descriptor.name << ": "
+									<< typeid(ex).name() << (*message == '\0' ? "" : (string)": " + message) << endl;
+						}
+					}
 				}
 				return methods;
 			}

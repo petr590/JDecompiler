@@ -15,7 +15,8 @@ namespace JDecompiler {
 		struct ReturnableOperation: Operation { // ReturnableOperation is an operation which returns specified type
 			static_assert(is_base_of<Type, T>::value, "template class T of struct ReturnableOperation is not subclass of class Type");
 
-			protected: const T* const returnType;
+			protected:
+				const T* const returnType;
 
 			public:
 				ReturnableOperation(const T* returnType): returnType(returnType) {}
@@ -54,242 +55,25 @@ namespace JDecompiler {
 		};
 
 
-		template<typename T>
-		struct ConstOperation: Operation {
+		struct TransientReturnableOperation: Operation {
 			protected:
 				mutable const Type* returnType;
 
-			public:
-				const T value;
+				TransientReturnableOperation(const Type* returnType): returnType(returnType) {}
+				TransientReturnableOperation() {}
 
-				ConstOperation(const Type* returnType, T value): returnType(returnType), value(value) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return primitiveToString(value);
+				template<class D, class... Ds>
+				inline void initReturnType(const CodeEnvironment& environment, const Operation* operation) {
+					returnType = getDupReturnType<D, Ds...>(environment, operation);
 				}
 
 				virtual const Type* getReturnType() const override {
 					return returnType;
 				}
-
-			protected:
-				virtual void castReturnTypeTo(const Type* newType) const override {
-					returnType = newType;
-				}
 		};
 
 
-		struct IConstOperation: ConstOperation<int32_t> {
-			IConstOperation(int32_t value): ConstOperation(ANY_INT_OR_BOOLEAN, value) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override {
-				if(returnType->isInstanceof(BOOLEAN) && (bool)value == value)
-					return primitiveToString((bool)value);
-				if(returnType->isInstanceof(BYTE) && (int8_t)value == value)
-					return primitiveToString((int8_t)value);
-				if(returnType->isInstanceof(CHAR) && (char16_t)value == value)
-					return primitiveToString((char16_t)value);
-				if(returnType->isInstanceof(SHORT) && (int16_t)value == value)
-					return primitiveToString((int16_t)value);
-				if(returnType->isInstanceof(INT))
-					return primitiveToString(value);
-				throw IllegalStateException("Illegal type of iconst operation: " + returnType->toString());
-			}
-		};
-
-		struct LConstOperation: ConstOperation<int64_t> {
-			LConstOperation(int64_t value): ConstOperation(LONG, value) {}
-		};
-
-		struct FConstOperation: ConstOperation<float> {
-			FConstOperation(float value): ConstOperation(FLOAT, value) {}
-		};
-
-		struct DConstOperation: ConstOperation<double> {
-			DConstOperation(double value): ConstOperation(DOUBLE, value) {}
-		};
-
-		template<typename T>
-		struct IPushOperation: AnyIntOperation {
-			static_assert(is_same<T, int8_t>::value || is_same<T, int16_t>::value, "template type T of struct IPushOperation is not uint8_t or uint16_t type");
-
-			protected:
-				const T value;
-
-			public:
-				IPushOperation(T value): value(value) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return primitiveToString(value);
-				}
-		};
-
-
-		template<TypeSize size>
-		struct LdcOperation: ReturnableOperation<> {
-			public:
-				const uint16_t index;
-				const ConstValueConstant* const value;
-
-			private:
-				static const Type* getReturnTypeFor(uint16_t index, const ConstValueConstant* value) {
-					if(dynamic_cast<const StringConstant*>(value)) return STRING;
-					if(dynamic_cast<const ClassConstant*>(value)) return CLASS;
-					if(dynamic_cast<const IntegerConstant*>(value)) return INT;
-					if(dynamic_cast<const FloatConstant*>(value)) return FLOAT;
-					if(dynamic_cast<const LongConstant*>(value)) return LONG;
-					if(dynamic_cast<const DoubleConstant*>(value)) return DOUBLE;
-					if(dynamic_cast<const MethodTypeConstant*>(value)) return METHOD_TYPE;
-					if(dynamic_cast<const MethodHandleConstant*>(value)) return METHOD_HANDLE;
-					throw IllegalStateException("Illegal constant pointer " + to_string(index) +
-							": expected String, Class, Integer, Float, Long, Double, MethodType or MethodHandle constant");
-				}
-
-			public:
-				LdcOperation(uint16_t index, const ConstValueConstant* value):
-						ReturnableOperation(getReturnTypeFor(index, value)), index(index), value(value) {
-
-					if(returnType->getSize() != size)
-						throw TypeSizeMismatchException(TypeSize_nameOf(size), TypeSize_nameOf(returnType->getSize()), returnType->toString());
-				}
-
-				LdcOperation(const CodeEnvironment& environment, uint16_t index): LdcOperation(index, environment.constPool.get<ConstValueConstant>(index)) {}
-
-				LdcOperation(const StringConstant* value): ReturnableOperation(STRING), index(0), value(value) {}
-				LdcOperation(const MethodTypeConstant* value): ReturnableOperation(METHOD_TYPE), index(0), value(value) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return value->toString(environment.classinfo);
-				}
-		};
-
-
-		struct LoadOperation: ReturnableOperation<> {
-			public:
-				const Variable& variable;
-
-			protected:
-				LoadOperation(const Type* returnType, const Variable& variable):
-						ReturnableOperation(variable.type->castTo(returnType)), variable(variable) {}
-
-			public:
-				LoadOperation(const Type* returnType, const CodeEnvironment& environment, uint16_t index):
-						LoadOperation(returnType, environment.getCurrentScope()->getVariable(index)) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return variable.getName();
-				}
-
-				virtual void castReturnTypeTo(const Type* newType) const override {
-					variable.type = newType;
-				}
-		};
-
-		struct ILoadOperation: LoadOperation {
-			ILoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(ANY_INT_OR_BOOLEAN, environment, index) {}
-		};
-
-		struct LLoadOperation: LoadOperation {
-			LLoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(LONG, environment, index) {}
-		};
-
-		struct FLoadOperation: LoadOperation {
-			FLoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(FLOAT, environment, index) {}
-		};
-
-		struct DLoadOperation: LoadOperation {
-			DLoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(DOUBLE, environment, index) {}
-		};
-
-		struct ALoadOperation: LoadOperation {
-			ALoadOperation(const CodeEnvironment& environment, uint16_t index):
-					LoadOperation(environment.getCurrentScope()->getVariable(index).type, environment, index) {}
-		};
-
-
-		struct ArrayLoadOperation: ReturnableOperation<> {
-			public:
-				const Operation *const index, *const array;
-
-				ArrayLoadOperation(const Type* returnType, const CodeEnvironment& environment):
-						ReturnableOperation(returnType), index(environment.stack.popAs(INT)), array(environment.stack.popAs(ArrayType(returnType))) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return array->toString(environment) + '[' + index->toString(environment) + ']';
-				}
-		};
-
-		struct IALoadOperation: ArrayLoadOperation {
-			IALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(INT, environment) {}
-		};
-
-		struct LALoadOperation: ArrayLoadOperation {
-			LALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(LONG, environment) {}
-		};
-
-		struct FALoadOperation: ArrayLoadOperation {
-			FALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(FLOAT, environment) {}
-		};
-
-		struct DALoadOperation: ArrayLoadOperation {
-			DALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(DOUBLE, environment) {}
-		};
-
-		struct AALoadOperation: ArrayLoadOperation {
-			AALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(
-					environment.stack.lookup(1)->getReturnTypeAs(&AnyType::getArrayTypeInstance())->elementType, environment) {}
-		};
-
-		struct BALoadOperation: ArrayLoadOperation {
-			BALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(ANY_INT, environment) {}
-		};
-
-		struct CALoadOperation: ArrayLoadOperation {
-			CALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(ANY_INT, environment) {}
-		};
-
-		struct SALoadOperation: ArrayLoadOperation {
-			SALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(ANY_INT, environment) {}
-		};
-
-
-		struct StoreOperation: VoidOperation {
-			public:
-				const Operation* const value;
-				const uint16_t index;
-				const Variable& variable;
-
-				StoreOperation(const Type* requiredType, const CodeEnvironment& environment, uint16_t index):
-						value(environment.stack.popAs(requiredType)), index(index), variable(environment.getCurrentScope()->getVariable(index)) {
-
-					//LOG("constructor StoreOperation 0x" << hex((uint64_t)this * (uint64_t)this) << ' ' << typeid(*environment.getCurrentScope()).name());
-					variable.type = variable.type->castTo(requiredType->castTo(value->getReturnType()));
-				}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return variable.getName() + " = " + value->toString(environment);
-				}
-		};
-
-		struct IStoreOperation: StoreOperation {
-			IStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(ANY_INT_OR_BOOLEAN, environment, index) {}
-		};
-
-		struct LStoreOperation: StoreOperation {
-			LStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(LONG, environment, index) {}
-		};
-
-		struct FStoreOperation: StoreOperation {
-			FStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(FLOAT, environment, index) {}
-		};
-
-		struct DStoreOperation: StoreOperation {
-			DStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(DOUBLE, environment, index) {}
-		};
-
-		struct AStoreOperation: StoreOperation {
-			AStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(&AnyObjectType::getInstance(), environment, index) {}
-		};
+		// ----------------------------------------------------------------------------------------------------
 
 
 		template<TypeSize size>
@@ -304,20 +88,6 @@ namespace JDecompiler {
 				inline void checkTypeSize(const Type* type) const {
 					return checkTypeSize<size>(type);
 				}
-		};
-
-
-		template<TypeSize size>
-		struct PopOperation: VoidOperation, TypeSizeTemplatedOperation<size> {
-			const Operation* const operation;
-
-			PopOperation(const CodeEnvironment& environment): operation(environment.stack.pop()) {
-				TypeSizeTemplatedOperation<size>::checkTypeSize(operation->getReturnType());
-			}
-
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return operation->toString(environment);
-			}
 		};
 
 
@@ -408,6 +178,299 @@ namespace JDecompiler {
 			}
 		};
 
+}
+
+template<class O>
+O Operation::castOperationTo(const Operation* operation) {
+	using namespace Operations;
+
+	if(O o = dynamic_cast<O>(operation))
+		return o;
+
+	if(const AbstractDupOperation<TypeSize::FOUR_BYTES>* dupOperation = dynamic_cast<const AbstractDupOperation<TypeSize::FOUR_BYTES>*>(operation))
+		if(O o = dynamic_cast<O>(dupOperation->operation))
+			return o;
+
+	if(const AbstractDupOperation<TypeSize::EIGHT_BYTES>* dupOperation = dynamic_cast<const AbstractDupOperation<TypeSize::EIGHT_BYTES>*>(operation))
+		if(O o = dynamic_cast<O>(dupOperation->operation))
+			return o;
+
+	return nullptr;
+}
+
+namespace Operations {
+
+
+		template<typename T>
+		struct ConstOperation: Operation {
+			protected:
+				mutable const Type* returnType;
+
+			public:
+				const T value;
+
+				ConstOperation(const Type* returnType, T value): returnType(returnType), value(value) {}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return primitiveToString(value);
+				}
+
+				virtual const Type* getReturnType() const override {
+					return returnType;
+				}
+
+			protected:
+				virtual void onCastReturnType(const Type* newType) const override {
+					returnType = newType;
+				}
+		};
+
+
+		struct IConstOperation: ConstOperation<int32_t> {
+			private:
+				static inline const Type* getTypeByValue(int32_t value) {
+					static const AmbigousType
+							CHAR_OR_SHORT_OR_INT({CHAR, SHORT, INT}),
+							SHORT_OR_INT({SHORT, INT});
+
+					if((bool)value == value)     return ANY_INT_OR_BOOLEAN;
+					if((int8_t)value == value)   return ANY_INT;
+					if((char16_t)value == value) return &CHAR_OR_SHORT_OR_INT;
+					if((int16_t)value == value)  return &SHORT_OR_INT;
+					return INT;
+				}
+
+			public:
+				IConstOperation(int32_t value): ConstOperation(getTypeByValue(value), value) {}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					if(returnType->isInstanceof(BOOLEAN)) return primitiveToString((bool)value);
+					if(returnType->isInstanceof(BYTE))    return primitiveToString((int8_t)value);
+					if(returnType->isInstanceof(CHAR))    return primitiveToString((char16_t)value);
+					if(returnType->isInstanceof(SHORT))   return primitiveToString((int16_t)value);
+					if(returnType->isInstanceof(INT))     return primitiveToString(value);
+					throw IllegalStateException("Illegal type of iconst operation: " + returnType->toString());
+				}
+		};
+
+		struct LConstOperation: ConstOperation<int64_t> {
+			LConstOperation(int64_t value): ConstOperation(LONG, value) {}
+		};
+
+		struct FConstOperation: ConstOperation<float> {
+			FConstOperation(float value): ConstOperation(FLOAT, value) {}
+		};
+
+		struct DConstOperation: ConstOperation<double> {
+			DConstOperation(double value): ConstOperation(DOUBLE, value) {}
+		};
+
+		template<typename T>
+		struct IPushOperation: TransientReturnableOperation {
+			static_assert(is_same<T, int8_t>::value || is_same<T, int16_t>::value, "template type T of struct IPushOperation is not uint8_t or uint16_t type");
+
+			public:
+				const T value;
+
+				IPushOperation(T value): TransientReturnableOperation(ANY_INT_OR_BOOLEAN), value(value) {}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					if(returnType->isInstanceof(BOOLEAN)) return primitiveToString((bool)value);
+					if(returnType->isInstanceof(BYTE))    return primitiveToString((int8_t)value);
+					if(returnType->isInstanceof(CHAR))    return primitiveToString((char16_t)value);
+					if(returnType->isInstanceof(SHORT))   return primitiveToString((int16_t)value);
+					if(returnType->isInstanceof(INT))     return primitiveToString((int32_t)value);
+					throw IllegalStateException("Illegal type of ipush operation: " + returnType->toString());
+				}
+
+				virtual void onCastReturnType(const Type* newType) const override {
+					returnType = newType;
+				}
+		};
+
+
+		template<TypeSize size>
+		struct LdcOperation: ReturnableOperation<> {
+			public:
+				const uint16_t index;
+				const ConstValueConstant* const value;
+
+			private:
+				static const Type* getReturnTypeFor(uint16_t index, const ConstValueConstant* value) {
+					if(dynamic_cast<const StringConstant*>(value)) return STRING;
+					if(dynamic_cast<const ClassConstant*>(value)) return CLASS;
+					if(dynamic_cast<const IntegerConstant*>(value)) return INT;
+					if(dynamic_cast<const FloatConstant*>(value)) return FLOAT;
+					if(dynamic_cast<const LongConstant*>(value)) return LONG;
+					if(dynamic_cast<const DoubleConstant*>(value)) return DOUBLE;
+					if(dynamic_cast<const MethodTypeConstant*>(value)) return METHOD_TYPE;
+					if(dynamic_cast<const MethodHandleConstant*>(value)) return METHOD_HANDLE;
+					throw IllegalStateException("Illegal constant pointer " + to_string(index) +
+							": expected String, Class, Integer, Float, Long, Double, MethodType or MethodHandle constant");
+				}
+
+			public:
+				LdcOperation(uint16_t index, const ConstValueConstant* value):
+						ReturnableOperation(getReturnTypeFor(index, value)), index(index), value(value) {
+
+					if(returnType->getSize() != size)
+						throw TypeSizeMismatchException(TypeSize_nameOf(size), TypeSize_nameOf(returnType->getSize()), returnType->toString());
+				}
+
+				LdcOperation(const CodeEnvironment& environment, uint16_t index): LdcOperation(index, environment.constPool.get<ConstValueConstant>(index)) {}
+
+				LdcOperation(const StringConstant* value): ReturnableOperation(STRING), index(0), value(value) {}
+				LdcOperation(const MethodTypeConstant* value): ReturnableOperation(METHOD_TYPE), index(0), value(value) {}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return value->toString(environment.classinfo);
+				}
+		};
+
+
+		struct LoadOperation: ReturnableOperation<> {
+			public:
+				const uint16_t index;
+				const Variable& variable;
+
+			protected:
+				LoadOperation(const Type* returnType, uint16_t index, const Variable& variable):
+						ReturnableOperation(variable.type->castTo(returnType)), index(index), variable(variable) {}
+
+			public:
+				LoadOperation(const Type* returnType, const CodeEnvironment& environment, uint16_t index):
+						LoadOperation(returnType, index, environment.getCurrentScope()->getVariable(index)) {}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return environment.getCurrentScope()->getNameFor(variable);
+				}
+
+				virtual void onCastReturnType(const Type* newType) const override {
+					variable.type = newType;
+				}
+		};
+
+		struct ILoadOperation: LoadOperation {
+			ILoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(ANY_INT_OR_BOOLEAN, environment, index) {}
+		};
+
+		struct LLoadOperation: LoadOperation {
+			LLoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(LONG, environment, index) {}
+		};
+
+		struct FLoadOperation: LoadOperation {
+			FLoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(FLOAT, environment, index) {}
+		};
+
+		struct DLoadOperation: LoadOperation {
+			DLoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(DOUBLE, environment, index) {}
+		};
+
+		struct ALoadOperation: LoadOperation {
+			ALoadOperation(const CodeEnvironment& environment, uint16_t index):
+					LoadOperation(environment.getCurrentScope()->getVariable(index).type, environment, index) {}
+		};
+
+
+		struct ArrayLoadOperation: ReturnableOperation<> {
+			public:
+				const Operation *const index, *const array;
+
+				ArrayLoadOperation(const Type* returnType, const CodeEnvironment& environment):
+						ReturnableOperation(returnType), index(environment.stack.popAs(INT)), array(environment.stack.popAs(ArrayType(returnType))) {}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return array->toString(environment) + '[' + index->toString(environment) + ']';
+				}
+		};
+
+		struct IALoadOperation: ArrayLoadOperation {
+			IALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(INT, environment) {}
+		};
+
+		struct LALoadOperation: ArrayLoadOperation {
+			LALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(LONG, environment) {}
+		};
+
+		struct FALoadOperation: ArrayLoadOperation {
+			FALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(FLOAT, environment) {}
+		};
+
+		struct DALoadOperation: ArrayLoadOperation {
+			DALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(DOUBLE, environment) {}
+		};
+
+		struct AALoadOperation: ArrayLoadOperation {
+			AALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(
+					environment.stack.lookup(1)->getReturnTypeAs(&AnyType::getArrayTypeInstance())->elementType, environment) {}
+		};
+
+		struct BALoadOperation: ArrayLoadOperation {
+			BALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(ANY_INT, environment) {}
+		};
+
+		struct CALoadOperation: ArrayLoadOperation {
+			CALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(ANY_INT, environment) {}
+		};
+
+		struct SALoadOperation: ArrayLoadOperation {
+			SALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(ANY_INT, environment) {}
+		};
+
+
+		struct StoreOperation: TransientReturnableOperation {
+			public:
+				const Operation* const value;
+				const uint16_t index;
+				const Variable& variable;
+
+				StoreOperation(const Type* requiredType, const CodeEnvironment& environment, uint16_t index):
+						value(environment.stack.popAs(requiredType)), index(index), variable(environment.getCurrentScope()->getVariable(index)) {
+
+					initReturnType<DupOperation<TypeSize::FOUR_BYTES>>(environment, value);
+					//LOG("constructor StoreOperation 0x" << hex((uint64_t)this * (uint64_t)this) << ' ' << typeid(*environment.getCurrentScope()).name());
+					variable.type = variable.type->castTo(requiredType->castTo(value->getReturnType()));
+				}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return environment.getCurrentScope()->getNameFor(variable) + " = " + value->toString(environment);
+				}
+		};
+
+		struct IStoreOperation: StoreOperation {
+			IStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(ANY_INT_OR_BOOLEAN, environment, index) {}
+		};
+
+		struct LStoreOperation: StoreOperation {
+			LStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(LONG, environment, index) {}
+		};
+
+		struct FStoreOperation: StoreOperation {
+			FStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(FLOAT, environment, index) {}
+		};
+
+		struct DStoreOperation: StoreOperation {
+			DStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(DOUBLE, environment, index) {}
+		};
+
+		struct AStoreOperation: StoreOperation {
+			AStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(&AnyObjectType::getInstance(), environment, index) {}
+		};
+
+
+		template<TypeSize size>
+		struct PopOperation: VoidOperation, TypeSizeTemplatedOperation<size> {
+			const Operation* const operation;
+
+			PopOperation(const CodeEnvironment& environment): operation(environment.stack.pop()) {
+				TypeSizeTemplatedOperation<size>::checkTypeSize(operation->getReturnType());
+			}
+
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return operation->toString(environment);
+			}
+		};
+
 
 
 		struct SwapOperation: VoidOperation {
@@ -473,9 +536,9 @@ namespace JDecompiler {
 				virtual string toString(const CodeEnvironment& environment) const override {
 					if(isShortInc) {
 						const char* inc = value == 1 ? "++" : "--";
-						return isPostInc || returnType == VOID ? variable.getName() + inc : inc + variable.getName();
+						return isPostInc || returnType == VOID ? environment.getCurrentScope()->getNameFor(variable) + inc : inc + environment.getCurrentScope()->getNameFor(variable);
 					}
-					return variable.getName() + (string)(value < 0 ? " -" : " +") + "= " + to_string(abs(value));
+					return environment.getCurrentScope()->getNameFor(variable) + (string)(value < 0 ? " -" : " +") + "= " + to_string(abs(value));
 				}
 
 				virtual const Type* getReturnType() const override {
@@ -725,7 +788,7 @@ namespace JDecompiler {
 
 			private: static const CompareOperation* getCondition(const CodeEnvironment& environment, const CompareType& compareType) {
 				const Operation* operation = environment.stack.pop();
-				if(const CmpOperation* cmpOperation = dynamic_cast<const CmpOperation*>(operation))
+				if(const CmpOperation* cmpOperation = castOperationTo<const CmpOperation*>(operation))
 					return new CompareBinaryOperation(cmpOperation, compareType);
 				return new CompareWithZeroOperation(operation, compareType);
 			}
@@ -830,23 +893,20 @@ namespace JDecompiler {
 
 		struct CatchScopeDataHolder {
 			uint32_t from;
-			const ClassType* catchType;
+			vector<const ClassType*> catchTypes;
 
-			CatchScopeDataHolder(uint32_t from, const ClassType* catchType): from(from), catchType(catchType) {}
+			CatchScopeDataHolder(uint32_t from, const ClassType* catchType): from(from), catchTypes({catchType}) {}
 		};
 
 
 		struct TryScope: Scope {
-			public:
-				const ClassType* const catchType;
-
 			protected:
 				vector<CatchScopeDataHolder> handlersData;
 				friend const CodeEnvironment& Method::decompileCode(const ClassInfo&);
 
 			public:
-				TryScope(uint32_t from, uint32_t to, Scope* parentScope, const ClassType* catchType):
-						Scope(from, to, parentScope), catchType(catchType) {}
+				TryScope(uint32_t from, uint32_t to, Scope* parentScope):
+						Scope(from, to, parentScope) {}
 
 				virtual string getHeader(const CodeEnvironment& environment) const override {
 					return "try ";
@@ -862,6 +922,7 @@ namespace JDecompiler {
 
 		struct CatchScope: Scope {
 			public:
+				const vector<const ClassType*> catchTypes;
 				const ClassType* const catchType;
 
 			protected:
@@ -871,13 +932,13 @@ namespace JDecompiler {
 				CatchScope* const nextHandler;
 
 			public:
-				CatchScope(const CodeEnvironment& environment, uint32_t from, uint32_t to, const ClassType* catchType, CatchScope* nextHandler):
-						Scope(from, to, environment.getCurrentScope()), catchType(catchType), nextHandler(nextHandler) {
+				CatchScope(const CodeEnvironment& environment, uint32_t from, uint32_t to, const vector<const ClassType*>& catchTypes, CatchScope* nextHandler):
+						Scope(from, to, environment.getCurrentScope()), catchTypes(catchTypes), catchType(catchTypes[0]), nextHandler(nextHandler) {
 					//LOG("constructor CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " }");
 				}
 
 				CatchScope(const CodeEnvironment& environment, const CatchScopeDataHolder& dataHolder, uint32_t to, CatchScope* nextHandler):
-						CatchScope(environment, dataHolder.from, to, dataHolder.catchType, nextHandler) {}
+						CatchScope(environment, dataHolder.from, to, dataHolder.catchTypes, nextHandler) {}
 
 
 				virtual void add(const Operation* operation, const CodeEnvironment& environment) override {
@@ -914,7 +975,9 @@ namespace JDecompiler {
 
 					//assert(exceptionVariable != nullptr);
 					return catchType == nullptr ? "finally" :
-							"catch(" + catchType->toString(environment.classinfo) + ' ' + exceptionVariable->getName() + ") ";
+							"catch(" + join<const ClassType*>(catchTypes,
+									[&environment] (const ClassType* catchType) { return catchType->toString(environment.classinfo); }, " | ") +
+										' ' + environment.getCurrentScope()->getNameFor(*exceptionVariable) + ") ";
 				}
 
 				virtual string getBackSeparator(const ClassInfo& classinfo) const override {
@@ -929,7 +992,7 @@ namespace JDecompiler {
 					while(!environment.stack.empty())
 						tmpStack.push_back(environment.stack.pop());
 
-					environment.stack.push(new LoadCatchedExceptionOperation(catchType));
+					environment.stack.push(new LoadCatchedExceptionOperation(catchTypes.empty() ? catchType : THROWABLE));
 				}
 
 			protected:
@@ -1037,9 +1100,54 @@ namespace JDecompiler {
 
 				string instanceFieldToString(const CodeEnvironment& environment, const Operation* object) const {
 					const ALoadOperation* aloadOperation = dynamic_cast<const ALoadOperation*>(object);
-					return aloadOperation != nullptr && aloadOperation->variable.getName() == "this" &&
+					return aloadOperation != nullptr && !(environment.modifiers & ACC_STATIC) && aloadOperation->index == 0 &&
 							!environment.getCurrentScope()->hasVariable(descriptor.name) ?
 							(string)descriptor.name : object->toString(environment) + '.' + descriptor.name;
+				}
+		};
+
+
+		struct PutFieldOperation: FieldOperation {
+			public:
+				const Operation* const value;
+
+			protected:
+				const Type* returnType;
+
+				PutFieldOperation(const CodeEnvironment& environment, uint16_t index):
+						FieldOperation(environment, index), value(environment.stack.popAs(&descriptor.type)) {
+					if(const LoadOperation* loadOperation = castOperationTo<const LoadOperation*>(value))
+						loadOperation->variable.addName(descriptor.name);
+				}
+
+			public:
+				virtual const Type* getReturnType() const override {
+					return returnType;
+				}
+		};
+
+		struct PutStaticFieldOperation: PutFieldOperation {
+			public:
+				PutStaticFieldOperation(const CodeEnvironment& environment, uint16_t index): PutFieldOperation(environment, index) {
+					returnType = getDupReturnType<DupOperation<TypeSize::FOUR_BYTES>, DupOperation<TypeSize::EIGHT_BYTES>>(environment, value);
+				}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return staticFieldToString(environment) + " = " + value->toString(environment);
+				}
+		};
+
+		struct PutInstanceFieldOperation: PutFieldOperation {
+			public:
+				const Operation* const object;
+
+				PutInstanceFieldOperation(const CodeEnvironment& environment, uint16_t index):
+						PutFieldOperation(environment, index), object(environment.stack.popAs(clazz)) {
+					returnType = getDupReturnType<DupX1Operation, Dup2X1Operation>(environment, value);
+				}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return instanceFieldToString(environment, object) + " = " + value->toString(environment);
 				}
 		};
 
@@ -1054,22 +1162,6 @@ namespace JDecompiler {
 				}
 		};
 
-		struct PutFieldOperation: FieldOperation {
-			public:
-				const Operation* const value;
-
-			protected:
-				PutFieldOperation(const CodeEnvironment& environment, uint16_t index):
-						FieldOperation(environment, index), value(environment.stack.popAs(&descriptor.type)) {
-					if(const LoadOperation* loadOperation = dynamic_cast<const LoadOperation*>(value))
-						loadOperation->variable.addName(descriptor.name);
-				}
-
-			public:
-				virtual const Type* getReturnType() const override { return VOID; }
-		};
-
-
 		struct GetStaticFieldOperation: GetFieldOperation {
 			public:
 				GetStaticFieldOperation(const CodeEnvironment& environment, uint16_t index): GetFieldOperation(environment, index) {}
@@ -1078,16 +1170,6 @@ namespace JDecompiler {
 					return staticFieldToString(environment);
 				}
 		};
-
-		struct PutStaticFieldOperation: PutFieldOperation {
-			public:
-				PutStaticFieldOperation(const CodeEnvironment& environment, uint16_t index): PutFieldOperation(environment, index) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return staticFieldToString(environment) + " = " + value->toString(environment);
-				}
-		};
-
 
 		struct GetInstanceFieldOperation: GetFieldOperation {
 			public:
@@ -1098,18 +1180,6 @@ namespace JDecompiler {
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return instanceFieldToString(environment, object);
-				}
-		};
-
-		struct PutInstanceFieldOperation: PutFieldOperation {
-			public:
-				const Operation* const object;
-
-				PutInstanceFieldOperation(const CodeEnvironment& environment, uint16_t index):
-						PutFieldOperation(environment, index), object(environment.stack.popAs(clazz)) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return instanceFieldToString(environment, object) + " = " + value->toString(environment);
 				}
 		};
 
@@ -1180,29 +1250,50 @@ namespace JDecompiler {
 
 		struct InvokespecialOperation: InvokeNonStaticOperation {
 			public:
-				const bool isConstructor;
+				const bool isConstructor, isSuperConstructor;
 
-				InvokespecialOperation(const CodeEnvironment& environment, uint16_t index):
-						InvokeNonStaticOperation(environment, index), isConstructor(descriptor.type == MethodDescriptor::MethodType::CONSTRUCTOR) {
-					if(isConstructor && dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(objectOperation))
-						environment.stack.pop();
+				const Type* const returnType;
+
+			private:
+				inline const Type* getReturnType(const CodeEnvironment& environment) {
+					return isConstructor && checkDup<DupOperation<TypeSize::FOUR_BYTES>>(environment, objectOperation) ?
+							objectOperation->getReturnType() : InvokeNonStaticOperation::getReturnType();
 				}
+
+				inline bool getIsConstructor() {
+					return descriptor.type == MethodDescriptor::MethodType::CONSTRUCTOR;
+				}
+
+				inline bool getIsSuperConstructor(const CodeEnvironment& environment) {
+					return (!(environment.modifiers & ACC_STATIC) && // check that we invoking this (or super) constructor
+							dynamic_cast<const ALoadOperation*>(objectOperation) && ((const ALoadOperation*)objectOperation)->index == 0 &&
+							descriptor.clazz == environment.classinfo.superType);
+				}
+
+			public:
+				InvokespecialOperation(const CodeEnvironment& environment, uint16_t index):
+						InvokeNonStaticOperation(environment, index),
+						isConstructor(getIsConstructor()), isSuperConstructor(getIsSuperConstructor(environment)), returnType(getReturnType(environment)) {}
 
 				InvokespecialOperation(const CodeEnvironment& environment, const Operation* objectOperation, uint16_t index):
 						InvokeNonStaticOperation(environment, objectOperation, index),
-						isConstructor(descriptor.type == MethodDescriptor::MethodType::CONSTRUCTOR) {}
+						isConstructor(getIsConstructor()), isSuperConstructor(getIsSuperConstructor(environment)), returnType(getReturnType(environment)) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					if(isConstructor)
-						return objectOperation->toString(environment, priority, Associativity::LEFT) + '(' + rjoin<const Operation*>(arguments,
+						return (isSuperConstructor ? "super" : objectOperation->toString(environment, priority, Associativity::LEFT)) +
+							'(' + rjoin<const Operation*>(arguments,
 								[&environment] (const Operation* operation) { return operation->toString(environment); }) + ')';
+
 					return InvokeNonStaticOperation::toString(environment);
 				}
 
 				virtual const Type* getReturnType() const override {
-					if(isConstructor)
-						return objectOperation->getReturnType();
-					return InvokeNonStaticOperation::getReturnType();
+					return returnType;
+				}
+
+				virtual bool canAddToCode() const override {
+					return !(isSuperConstructor && arguments.empty());
 				}
 		};
 
@@ -1368,6 +1459,9 @@ namespace JDecompiler {
 
 		ArrayStoreOperation::ArrayStoreOperation(const Type* elementType, const CodeEnvironment& environment):
 				value(environment.stack.popAs(elementType)), index(environment.stack.popAs(INT)), array(environment.stack.pop()) {
+
+			//checkDup<DupOperation<TypeSize::FOUR_BYTES>>(environment, array);
+
 			if(const DupOperation<TypeSize::FOUR_BYTES>* dupArray = dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(array)) {
 				if(const NewArrayOperation* newArray = dynamic_cast<const NewArrayOperation*>(dupArray->operation)) {
 					newArray->initializer.push_back(value);

@@ -448,7 +448,7 @@ namespace JDecompiler {
 	}
 
 	static inline string primitiveToString(int64_t num) { // long
-		return to_string(num) + "l";
+		return to_string(num) + 'l';
 	}
 
 	static string primitiveToString(float num) {

@@ -272,7 +272,8 @@ namespace JDecompiler {
 		using namespace Operations;
 		using namespace Instructions;
 
-		//LOG("decompiling of " << descriptor.name);
+		LOG("decompiling of " << descriptor.name << '(' << join<const Type*>(descriptor.arguments,
+				[] (const Type* argument) { return argument->toString(); }) << ')');
 
 		const bool hasCodeAttribute = codeAttribute != nullptr;
 
@@ -305,23 +306,33 @@ namespace JDecompiler {
 		vector<TryScope*> tryScopes;
 
 		for(const CodeAttribute::ExceptionAttribute* exceptionAttribute : codeAttribute->exceptionTable) {
-			const uint32_t
-					from = environment.bytecode.posToIndex(exceptionAttribute->startPos),
-					to = environment.bytecode.posToIndex(exceptionAttribute->endPos);
-
-			auto findResult = find_if(tryScopes.begin(), tryScopes.end(),
-					[from, to] (TryScope* tryScope) { return tryScope->from == from && tryScope->to == to; });
-
 			TryScope* tryScope;
 
-			if(findResult == tryScopes.end()) {
-				tryScope = new TryScope(from, to, methodScope, exceptionAttribute->catchType);
-				tryScopes.push_back(tryScope);
-				environment.addScope(tryScope);
-			} else
-				tryScope = *findResult;
+			{
+				const uint32_t
+						from = environment.bytecode.posToIndex(exceptionAttribute->startPos),
+						to = environment.bytecode.posToIndex(exceptionAttribute->endPos);
 
-			tryScope->handlersData.push_back(CatchScopeDataHolder(bytecode.posToIndex(exceptionAttribute->handlerPos) - 1, exceptionAttribute->catchType));
+				auto findResult = find_if(tryScopes.begin(), tryScopes.end(),
+						[from, to] (TryScope* tryScope) { return tryScope->from == from && tryScope->to == to; });
+
+				if(findResult == tryScopes.end()) {
+					tryScope = new TryScope(from, to, methodScope);
+					tryScopes.push_back(tryScope);
+					environment.addScope(tryScope);
+				} else
+					tryScope = *findResult;
+			}
+
+			const uint32_t from = bytecode.posToIndex(exceptionAttribute->handlerPos) - 1;
+
+			auto findResult = find_if(tryScope->handlersData.begin(), tryScope->handlersData.end(),
+					[from] (CatchScopeDataHolder& handlerData) { return handlerData.from == from; });
+
+			if(findResult == tryScope->handlersData.end())
+				tryScope->handlersData.push_back(CatchScopeDataHolder(from, exceptionAttribute->catchType));
+			else
+				(*findResult).catchTypes.push_back(exceptionAttribute->catchType);
 		}
 
 		const vector<Instruction*>& instructions = bytecode.getInstructions();

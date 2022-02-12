@@ -290,7 +290,7 @@ namespace JDecompiler { namespace Instructions {
 
 	static const Type* getTypeByCode(uint16_t code) {
 		switch(code) {
-			case 0: return INT;
+			case 0: return ANY_INT_OR_BOOLEAN;
 			case 1: return LONG;
 			case 2: return FLOAT;
 			case 3: return DOUBLE;

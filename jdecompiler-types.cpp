@@ -350,7 +350,7 @@ namespace JDecompiler {
 			*const CLASS = new ClassType("java/lang/Class"),
 			*const METHOD_TYPE = new ClassType("java/lang/invoke/MethodType"),
 			*const METHOD_HANDLE = new ClassType("java/lang/invoke/MethodHandle"),
-			*const EXCEPTION = new ClassType("java/lang/Exception");
+			*const THROWABLE = new ClassType("java/lang/Throwable");
 
 
 

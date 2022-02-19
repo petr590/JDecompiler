@@ -6,6 +6,10 @@
 #define inline INLINE_ATTR
 
 namespace JDecompiler {
+
+	using namespace std;
+
+
 	namespace JavaSE {
 		namespace java {
 			namespace lang {

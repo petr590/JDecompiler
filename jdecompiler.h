@@ -11,20 +11,22 @@
 #endif
 
 #include <string>
-#include <vector>
 #include <stdint.h>
 
 #define inline INLINE_ATTR
 
-using namespace std;
-
-// jdecompiler-util
-
-class Exception;
-
-class BinaryInputStream;
 
 namespace JDecompiler {
+
+	using namespace std;
+
+
+	// jdecompiler-util
+
+	class Exception;
+
+	class BinaryInputStream;
+
 
 	class FormatString;
 
@@ -71,9 +73,7 @@ namespace JDecompiler {
 
 	struct DeprecatedAttribute;
 
-	//struct Annotation;
-
-	//struct AnnotationsAttribute;
+	struct AnnotationsAttribute;
 
 
 	// jdecompiler-main
@@ -92,6 +92,8 @@ namespace JDecompiler {
 
 	struct ClassInfo;
 
+
+	// jdecompiler-types
 
 	enum class TypeSize;
 
@@ -118,7 +120,7 @@ namespace JDecompiler {
 
 	static const ReferenceType* parseReferenceType(const string& encodedName);
 
-	struct ClassEntry;
+	// jdecompiler-main
 
 	struct Field;
 
@@ -128,8 +130,6 @@ namespace JDecompiler {
 
 	struct Class;
 
-
-	// jdecompiler-method-code
 
 	template<typename T>
 	struct Stack;

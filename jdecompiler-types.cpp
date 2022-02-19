@@ -10,6 +10,10 @@
 #define LOG_PREFIX "[ jdecompiler-types.cpp ]"
 
 namespace JDecompiler {
+
+	using namespace std;
+
+
 	enum class TypeSize {
 		ZERO_BYTES, FOUR_BYTES, EIGHT_BYTES
 	};
@@ -261,7 +265,7 @@ namespace JDecompiler {
 				}
 
 				memberType = parseType(&name[i]);
-				elementType = nestingLevel == 1 ? memberType : new ArrayType(memberType, nestingLevel - 1);
+				elementType = nestingLevel == 1 ? memberType : new ArrayType(memberType, (uint16_t)(nestingLevel - 1));
 
 				this->name = memberType->getName() + braces;
 				this->encodedName = string(name, 0, memberType->getEncodedName().size() + nestingLevel);
@@ -282,7 +286,7 @@ namespace JDecompiler {
 				this->encodedName = string(nestingLevel, '[') + memberType->getEncodedName();
 
 				this->memberType = memberType;
-				this->elementType = nestingLevel == 1 ? memberType : new ArrayType(memberType, nestingLevel - 1);
+				this->elementType = nestingLevel == 1 ? memberType : new ArrayType(memberType, (uint16_t)(nestingLevel - 1));
 
 				assert(elementType != nullptr);
 				assert(memberType != nullptr);
@@ -571,16 +575,15 @@ namespace JDecompiler {
 		}
 	}
 
-	static const BasicType* parseType(const string& encodedName) {
+	static inline const BasicType* parseType(const string& encodedName) {
 		return parseType(encodedName.c_str());
 	}
 
 
 	static const BasicType* parseReturnType(const char* encodedName) {
-		switch(encodedName[0]) {
-			case 'V': return VOID;
-			default: return parseType(encodedName);
-		}
+		if(encodedName[0] == 'V')
+			return VOID;
+		return parseType(encodedName);
 	}
 
 

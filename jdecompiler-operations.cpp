@@ -9,6 +9,10 @@
 #define LOG_PREFIX "[ jdecompiler-operations.cpp ]"
 
 namespace JDecompiler {
+
+	using namespace std;
+
+
 	namespace Operations {
 
 		template<class T = Type>
@@ -60,7 +64,7 @@ namespace JDecompiler {
 				mutable const Type* returnType;
 
 				TransientReturnableOperation(const Type* returnType): returnType(returnType) {}
-				TransientReturnableOperation() {}
+				TransientReturnableOperation(): returnType(nullptr) {}
 
 				template<class D, class... Ds>
 				inline void initReturnType(const CodeEnvironment& environment, const Operation* operation) {
@@ -568,36 +572,37 @@ namespace Operations {
 		struct CmpOperation: BooleanOperation {
 			const Operation *const operand2, *const operand1;
 
-			CmpOperation(const CodeEnvironment& environment): operand2(environment.stack.pop()), operand1(environment.stack.pop()) {}
+			CmpOperation(const CodeEnvironment& environment, const Type* operandType):
+					operand2(environment.stack.popAs(operandType)), operand1(environment.stack.popAs(operandType)) {}
 		};
 
 
 		struct ICmpOperation: CmpOperation {
-			ICmpOperation(const CodeEnvironment& environment): CmpOperation(environment) {}
+			ICmpOperation(const CodeEnvironment& environment): CmpOperation(environment, ANY_INT_OR_BOOLEAN) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of icmp: toString()"); }
 		};
 
 		struct LCmpOperation: CmpOperation {
-			LCmpOperation(const CodeEnvironment& environment): CmpOperation(environment) {}
+			LCmpOperation(const CodeEnvironment& environment): CmpOperation(environment, LONG) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of lcmp: toString()"); }
 		};
 
 		struct FCmpOperation: CmpOperation {
-			FCmpOperation(const CodeEnvironment& environment): CmpOperation(environment) {}
+			FCmpOperation(const CodeEnvironment& environment): CmpOperation(environment, FLOAT) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of fcmp: toString()"); }
 		};
 
 		struct DCmpOperation: CmpOperation {
-			DCmpOperation(const CodeEnvironment& environment): CmpOperation(environment) {}
+			DCmpOperation(const CodeEnvironment& environment): CmpOperation(environment, DOUBLE) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of dcmp: toString()"); }
 		};
 
 		struct ACmpOperation: CmpOperation {
-			ACmpOperation(const CodeEnvironment& environment): CmpOperation(environment) {}
+			ACmpOperation(const CodeEnvironment& environment): CmpOperation(environment, &AnyObjectType::getInstance()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of acmp: toString()"); }
 		};
@@ -742,7 +747,7 @@ namespace Operations {
 
 			public:
 				IfScope(const CodeEnvironment& environment, const int32_t offset, const CompareOperation* condition):
-						Scope(environment.exprStartIndex, environment.bytecode.posToIndex(offset + environment.pos) - 1, environment.getCurrentScope()),
+						Scope(environment.exprStartIndex, environment.bytecode.posToIndex(environment.pos + offset) - 1, environment.getCurrentScope()),
 						condition(condition) {}
 
 			protected:
@@ -843,10 +848,10 @@ namespace Operations {
 			public:
 				SwitchScope(const CodeEnvironment& environment, int32_t defaultOffset, map<int32_t, int32_t> offsetTable):
 						Scope(environment.index,
-							environment.bytecode.posToIndex(max(defaultOffset, max_element(offsetTable.begin(), offsetTable.end(),
-								[] (auto& e1, auto& e2) { return e1.second < e2.second; })->second) + environment.pos),
+							environment.bytecode.posToIndex(environment.pos + max(defaultOffset, max_element(offsetTable.begin(), offsetTable.end(),
+								[] (auto& e1, auto& e2) { return e1.second < e2.second; })->second)),
 							environment.getCurrentScope()),
-						value(environment.stack.pop()), defaultIndex(environment.bytecode.posToIndex(defaultOffset + environment.pos)),
+						value(environment.stack.pop()), defaultIndex(environment.bytecode.posToIndex(environment.pos + defaultOffset)),
 						indexTable(offsetTableToIndexTable(environment, offsetTable)) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
@@ -927,7 +932,7 @@ namespace Operations {
 
 			protected:
 				vector<const Operation*> tmpStack;
-				Variable* exceptionVariable;
+				Variable* exceptionVariable = nullptr;
 				uint16_t exceptionVariableIndex;
 				CatchScope* const nextHandler;
 
@@ -942,15 +947,19 @@ namespace Operations {
 
 
 				virtual void add(const Operation* operation, const CodeEnvironment& environment) override {
-					const StoreOperation* storeOperation;
 
 					//LOG("add         CatchScope 0x" << hex<4>((uint64_t)this * (uint64_t)this) << ' '\
 							<< (exceptionVariable != nullptr ? "not null" : "null") << ' '  << from << ".." << to << ' ' << typeid(*operation).name());
 
-					if(exceptionVariable == nullptr && (storeOperation = dynamic_cast<const StoreOperation*>(operation)) != nullptr) {
-						exceptionVariableIndex = storeOperation->index;
-						exceptionVariable = new NamedVariable(catchType, "ex");
-						return;
+					if(exceptionVariable == nullptr) {
+						const StoreOperation* storeOperation = dynamic_cast<const StoreOperation*>(operation);
+						if(storeOperation == nullptr) {
+							exceptionVariableIndex = storeOperation->index;
+							exceptionVariable = new NamedVariable(catchType, "ex");
+							return;
+						} else {
+							environment.warning("first instruction in the try block should be `astore`");
+						}
 					}
 					Scope::add(operation, environment);
 				}
@@ -959,7 +968,7 @@ namespace Operations {
 					//LOG("getVariable CatchScope 0x" << hex<4>((uint64_t)this * (uint64_t)this) << ' '\
 							<< (exceptionVariable != nullptr ? "not null" : "null"));
 
-					if(index == exceptionVariableIndex)
+					if(exceptionVariable != nullptr && index == exceptionVariableIndex)
 						return *exceptionVariable;
 					return Scope::getVariable(index);
 				}
@@ -1585,26 +1594,6 @@ namespace Operations {
 					IfScope(environment, offset, new CompareWithNullOperation(environment, CompareType::NOT_EQUALS)) {}
 		};
 
-
-
-		static IConstOperation
-				*const ICONST_M1_OPERATION = new IConstOperation(-1),
-				*const ICONST_0_OPERATION = new IConstOperation(0),
-				*const ICONST_1_OPERATION = new IConstOperation(1),
-				*const ICONST_2_OPERATION = new IConstOperation(2),
-				*const ICONST_3_OPERATION = new IConstOperation(3),
-				*const ICONST_4_OPERATION = new IConstOperation(4),
-				*const ICONST_5_OPERATION = new IConstOperation(5);
-		static LConstOperation
-				*const LCONST_0_OPERATION = new LConstOperation(0),
-				*const LCONST_1_OPERATION = new LConstOperation(1);
-		static FConstOperation
-				*const FCONST_0_OPERATION = new FConstOperation(0),
-				*const FCONST_1_OPERATION = new FConstOperation(1),
-				*const FCONST_2_OPERATION = new FConstOperation(2);
-		static DConstOperation
-				*const DCONST_0_OPERATION = new DConstOperation(0),
-				*const DCONST_1_OPERATION = new DConstOperation(1);
 	}
 
 

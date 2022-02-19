@@ -5,10 +5,10 @@
 #include "jdecompiler-main.cpp"
 #include "jdecompiler-method-code.cpp"
 
-using namespace std;
-using namespace JDecompiler;
-
 int main(int argc, char* args[]) {
+	using namespace std;
+	using namespace JDecompiler;
+
 	if(!Config::parseGlobalConfig(argc, args))
 		return 0;
 

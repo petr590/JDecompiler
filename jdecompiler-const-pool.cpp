@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <type_traits>
 #include "jdecompiler.h"
 #include "jdecompiler-util.cpp"
 
@@ -12,11 +13,15 @@
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-const-pool.cpp ]"
 
-using namespace std;
-
 namespace JDecompiler {
+
+	using namespace std;
+
+
 	struct Constant {
 		virtual void init(const ConstantPool& constPool) {};
+
+		virtual ~Constant() {}
 	};
 
 
@@ -25,8 +30,7 @@ namespace JDecompiler {
 			const uint16_t size;
 			Constant** const pool;
 
-			#define checkTemplate() \
-					static_assert(is_base_of<Constant, T>::value, "template type T of method ConstantPool::get is not subclass of class Constant")
+			#define checkTemplate() static_assert(is_base_of<Constant, T>::value, "template type T of method ConstantPool::get is not subclass of class Constant")
 
 		public:
 			ConstantPool(const uint16_t size): size(size), pool(new Constant*[size]) {}
@@ -77,6 +81,8 @@ namespace JDecompiler {
 			inline const Utf8Constant& getUtf8Constant(uint16_t index) const {
 				return *get<Utf8Constant>(index);
 			}
+
+			#undef checkTemplate
 	};
 
 

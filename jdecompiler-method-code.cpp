@@ -13,9 +13,11 @@
 #undef LOG_PREFIX
 #define LOG_PREFIX "[ jdecompiler-method-code.cpp ]"
 
-using namespace std;
-
 namespace JDecompiler {
+
+	using namespace std;
+
+
 	EnumClass::EnumClass(const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 			const vector<const ClassType*>& interfaces, const Attributes& attributes,
 			const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders):
@@ -256,8 +258,8 @@ namespace JDecompiler {
 				default: throw IllegalOpcodeException("Illegal wide opcode: 0x" + hex(current()));
 			}
 			case 0xC5: return new MultiANewArrayInstruction(nextUShort(), nextUByte());
-			case 0xC6: return new IfNonNullInstruction(nextUShort());
-			case 0xC7: return new IfNullInstruction(nextUShort());
+			case 0xC6: return new IfNonNullInstruction(nextShort());
+			case 0xC7: return new IfNullInstruction(nextShort());
 			case 0xC8: return new GotoInstruction(nextInt());
 			/*case 0xC9: i+=4; return "JSR_W";
 			case 0xCA: return "BREAKPOINT";
@@ -278,7 +280,7 @@ namespace JDecompiler {
 		const bool hasCodeAttribute = codeAttribute != nullptr;
 
 		const uint32_t to = hasCodeAttribute ? codeAttribute->codeLength : 0;
-		const uint16_t localsCount = hasCodeAttribute ? 0 : descriptor.arguments.size();
+		const uint16_t localsCount = hasCodeAttribute ? codeAttribute->maxLocals : descriptor.arguments.size();
 
 		MethodScope* methodScope = descriptor.type == MethodDescriptor::MethodType::STATIC_INITIALIZER ?
 				new StaticInitializerScope(0, to, localsCount) : new MethodScope(0, to, localsCount);
@@ -291,7 +293,7 @@ namespace JDecompiler {
 			methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i]));
 
 		if(!hasCodeAttribute)
-			return *new CodeEnvironment(*new Bytecode(0, ""), classinfo, methodScope, modifiers, descriptor, attributes, 0);
+			return *new CodeEnvironment(*new Bytecode(0, (const uint8_t*)""), classinfo, methodScope, modifiers, descriptor, attributes, 0);
 
 		Bytecode& bytecode = *new Bytecode(codeAttribute->codeLength, codeAttribute->code);
 
@@ -305,7 +307,7 @@ namespace JDecompiler {
 
 		vector<TryScope*> tryScopes;
 
-		for(const CodeAttribute::ExceptionAttribute* exceptionAttribute : codeAttribute->exceptionTable) {
+		for(const CodeAttribute::ExceptionHandler* exceptionAttribute : codeAttribute->exceptionTable) {
 			TryScope* tryScope;
 
 			{

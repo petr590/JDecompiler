@@ -37,9 +37,10 @@
 #define ACC_ANNOTATION   0x2000 // class
 #define ACC_ENUM         0x4000 // class
 
-using namespace std;
-
 namespace JDecompiler {
+
+	using namespace std;
+
 
 	struct Stringified {
 		public:
@@ -48,6 +49,8 @@ namespace JDecompiler {
 			virtual bool canStringify(const ClassInfo& classinfo) const {
 				return true;
 			}
+
+			virtual ~Stringified() {}
 	};
 
 
@@ -119,9 +122,6 @@ namespace JDecompiler {
 
 
 	struct Variable {
-		public:
-			mutable const Type* type;
-
 		protected:
 			static string getRawNameByType(const Type* type, bool& unchecked) {
 				if(type->isPrimitive()) {
@@ -181,8 +181,15 @@ namespace JDecompiler {
 				return name;
 			}
 
+
 		public:
+			mutable const Type* type;
+
+
 			Variable(const Type* type): type(type) {}
+
+			virtual ~Variable() {}
+
 
 			virtual string getName() const = 0;
 
@@ -235,8 +242,12 @@ namespace JDecompiler {
 		public:
 			const uint16_t priority;
 
+		protected:
 			Operation(uint16_t priority = 15): priority(priority) {}
 
+			virtual ~Operation() {}
+
+		public:
 			virtual string toString(const CodeEnvironment& environment) const = 0;
 
 			virtual string toArrayInitString(const CodeEnvironment& environment) const {
@@ -311,14 +322,20 @@ namespace JDecompiler {
 	};
 
 	struct Instruction {
-		virtual const Operation* toOperation(const CodeEnvironment& environment) const = 0;
+		public:
+			virtual const Operation* toOperation(const CodeEnvironment& environment) const = 0;
+
+		protected:
+			Instruction() {}
+
+			virtual ~Instruction() {}
 	};
 
 
 	struct Bytecode {
 		public:
 			const uint32_t length;
-			const char* const bytes;
+			const uint8_t* const bytes;
 
 		private:
 			uint32_t pos = 0;
@@ -326,7 +343,7 @@ namespace JDecompiler {
 			vector<uint32_t> posMap;
 
 		public:
-			Bytecode(const uint32_t length, const char* bytes): length(length), bytes(bytes) {
+			Bytecode(const uint32_t length, const uint8_t* bytes): length(length), bytes(bytes) {
 				instructions.reserve(length);
 			}
 
@@ -345,31 +362,31 @@ namespace JDecompiler {
 			}
 
 			inline int8_t nextByte() {
-				return bytes[++pos];
+				return (int8_t)bytes[++pos];
 			}
 
 			inline uint8_t nextUByte() {
-				return bytes[++pos];
+				return (uint8_t)bytes[++pos];
 			}
 
 			inline int16_t nextShort() {
-				return nextUByte() << 8 | nextUByte();
+				return (int16_t)(nextUByte() << 8 | nextUByte());
 			}
 
 			inline uint16_t nextUShort() {
-				return nextUByte() << 8 | nextUByte();
+				return (uint16_t)(nextUByte() << 8 | nextUByte());
 			}
 
 			inline int32_t nextInt() {
-				return nextUByte() << 24 | nextUByte() << 16 | nextUByte() << 8 | nextUByte();
+				return (int32_t)(nextUByte() << 24 | nextUByte() << 16 | nextUByte() << 8 | nextUByte());
 			}
 
 			inline uint32_t nextUInt() {
-				return nextUByte() << 24 | nextUByte() << 16 | nextUByte() << 8 | nextUByte();
+				return (uint32_t)(nextUByte() << 24 | nextUByte() << 16 | nextUByte() << 8 | nextUByte());
 			}
 
-			inline uint16_t current() const {
-				return bytes[pos] & 0xFF;
+			inline uint8_t current() const {
+				return bytes[pos];
 			}
 
 			inline uint32_t getPos() const {
@@ -380,8 +397,8 @@ namespace JDecompiler {
 				return length - pos > 0;
 			}
 
-			inline void skip(uint32_t count) {
-				pos += count;
+			inline void skip(int32_t count) {
+				pos += (uint32_t)count;
 			}
 
 			const Instruction* getInstruction(uint32_t index) const {
@@ -543,7 +560,7 @@ namespace JDecompiler {
 			const uint16_t modifiers;
 			const MethodDescriptor& descriptor;
 			const Attributes& attributes;
-			uint32_t pos, index, exprStartIndex;
+			uint32_t pos = 0, index = 0, exprStartIndex = 0;
 			map<uint32_t, uint32_t> exprIndexTable;
 
 		private:
@@ -570,6 +587,21 @@ namespace JDecompiler {
 			CodeEnvironment(const CodeEnvironment& environment) = delete;
 
 			CodeEnvironment& operator=(const CodeEnvironment& environment) = delete;
+
+		protected:
+			template<typename Arg, typename... Args>
+			inline void print(ostream& out, Arg arg, Args... args) const {
+				if constexpr(sizeof...(args) != 0)
+					print(out << arg, args...);
+				else
+					out << endl;
+			}
+
+		public:
+			template<typename... Args>
+			inline void warning(Args... args) const {
+				print(cerr << "Warning while decompiling method " << descriptor.toString() << " at pos " << pos << ": ", args...);
+			}
 	};
 
 
@@ -739,9 +771,9 @@ namespace JDecompiler {
 			friend void StaticInitializerScope::add(const Operation*, const CodeEnvironment&);
 
 		public:
-			Field(const ConstantPool& constPool, BinaryInputStream& instream): modifiers(instream.readShort()),
-					descriptor(*new FieldDescriptor(constPool.getUtf8Constant(instream.readShort()), constPool.getUtf8Constant(instream.readShort()))),
-					attributes(*new Attributes(instream, constPool, instream.readShort())), constantValueAttribute(attributes.get<ConstantValueAttribute>()) {}
+			Field(const ConstantPool& constPool, BinaryInputStream& instream): modifiers(instream.readUShort()),
+					descriptor(*new FieldDescriptor(constPool.getUtf8Constant(instream.readUShort()), constPool.getUtf8Constant(instream.readUShort()))),
+					attributes(*new Attributes(instream, constPool, instream.readUShort())), constantValueAttribute(attributes.get<ConstantValueAttribute>()) {}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
 				string str;
@@ -868,7 +900,7 @@ namespace JDecompiler {
 					clazz(clazz), name(name), returnType(returnType), arguments(arguments), type(typeForName(name)) {}
 
 
-			virtual string toString(const CodeEnvironment& environment) const {
+			string toString(const CodeEnvironment& environment) const {
 				const bool isNonStatic = !(environment.modifiers & ACC_STATIC);
 
 				string str = type == MethodType::CONSTRUCTOR ? environment.classinfo.thisType.simpleName :
@@ -899,11 +931,17 @@ namespace JDecompiler {
 				return str + '(' + join<const Type*>(arguments, concater) + ')';
 			}
 
+			string toString() const {
+				return clazz.getName() + '.' + name + '(' + join<const Type*>(arguments, [] (auto arg) { return arg->getName(); }) + ')';
+			}
+
 
 			bool operator==(const MethodDescriptor& other) const {
-				return this == &other || this->name == other.name && this->clazz == other.clazz && *this->returnType == *other.returnType &&
-						this->arguments.size() == other.arguments.size() &&
-						equal(this->arguments.begin(), this->arguments.end(), other.arguments.begin(), [] (auto arg1, auto arg2) { return *arg1 == *arg2; });
+				return   this == &other || (this->name == other.name && this->clazz == other.clazz &&
+						*this->returnType == *other.returnType &&
+						 this->arguments.size() == other.arguments.size() &&
+						 equal(this->arguments.begin(), this->arguments.end(), other.arguments.begin(),
+								[] (auto arg1, auto arg2) { return *arg1 == *arg2; }));
 			}
 	};
 
@@ -964,16 +1002,19 @@ namespace JDecompiler {
 			}
 
 			virtual bool canStringify(const ClassInfo& classinfo) const override {
-				return !(modifiers & (ACC_SYNTHETIC | ACC_BRIDGE) ||
-						descriptor.type == MethodType::STATIC_INITIALIZER && scope.isEmpty() || // empty static {}
-						descriptor.type == MethodType::CONSTRUCTOR && (modifiers & ACC_PUBLIC ||
-							(modifiers & ACC_PUBLIC) == ACC_VISIBLE && (classinfo.modifiers & ACC_PUBLIC) == ACC_VISIBLE) &&
-								scope.isEmpty() || // constructor by default
-						classinfo.modifiers & ACC_ENUM && (
+				return !((modifiers & (ACC_SYNTHETIC | ACC_BRIDGE)) ||
+						(descriptor.type == MethodType::STATIC_INITIALIZER && scope.isEmpty()) || // empty static {}
+
+						(descriptor.type == MethodType::CONSTRUCTOR && // constructor by default
+							((modifiers & ACC_PUBLIC) ||
+								((modifiers & ACC_PUBLIC) == ACC_VISIBLE && (classinfo.modifiers & ACC_PUBLIC) == ACC_VISIBLE)) &&
+							scope.isEmpty()) ||
+
+						(classinfo.modifiers & ACC_ENUM && (
 							descriptor == MethodDescriptor(classinfo.thisType, "valueOf", &classinfo.thisType, {STRING}) || // Enum valueOf(String name)
 							descriptor == MethodDescriptor(classinfo.thisType, "values", new ArrayType(classinfo.thisType), {}) || // Enum[] values()
-							modifiers & ACC_PRIVATE && descriptor == MethodDescriptor(classinfo.thisType, "<init>", VOID, {}) // enum constructor by default
-						));
+							(modifiers & ACC_PRIVATE && descriptor == MethodDescriptor(classinfo.thisType, "<init>", VOID, {})) // enum constructor by default
+						)));
 			}
 
 		private:
@@ -1027,9 +1068,9 @@ namespace JDecompiler {
 			const Attributes& attributes;
 
 			MethodDataHolder(const ConstantPool& constPool, BinaryInputStream& instream, const ClassType& thisType):
-					modifiers(instream.readShort()), descriptor(
-						*new MethodDescriptor(thisType, constPool.getUtf8Constant(instream.readShort()), constPool.getUtf8Constant(instream.readShort()))),
-					attributes(*new Attributes(instream, constPool, instream.readShort())) {}
+					modifiers(instream.readUShort()), descriptor(
+						*new MethodDescriptor(thisType, constPool.getUtf8Constant(instream.readUShort()), constPool.getUtf8Constant(instream.readUShort()))),
+					attributes(*new Attributes(instream, constPool, instream.readUShort())) {}
 
 			MethodDataHolder(uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes):
 					modifiers(modifiers), descriptor(descriptor), attributes(attributes) {}
@@ -1075,7 +1116,7 @@ namespace JDecompiler {
 							methods.push_back(methodData.createMethod(classinfo));
 						} catch(DecompilationException& ex) {
 							const char* message = ex.what();
-							cerr << "Exception while decompiling method " + thisType.getName() + '.' + methodData.descriptor.name << ": "
+							cerr << "Exception while decompiling method " + methodData.descriptor.toString() << ": "
 									<< typeid(ex).name() << (*message == '\0' ? "" : (string)": " + message) << endl;
 						}
 					}
@@ -1295,26 +1336,26 @@ namespace JDecompiler {
 
 
 	const Class& Class::readClass(BinaryInputStream& instream) {
-		if(instream.readInt() != CLASS_SIGNATURE)
+		if(instream.readUInt() != CLASS_SIGNATURE)
 			throw ClassFormatError("Wrong class signature");
 
 		const uint16_t
-				minorVersion = instream.readShort(),
-				majorVersion = instream.readShort();
+				minorVersion = instream.readUShort(),
+				majorVersion = instream.readUShort();
 
 		cout << "/* Java version: " << majorVersion << '.' << minorVersion << " */" << endl;
 
-		const uint16_t constPoolSize = instream.readShort();
+		const uint16_t constPoolSize = instream.readUShort();
 
 		const ConstantPool& constPool = *new ConstantPool(constPoolSize);
 
 		for(uint16_t i = 1; i < constPoolSize; i++) {
-			uint8_t constType = instream.readByte();
+			uint8_t constType = instream.readUByte();
 
 			switch(constType) {
 				case  1: {
-					uint16_t size = instream.readShort();
-					const char* bytes = instream.readBytes(size);
+					uint16_t size = instream.readUShort();
+					const char* bytes = instream.readString(size);
 					constPool[i] = new Utf8Constant(bytes, size);
 					delete[] bytes;
 					break;
@@ -1334,35 +1375,35 @@ namespace JDecompiler {
 					i++;
 					break;
 				case  7:
-					constPool[i] = new ClassConstant(instream.readShort());
+					constPool[i] = new ClassConstant(instream.readUShort());
 					break;
 				case  8:
-					constPool[i] = new StringConstant(instream.readShort());
+					constPool[i] = new StringConstant(instream.readUShort());
 					break;
 				case  9:
-					constPool[i] = new FieldrefConstant(instream.readShort(), instream.readShort());
+					constPool[i] = new FieldrefConstant(instream.readUShort(), instream.readUShort());
 					break;
 				case 10:
-					constPool[i] = new MethodrefConstant(instream.readShort(), instream.readShort());
+					constPool[i] = new MethodrefConstant(instream.readUShort(), instream.readUShort());
 					break;
 				case 11:
-					constPool[i] = new InterfaceMethodrefConstant(instream.readShort(), instream.readShort());
+					constPool[i] = new InterfaceMethodrefConstant(instream.readUShort(), instream.readUShort());
 					break;
 				case 12:
-					constPool[i] = new NameAndTypeConstant(instream.readShort(), instream.readShort());
+					constPool[i] = new NameAndTypeConstant(instream.readUShort(), instream.readUShort());
 					break;
 				case 15:
-					constPool[i] = new MethodHandleConstant(instream.readByte(), instream.readShort());
+					constPool[i] = new MethodHandleConstant(instream.readUByte(), instream.readUShort());
 					break;
 				case 16:
-					constPool[i] = new MethodTypeConstant(instream.readShort());
+					constPool[i] = new MethodTypeConstant(instream.readUShort());
 					break;
 				case 18:
-					constPool[i] = new InvokeDynamicConstant(instream.readShort(), instream.readShort());
+					constPool[i] = new InvokeDynamicConstant(instream.readUShort(), instream.readUShort());
 					break;
 				default:
 					throw ClassFormatError("Illegal constant type 0x" + hex<2>(constType) + " at index #" + to_string(i) +
-							" at pos 0x" + hex((int32_t)instream.getPos()));
+							" at pos 0x" + hex((uint32_t)instream.getPos()));
 			};
 		}
 
@@ -1372,20 +1413,20 @@ namespace JDecompiler {
 				constant->init(constPool);
 		}
 
-		const uint16_t modifiers = instream.readShort();
+		const uint16_t modifiers = instream.readUShort();
 
 		const ClassType
-				& thisType = *new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name),
-				& superType = *new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name);
+				& thisType = *new ClassType(*constPool.get<ClassConstant>(instream.readUShort())->name),
+				& superType = *new ClassType(*constPool.get<ClassConstant>(instream.readUShort())->name);
 
-		const uint16_t interfacesCount = instream.readShort();
+		const uint16_t interfacesCount = instream.readUShort();
 		vector<const ClassType*> interfaces;
 		interfaces.reserve(interfacesCount);
 		for(uint16_t i = 0; i < interfacesCount; i++)
-			interfaces.push_back(new ClassType(*constPool.get<ClassConstant>(instream.readShort())->name));
+			interfaces.push_back(new ClassType(*constPool.get<ClassConstant>(instream.readUShort())->name));
 
 
-		const uint16_t fieldsCount = instream.readShort();
+		const uint16_t fieldsCount = instream.readUShort();
 		vector<const Field*> fields;
 		fields.reserve(fieldsCount);
 
@@ -1393,7 +1434,7 @@ namespace JDecompiler {
 			fields.push_back(new Field(constPool, instream));
 
 
-		const uint16_t methodsCount = instream.readShort();
+		const uint16_t methodsCount = instream.readUShort();
 		vector<MethodDataHolder> methodDataHolders;
 		methodDataHolders.reserve(methodsCount);
 
@@ -1402,9 +1443,9 @@ namespace JDecompiler {
 
 		return *(modifiers & ACC_ENUM ?
 				new EnumClass(thisType, superType, constPool, modifiers, interfaces,
-						*new Attributes(instream, constPool, instream.readShort()), fields, methodDataHolders) :
+						*new Attributes(instream, constPool, instream.readUShort()), fields, methodDataHolders) :
 				new Class(thisType, superType, constPool, modifiers, interfaces,
-						*new Attributes(instream, constPool, instream.readShort()), fields, methodDataHolders));
+						*new Attributes(instream, constPool, instream.readUShort()), fields, methodDataHolders));
 	}
 
 

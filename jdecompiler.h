@@ -1,22 +1,28 @@
 #ifndef JDECOMPILER_H
 #define JDECOMPILER_H
 
-#define LOG_PREFIX
-#define LOG(s) cout << LOG_PREFIX << ": " << s << endl;
+#define LOG(s) cout << "[ jdecompiler/" __FILE__ " ]: " << s << endl;
 
-#ifdef FORCE_INLINE
-#define INLINE_ATTR inline __attribute__((always_inline))
+#ifndef NO_FORCE_INLINE
+// For gcc
+#	ifdef __GNUC__
+#		define FORCE_INLINE inline __attribute__((always_inline))
+#	endif
 #else
-#define INLINE_ATTR inline
+#	define FORCE_INLINE inline
 #endif
 
-#include <string>
+#ifdef NO_STATIC_ASSERT
+#define static_assert(...)
+#endif
+
 #include <stdint.h>
+#include <string>
+#include <vector>
 
-#define inline INLINE_ATTR
+#define inline FORCE_INLINE
 
-
-namespace JDecompiler {
+namespace jdecompiler {
 
 	using namespace std;
 
@@ -119,6 +125,8 @@ namespace JDecompiler {
 	static const BasicType* parseReturnType(const char* encodedName);
 
 	static const ReferenceType* parseReferenceType(const string& encodedName);
+
+	static vector<const ReferenceType*> parseParameters(const char* str);
 
 	// jdecompiler-main
 

@@ -1,14 +1,10 @@
 #ifndef JDECOMPILER_CONST_POOL_CPP
 #define JDECOMPILER_CONST_POOL_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
-
 #undef inline
-#include <string>
 #include <type_traits>
 #define inline FORCE_INLINE
+#include "util.cpp"
 
 namespace jdecompiler {
 

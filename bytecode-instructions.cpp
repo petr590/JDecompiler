@@ -1,14 +1,7 @@
 #ifndef JDECOMPILER_BYTECODE_INSTRUCTIONS_CPP
 #define JDECOMPILER_BYTECODE_INSTRUCTIONS_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
-
-#undef inline
-#include <string>
-#include <map>
-#define inline FORCE_INLINE
+#include "instructions.cpp"
 
 namespace jdecompiler {
 
@@ -16,7 +9,7 @@ namespace jdecompiler {
 
 
 	Instruction* Bytecode::nextInstruction0() {
-		using namespace Instructions;
+		using namespace instructions;
 		//LOG("OPCODE " << hex << current() << dec);
 		switch(current()) {
 			case 0x00: return nullptr;
@@ -148,20 +141,20 @@ namespace jdecompiler {
 			case 0x96: return new FCmpInstruction();
 			case 0x97: return new DCmpInstruction();
 			case 0x98: return new DCmpInstruction();
-			case 0x99: return new IfNotEqInstruction(nextShort());
-			case 0x9A: return new IfEqInstruction(nextShort());
-			case 0x9B: return new IfGeInstruction(nextShort());
-			case 0x9C: return new IfLtInstruction(nextShort());
-			case 0x9D: return new IfLeInstruction(nextShort());
-			case 0x9E: return new IfGtInstruction(nextShort());
-			case 0x9F: return new IfINotEqInstruction(nextShort());
-			case 0xA0: return new IfIEqInstruction(nextShort());
-			case 0xA1: return new IfIGeInstruction(nextShort());
-			case 0xA2: return new IfILtInstruction(nextShort());
-			case 0xA3: return new IfILeInstruction(nextShort());
-			case 0xA4: return new IfIGtInstruction(nextShort());
-			case 0xA5: return new IfANotEqInstruction(nextShort());
-			case 0xA6: return new IfAEqInstruction(nextShort());
+			case 0x99: return new IfEqInstruction(nextShort());
+			case 0x9A: return new IfNotEqInstruction(nextShort());
+			case 0x9B: return new IfLtInstruction(nextShort());
+			case 0x9C: return new IfGeInstruction(nextShort());
+			case 0x9D: return new IfGtInstruction(nextShort());
+			case 0x9E: return new IfLeInstruction(nextShort());
+			case 0x9F: return new IfIEqInstruction(nextShort());
+			case 0xA0: return new IfINotEqInstruction(nextShort());
+			case 0xA1: return new IfILtInstruction(nextShort());
+			case 0xA2: return new IfIGeInstruction(nextShort());
+			case 0xA3: return new IfIGtInstruction(nextShort());
+			case 0xA4: return new IfILeInstruction(nextShort());
+			case 0xA5: return new IfAEqInstruction(nextShort());
+			case 0xA6: return new IfANotEqInstruction(nextShort());
 			case 0xA7: return new GotoInstruction(nextShort());
 			/*case 0xA8: i+=2; return "JSR";
 			case 0xA9: i++ ; return "RET";*/
@@ -241,19 +234,18 @@ namespace jdecompiler {
 	}
 
 	const CodeEnvironment& Method::decompileCode(const ClassInfo& classinfo) {
-		using namespace Operations;
-		using namespace Instructions;
+		using namespace operations;
+		using namespace instructions;
 
-		LOG("decompiling of " << descriptor.name << '(' << join<const Type*>(descriptor.arguments,
-				[] (const Type* argument) { return argument->toString(); }) << ')');
+		LOG("decompiling of " << descriptor.toString());
 
 		const bool hasCodeAttribute = codeAttribute != nullptr;
 
-		const uint32_t to = hasCodeAttribute ? codeAttribute->codeLength : 0;
+		const uint32_t methodScopeEndPos = hasCodeAttribute ? codeAttribute->codeLength : 0;
 		const uint16_t localsCount = hasCodeAttribute ? codeAttribute->maxLocals : descriptor.arguments.size();
 
 		MethodScope* methodScope = descriptor.type == MethodDescriptor::MethodType::STATIC_INITIALIZER ?
-				new StaticInitializerScope(0, to, localsCount) : new MethodScope(0, to, localsCount);
+				new StaticInitializerScope(0, methodScopeEndPos, localsCount) : new MethodScope(0, methodScopeEndPos, localsCount);
 
 		if(!(modifiers & ACC_STATIC))
 			methodScope->addVariable(new NamedVariable(&classinfo.thisType, "this"));
@@ -278,33 +270,35 @@ namespace jdecompiler {
 		vector<TryScope*> tryScopes;
 
 		for(const CodeAttribute::ExceptionHandler* exceptionAttribute : codeAttribute->exceptionTable) {
+
+			const uint32_t
+					tryStartPos = environment.bytecode.posToIndex(exceptionAttribute->startPos),
+					tryEndPos = environment.bytecode.posToIndex(exceptionAttribute->endPos);
+
+			const auto tryScopesFindResult = find_if(tryScopes.begin(), tryScopes.end(),
+					[tryStartPos, tryEndPos] (TryScope* tryScope) { return tryScope->startPos == tryStartPos && tryScope->endPos == tryEndPos; });
+
+
 			TryScope* tryScope;
 
-			{
-				const uint32_t
-						from = environment.bytecode.posToIndex(exceptionAttribute->startPos),
-						to = environment.bytecode.posToIndex(exceptionAttribute->endPos);
-
-				auto findResult = find_if(tryScopes.begin(), tryScopes.end(),
-						[from, to] (TryScope* tryScope) { return tryScope->from == from && tryScope->to == to; });
-
-				if(findResult == tryScopes.end()) {
-					tryScope = new TryScope(from, to, methodScope);
-					tryScopes.push_back(tryScope);
-					environment.addScope(tryScope);
-				} else
-					tryScope = *findResult;
+			if(tryScopesFindResult == tryScopes.end()) {
+				tryScope = new TryScope(tryStartPos, tryEndPos, methodScope);
+				tryScopes.push_back(tryScope);
+				environment.addScope(tryScope);
+			} else {
+				tryScope = *tryScopesFindResult;
 			}
 
-			const uint32_t from = bytecode.posToIndex(exceptionAttribute->handlerPos) - 1;
+			const uint32_t catchStartPos = bytecode.posToIndex(exceptionAttribute->handlerPos) - 1;
 
-			auto findResult = find_if(tryScope->handlersData.begin(), tryScope->handlersData.end(),
-					[from] (CatchScopeDataHolder& handlerData) { return handlerData.from == from; });
+			const auto handlersFindResult = find_if(tryScope->handlersData.begin(), tryScope->handlersData.end(),
+					[catchStartPos] (CatchScopeDataHolder& handlerData) { return handlerData.startPos == catchStartPos; });
 
-			if(findResult == tryScope->handlersData.end())
-				tryScope->handlersData.push_back(CatchScopeDataHolder(from, exceptionAttribute->catchType));
-			else
-				(*findResult).catchTypes.push_back(exceptionAttribute->catchType);
+			if(handlersFindResult == tryScope->handlersData.end()) {
+				tryScope->handlersData.push_back(CatchScopeDataHolder(catchStartPos, exceptionAttribute->catchType));
+			} else {
+				handlersFindResult->catchTypes.push_back(exceptionAttribute->catchType);
+			}
 		}
 
 		const vector<Instruction*>& instructions = bytecode.getInstructions();

@@ -1,9 +1,8 @@
 #ifndef JDECOMPILER_FIELD_CPP
 #define JDECOMPILER_FIELD_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
+#include "code.cpp"
+#include "attributes.cpp"
 
 namespace jdecompiler {
 	struct FieldDescriptor {
@@ -16,7 +15,7 @@ namespace jdecompiler {
 	};
 
 
-	struct Field: Stringified {
+	struct Field: ClassElement {
 		public:
 			const uint16_t modifiers;
 			const FieldDescriptor& descriptor;
@@ -44,7 +43,7 @@ namespace jdecompiler {
 						initializer != nullptr ? " = " + initializer->toString(*environment) : EMPTY_STRING);
 			}
 
-			virtual bool canStringify(const ClassInfo& classinfo) const {
+			virtual bool canStringify(const ClassInfo& classinfo) const override {
 				return !(modifiers & ACC_SYNTHETIC);
 			}
 

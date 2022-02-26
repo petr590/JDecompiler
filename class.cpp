@@ -1,9 +1,8 @@
 #ifndef JDECOMPILER_CLASS_CPP
 #define JDECOMPILER_CLASS_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
+#include "field.cpp"
+#include "method.cpp"
 
 namespace jdecompiler {
 	struct Class: Stringified {
@@ -49,7 +48,7 @@ namespace jdecompiler {
 					const vector<const Field*>& fields, const vector<MethodDataHolder>& methodDataHolders):
 					thisType(thisType), superType(superType), constPool(constPool), modifiers(modifiers),
 					interfaces(interfaces), attributes(attributes),
-					classinfo(*new ClassInfo(*this, thisType, superType, constPool, attributes, modifiers, "    ")),
+					classinfo(*new ClassInfo(*this, thisType, superType, constPool, attributes, modifiers)),
 					fields(fields), methods(createMethodsFromMethodData(methodDataHolders)) {}
 
 
@@ -78,11 +77,11 @@ namespace jdecompiler {
 				if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
 					str += annotationsAttribute->toString(classinfo) + '\n';
 
+				str += declarationToString(classinfo) + " {";
+
+				const size_t baseSize = str.size();
+
 				classinfo.increaseIndent();
-
-				str += headerToString(classinfo);
-
-				str += " {";
 
 				str += fieldsToString(classinfo);
 
@@ -90,29 +89,25 @@ namespace jdecompiler {
 
 				classinfo.reduceIndent();
 
-				str += (str.back() == '\n' ? EMPTY_STRING : "\n") + classinfo.getIndent() + '}';
+				str += (str.size() == baseSize ? "}" : (str.back() == '\n' ? EMPTY_STRING : "\n") + classinfo.getIndent() + '}');
 
 
-				string headers;
-
-				if(thisType.packageName.size() != 0)
-					headers += (string)"package " + thisType.packageName + ";\n\n";
-
-				for(auto imp : classinfo.imports)
-					headers += "import " + imp + ";\n";
-				if(classinfo.imports.size() > 0) headers += "\n";
-
-				return headers + classinfo.getIndent() + str;
+				return headersToString(classinfo) + str;
 			}
 
-			string toString() const {
+			inline string toString() const {
 				return toString(classinfo);
 			}
 
 
+			inline bool canStringify() const {
+				return !thisType.isAnonymous;
+			}
+
+
 		protected:
-			virtual string headerToString(const ClassInfo& classinfo) const {
-				string str = modifiersToString(modifiers) + ' ' + thisType.simpleName +
+			virtual string declarationToString(const ClassInfo& classinfo) const {
+				string str = classinfo.getIndent() + modifiersToString(modifiers) + ' ' + thisType.simpleName +
 						(superType.getName() == "java.lang.Object" || (modifiers & ACC_ENUM && superType.getName() == "java.lang.Enum") ?
 								EMPTY_STRING : " extends " + superType.toString(classinfo));
 
@@ -123,7 +118,7 @@ namespace jdecompiler {
 					interfacesToStringify.push_back(interface);
 				}
 
-				if(interfacesToStringify.size() > 0)
+				if(!interfacesToStringify.empty())
 					str += " implements " +
 							join<const ClassType*>(interfacesToStringify, [&classinfo] (auto interface) { return interface->toString(classinfo); });
 
@@ -135,11 +130,13 @@ namespace jdecompiler {
 
 				bool anyFieldStringified = false;
 
-				for(const Field* field : fields)
+				for(const Field* field : fields) {
 					if(field->canStringify(classinfo)) {
 						str += (string)"\n" + classinfo.getIndent() + field->toString(classinfo) + ';';
 						anyFieldStringified = true;
 					}
+				}
+
 				if(anyFieldStringified)
 					str += '\n';
 
@@ -151,7 +148,7 @@ namespace jdecompiler {
 
 				for(const Method* method : methods)
 					if(method->canStringify(classinfo))
-						str += (string)"\n" + classinfo.getIndent() + method->toString(classinfo) + '\n';
+						str += (string)"\n" + method->toString(classinfo) + '\n';
 
 				return str;
 			}
@@ -186,7 +183,19 @@ namespace jdecompiler {
 						throw IllegalModifiersException("in class: 0x" + hex<4>(modifiers));
 				}
 
-				return str;
+				return (string)str;
+			}
+
+
+			virtual string headersToString(const ClassInfo& classinfo) const {
+				string headers;
+
+				if(thisType.packageName.size() != 0)
+					headers += (string)classinfo.getIndent() + "package " + thisType.packageName + ";\n\n";
+
+				headers += classinfo.importsToString();
+
+				return headers;
 			}
 	};
 
@@ -269,8 +278,25 @@ namespace jdecompiler {
 					Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) {}
 
 
-			virtual string headerToString(const ClassInfo& classinfo) const override {
-				return superType.toString();
+
+			virtual string declarationToString(const ClassInfo& classinfo) const override {
+
+				if(interfaces.size() > 1)
+					throw DecompilationException("Anonymous class " + thisType.getName() + " cannot implement more than one interface");
+
+				if(interfaces.size() == 1) {
+					if(superType.getName() != "java.lang.Object")
+						throw DecompilationException("Anonymous class " + thisType.getName() +
+								" cannot implement an interface and simultaneously inherit from something other than java.lang.Object class");
+
+					return interfaces[0]->toString(classinfo) + "()";
+				}
+
+				return superType.toString(classinfo) + "()";
+			}
+
+			virtual string headersToString(const ClassInfo& classinfo) const override {
+				return EMPTY_STRING;
 			}
 	};
 
@@ -388,39 +414,6 @@ namespace jdecompiler {
 		return modifiers & ACC_ENUM ? new EnumClass(thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) :
 		       thisType.isAnonymous ? new AnonymousClass(thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) :
 		       new Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders);
-	}
-}
-
-
-#include "operations.cpp"
-#include "instructions.cpp"
-
-
-namespace jdecompiler {
-
-	EnumClass::EnumClass(const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
-			const vector<const ClassType*>& interfaces, const Attributes& attributes,
-			const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders):
-			Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, processMethodData(methodDataHolders)) {
-
-		using namespace Operations;
-
-		for(const Field* field : fields) {
-			const InvokespecialOperation* invokespecialOperation;
-			const DupOperation<TypeSize::FOUR_BYTES>* dupOperation;
-			const NewOperation* newOperation;
-			if(field->modifiers == (ACC_PUBLIC | ACC_STATIC | ACC_FINAL) && field->descriptor.type == thisType &&
-					field->hasInitializer() &&
-					(invokespecialOperation = dynamic_cast<const InvokespecialOperation*>(field->getInitializer())) != nullptr &&
-					(dupOperation = dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(invokespecialOperation->object)) != nullptr &&
-					(newOperation = dynamic_cast<const NewOperation*>(dupOperation->operation)) != nullptr) {
-				if(invokespecialOperation->arguments.size() < 2)
-					throw DecompilationException("enum constant initializer must have at least two arguments, got " +
-							to_string(invokespecialOperation->arguments.size()));
-				enumFields.push_back(new EnumField(*field, invokespecialOperation->arguments));
-			} else
-				otherFields.push_back(field);
-		}
 	}
 }
 

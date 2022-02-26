@@ -1,10 +1,6 @@
 #ifndef JDECOMPILER_JAVASE_CPP
 #define JDECOMPILER_JAVASE_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
-
 namespace jdecompiler {
 
 	using namespace std;

@@ -1,15 +1,13 @@
 #ifndef JDECOMPILER_INSTRUCTIONS_CPP
 #define JDECOMPILER_INSTRUCTIONS_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
+#include "operations.cpp"
 
 namespace jdecompiler {
-	namespace Instructions {
+	namespace instructions {
 
 		using namespace std;
-		using namespace Operations;
+		using namespace operations;
 
 
 		struct InstructionWithIndex: Instruction {
@@ -39,7 +37,7 @@ namespace jdecompiler {
 				}
 
 				virtual const Type* getReturnType() const override {
-					return &AnyType::getInstance();
+					return AnyType::getInstance();
 				}
 
 				static inline AConstNull& getInstance() {
@@ -119,7 +117,7 @@ namespace jdecompiler {
 			}
 
 			private:
-				friend Operations::IIncOperation::IIncOperation(const CodeEnvironment& environment, uint16_t index, int16_t value);
+				friend operations::IIncOperation::IIncOperation(const CodeEnvironment& environment, uint16_t index, int16_t value);
 
 				mutable bool isNullOperation = false;
 
@@ -403,12 +401,12 @@ namespace jdecompiler {
 
 	}
 
-	namespace Operations {
+	namespace operations {
 		IIncOperation::IIncOperation(const CodeEnvironment& environment, uint16_t index, int16_t value):
 				variable(environment.getCurrentScope()->getVariable(index)), value(value),
 				isShortInc(value == 1 || value == -1) /* isShortInc true when we can write ++ or -- */ {
 
-			using namespace Instructions;
+			using namespace instructions;
 
 			const ILoadOperation* iloadOperation = environment.stack.empty() ? nullptr : dynamic_cast<const ILoadOperation*>(environment.stack.top());
 			if(isShortInc && iloadOperation != nullptr && iloadOperation->variable == variable) {
@@ -427,7 +425,7 @@ namespace jdecompiler {
 		}
 	}
 
-	namespace Instructions {
+	namespace instructions {
 
 		template<bool required>
 		struct CastInstruction: Instruction {
@@ -554,6 +552,7 @@ namespace jdecompiler {
 
 			GotoInstruction(int32_t offset): offset(offset) {}
 
+
 			virtual inline const Operation* toOperation(const CodeEnvironment& environment) const override {
 				if(offset == 0) return new EmptyInfiniteLoopScope(environment);
 
@@ -563,40 +562,40 @@ namespace jdecompiler {
 
 				if(const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope)) {
 					// Here goto instruction creates else scope
-					if(offset > 0 && !ifScope->isLoop && environment.index == ifScope->to /* check if goto instruction in the end of ifScope */) {
+					if(offset > 0 && !ifScope->isLoop && environment.index == ifScope->end() /* check if goto instruction in the end of ifScope */) {
 						const Scope* parentScope = ifScope->parentScope;
 
 						/* I don't remember why there is index minus 1 instead of index,
 						   but since I wrote that, then it should be so :) */
-						if(index - 1 <= parentScope->to)
+						if(index - 1 <= parentScope->end())
 							return new ElseScope(environment, index - 1, ifScope);
 
-						const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(environment.bytecode.getInstructions()[parentScope->to]);
-						if(gotoInstruction && environment.bytecode.posToIndex(environment.bytecode.indexToPos(parentScope->to) + gotoInstruction->offset) == index)
-							return new ElseScope(environment, parentScope->to - 1, ifScope);
+						const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(environment.bytecode.getInstructions()[parentScope->end()]);
+						if(gotoInstruction && environment.bytecode.posToIndex(environment.bytecode.indexToPos(parentScope->end()) + gotoInstruction->offset) == index)
+							return new ElseScope(environment, parentScope->end() - 1, ifScope);
 					} else {
 						// Here goto creates operator continue
 						do {
-							if(index == ifScope->from) {
+							if(index == ifScope->start()) {
 								ifScope->isLoop = true;
 								return new ContinueOperation(environment, ifScope);
 							}
 							ifScope = dynamic_cast<const IfScope*>(ifScope->parentScope);
-						} while(ifScope);
+						} while(ifScope != nullptr);
 					}
 				} else if(const TryScope* tryScope = dynamic_cast<const TryScope*>(currentScope)) {
-					if(environment.index == tryScope->to) return nullptr;
+					if(environment.index == tryScope->end()) return nullptr;
 						//return new CatchScope(environment, tryScope);
 				}
 
-				//cerr << "GOTO LOG!!! " << offset << ' ' << index << ' ' << currentScope->from << "  " << index << ' ' << currentScope->to << '\n' << typeid(*currentScope).name() << endl;
+				//cerr << "GOTO LOG!!! " << offset << ' ' << index << ' ' << currentScope->start() << "  " << index << ' ' << currentScope->end() << '\n' << typeid(*currentScope).name() << endl;
 
-				if(offset > 0 && index >= currentScope->from && index - 1 <= currentScope->to) { // goto in the borders of current scope
+				if(offset > 0 && index >= currentScope->start() && index - 1 <= currentScope->end()) { // goto in the borders of current scope
 					const_cast<Bytecode&>(environment.bytecode).skip(offset);
 					return nullptr;
 				}
 
-				throw DecompilationException("illegal using of goto instruction: goto from " +
+				throw DecompilationException("Illegal using of goto instruction: goto from " +
 						to_string(environment.pos) + " to " + to_string(environment.pos + offset));
 			}
 		};

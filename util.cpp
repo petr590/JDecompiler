@@ -1,19 +1,15 @@
 #ifndef JDECOMPILER_UTIL_CPP
 #define JDECOMPILER_UTIL_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
-
 #undef inline
 #include <fstream>
 #include <cstring>
-#include <vector>
 #include <functional>
 #include <sstream>
 #include <math.h>
 #include <algorithm>
 #define inline FORCE_INLINE
+#include "jdecompiler-fwd.h"
 
 namespace jdecompiler {
 
@@ -25,7 +21,7 @@ namespace jdecompiler {
 
 	template<typename T, typename O>
 	static inline bool instanceof(O o) {
-		return (bool)dynamic_cast<T>(o);
+		return dynamic_cast<T>(o) != nullptr;
 	}
 
 
@@ -232,6 +228,39 @@ namespace jdecompiler {
 		result[resultlength] = '\0';
 
 		return result;
+	}
+
+	static inline const char* repeatString(const string& str, uint32_t count) {
+		return repeatString(str.c_str(), count);
+	}
+
+
+	static string unescapeString(const char* const str) {
+		string result;
+
+		for(const char* i = str; *i != '\0'; i++) {
+			if(*i == '\\') {
+				LOG((*(i + 1) == 't'));
+				switch(*(++i)) {
+					case 'b': result += '\b'; break;
+					case 't': result += '\t'; break;
+					case 'n': result += '\n'; break;
+					case 'f': result += '\f'; break;
+					case 'r': result += '\r'; break;
+					default:
+						result += '\\';
+						result += *i;
+				}
+			} else {
+				result += *i;
+			}
+		}
+
+		return result;
+	}
+
+	static inline string unescapeString(const string& str) {
+		return unescapeString(str.c_str());
 	}
 
 

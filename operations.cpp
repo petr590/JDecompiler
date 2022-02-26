@@ -1,20 +1,14 @@
 #ifndef JDECOMPILER_OPERATIONS_CPP
 #define JDECOMPILER_OPERATIONS_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
-
-#undef inline
-#include <algorithm>
-#define inline FORCE_INLINE
+#include "class.cpp"
 
 namespace jdecompiler {
 
 	using namespace std;
 
 
-	namespace Operations {
+	namespace operations {
 
 		template<class T = Type>
 		struct ReturnableOperation: Operation { // ReturnableOperation is an operation which returns specified type
@@ -187,7 +181,7 @@ namespace jdecompiler {
 
 template<class O>
 O Operation::castOperationTo(const Operation* operation) {
-	using namespace Operations;
+	using namespace operations;
 
 	if(O o = dynamic_cast<O>(operation))
 		return o;
@@ -203,7 +197,7 @@ O Operation::castOperationTo(const Operation* operation) {
 	return nullptr;
 }
 
-namespace Operations {
+namespace operations {
 
 
 		template<typename T>
@@ -407,7 +401,7 @@ namespace Operations {
 
 		struct AALoadOperation: ArrayLoadOperation {
 			AALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(
-					environment.stack.lookup(1)->getReturnTypeAs(&AnyType::getArrayTypeInstance())->elementType, environment) {}
+					environment.stack.lookup(1)->getReturnTypeAs(AnyType::getArrayTypeInstance())->elementType, environment) {}
 		};
 
 		struct BALoadOperation: ArrayLoadOperation {
@@ -433,7 +427,6 @@ namespace Operations {
 						value(environment.stack.popAs(requiredType)), index(index), variable(environment.getCurrentScope()->getVariable(index)) {
 
 					initReturnType<DupOperation<TypeSize::FOUR_BYTES>>(environment, value);
-					//LOG("constructor StoreOperation 0x" << hex((uint64_t)this * (uint64_t)this) << ' ' << typeid(*environment.getCurrentScope()).name());
 					variable.type = variable.type->castTo(requiredType->castTo(value->getReturnType()));
 				}
 
@@ -459,7 +452,7 @@ namespace Operations {
 		};
 
 		struct AStoreOperation: StoreOperation {
-			AStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(&AnyObjectType::getInstance(), environment, index) {}
+			AStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(AnyObjectType::getInstance(), environment, index) {}
 		};
 
 
@@ -541,9 +534,10 @@ namespace Operations {
 				virtual string toString(const CodeEnvironment& environment) const override {
 					if(isShortInc) {
 						const char* inc = value == 1 ? "++" : "--";
-						return isPostInc || returnType == VOID ? environment.getCurrentScope()->getNameFor(variable) + inc : inc + environment.getCurrentScope()->getNameFor(variable);
+						return isPostInc || returnType == VOID ? environment.getCurrentScope()->getNameFor(variable) + inc :
+								inc + environment.getCurrentScope()->getNameFor(variable);
 					}
-					return environment.getCurrentScope()->getNameFor(variable) + (string)(value < 0 ? " -" : " +") + "= " + to_string(abs(value));
+					return environment.getCurrentScope()->getNameFor(variable) + (value < 0 ? " -" : " +") + "= " + to_string(abs(value));
 				}
 
 				virtual const Type* getReturnType() const override {
@@ -576,8 +570,8 @@ namespace Operations {
 			CmpOperation(const CodeEnvironment& environment, const Type* operandType):
 					operand2(environment.stack.pop()), operand1(environment.stack.pop()) {
 						operandType = operandType->castTo(operand1->getReturnType())->castTo(operand2->getReturnType());
-						operand1->getReturnTypeAs(operandType);
-						operand2->getReturnTypeAs(operandType);
+						operand1->castReturnTypeTo(operandType);
+						operand2->castReturnTypeTo(operandType);
 					}
 		};
 
@@ -607,7 +601,7 @@ namespace Operations {
 		};
 
 		struct ACmpOperation: CmpOperation {
-			ACmpOperation(const CodeEnvironment& environment): CmpOperation(environment, &AnyObjectType::getInstance()) {}
+			ACmpOperation(const CodeEnvironment& environment): CmpOperation(environment, AnyObjectType::getInstance()) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of acmp: toString()"); }
 		};
@@ -619,32 +613,70 @@ namespace Operations {
 
 		struct CompareType {
 			static const EqualsCompareType EQUALS, NOT_EQUALS;
-			static const CompareType GREATER, GREATER_OR_EQUALS, LESS, LESS_OR_EQUALS;
+			static const CompareType GREATER, LESS_OR_EQUALS, LESS, GREATER_OR_EQUALS;
 
-			const char* const stringOperator;
+			protected:
+				const char* const binaryOperator;
+				const CompareType& invertedType;
 
-			CompareType(const char* const stringOperator): stringOperator(stringOperator) {}
+			public:
+				const bool isEqualsCompareType;
+
+				CompareType(const char* const binaryOperator, const CompareType& invertedType);
+
+				inline string getOperator(bool inverted) const {
+					return inverted ? invertedType.binaryOperator : binaryOperator;
+				}
+
+				virtual const Type* getRequiredType() const {
+					static const ExcludingType requiredType({BOOLEAN});
+					return &requiredType;
+				}
 		};
 
-		struct EqualsCompareType: CompareType {
-			EqualsCompareType(const char* const stringOperator): CompareType(stringOperator) {}
+		struct EqualsCompareType final: CompareType {
+			protected:
+				const char* const unaryOperator;
+
+			public:
+				EqualsCompareType(const char* binaryOperator, const char* unaryOperator, const EqualsCompareType& invertedType):
+						CompareType(binaryOperator, invertedType), unaryOperator(unaryOperator) {}
+
+				inline string getUnaryOperator(bool inverted) const {
+					return inverted ? ((const EqualsCompareType&)invertedType).unaryOperator : unaryOperator;
+				}
+
+				virtual const Type* getRequiredType() const override {
+					return AnyType::getInstance();
+				}
 		};
+
+		CompareType::CompareType(const char* const binaryOperator, const CompareType& invertedType):
+						binaryOperator(binaryOperator), invertedType(invertedType), isEqualsCompareType(dynamic_cast<const EqualsCompareType*>(this)) {}
 
 
 		const EqualsCompareType
-				CompareType::EQUALS = EqualsCompareType("=="),
-				CompareType::NOT_EQUALS = EqualsCompareType("!=");
+				CompareType::EQUALS("==", "", CompareType::NOT_EQUALS),
+				CompareType::NOT_EQUALS("!=", "!", CompareType::EQUALS);
 		const CompareType
-				CompareType::GREATER = CompareType(">"),
-				CompareType::GREATER_OR_EQUALS = CompareType(">="),
-				CompareType::LESS = CompareType("<"),
-				CompareType::LESS_OR_EQUALS = CompareType("<=");
+				CompareType::GREATER(">", CompareType::LESS_OR_EQUALS),
+				CompareType::LESS_OR_EQUALS("<=", CompareType::GREATER),
+				CompareType::LESS("<", CompareType::GREATER_OR_EQUALS),
+				CompareType::GREATER_OR_EQUALS(">=", CompareType::LESS);
 
 
 		struct CompareOperation: BooleanOperation {
-			const CompareType& compareType;
+			public:
+				const CompareType& compareType;
 
-			CompareOperation(const CompareType& compareType): compareType(compareType) {}
+				CompareOperation(const CompareType& compareType): compareType(compareType) {}
+
+				virtual string toString(const CodeEnvironment& environment, bool inverted) const = 0;
+
+			protected:
+				virtual string toString(const CodeEnvironment& environment) const override final {
+					return toString(environment, false);
+				}
 		};
 
 
@@ -652,10 +684,12 @@ namespace Operations {
 			const Operation *const operand2, *const operand1;
 
 			CompareBinaryOperation(const CmpOperation* cmpOperation, const CompareType& compareType):
-					CompareOperation(compareType), operand2(cmpOperation->operand2), operand1(cmpOperation->operand1) {}
+					CompareOperation(compareType), operand2(cmpOperation->operand2), operand1(cmpOperation->operand1) {
+				operand2->castReturnTypeTo(compareType.getRequiredType());
+			}
 
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return operand1->toString(environment) + ' ' + compareType.stringOperator + ' ' + operand2->toString(environment);
+			virtual string toString(const CodeEnvironment& environment, bool inverted) const override {
+				return operand1->toString(environment) + ' ' + compareType.getOperator(inverted) + ' ' + operand2->toString(environment);
 			}
 		};
 
@@ -665,27 +699,32 @@ namespace Operations {
 
 			CompareWithZeroOperation(const Operation* operand, const CompareType& compareType): CompareOperation(compareType), operand(operand) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return operand->getReturnType() == BOOLEAN ? operand->toString(environment) :
-						operand->toString(environment) + ' ' + compareType.stringOperator + " 0";
+			virtual string toString(const CodeEnvironment& environment, bool inverted) const override {
+				return operand->getReturnType()->isInstanceof(BOOLEAN) && compareType.isEqualsCompareType ?
+						((const EqualsCompareType&)compareType).getUnaryOperator(inverted) + operand->toString(environment) :
+						operand->toString(environment) + ' ' + compareType.getOperator(inverted) + " 0";
 			}
 		};
 
 
 		struct TernaryOperatorOperation: ReturnableOperation<> {
-			const Operation *const condition, *const trueCase, *const falseCase;
+			const CompareOperation *const condition;
+			const Operation *const trueCase, *const falseCase;
 
 			const bool isShort;
 
-			TernaryOperatorOperation(const Operation* condition, const Operation* trueCase, const Operation* falseCase):
+			const bool inverted;
+
+			TernaryOperatorOperation(const CompareOperation* condition, const Operation* trueCase, const Operation* falseCase, bool inverted):
 					ReturnableOperation(trueCase->getReturnTypeAs(falseCase->getReturnType())),
 					condition(condition), trueCase(trueCase), falseCase(falseCase),
-					isShort(instanceof<const IConstOperation*>(trueCase) && ((const IConstOperation*)trueCase)->value == 1 &&
-					instanceof<const IConstOperation*>(falseCase) && ((const IConstOperation*)falseCase)->value == 0) {}
+					isShort(instanceof<const IConstOperation*>(trueCase) && static_cast<const IConstOperation*>(trueCase)->value == 1 &&
+					        instanceof<const IConstOperation*>(falseCase) && static_cast<const IConstOperation*>(falseCase)->value == 0),
+					inverted(inverted) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return isShort ? condition->toString(environment) :
-						condition->toString(environment) + " ? " + trueCase->toString(environment) + " : " + falseCase->toString(environment);
+				return isShort ? condition->toString(environment, inverted) :
+						condition->toString(environment, inverted) + " ? " + trueCase->toString(environment) + " : " + falseCase->toString(environment);
 			}
 		};
 
@@ -702,7 +741,7 @@ namespace Operations {
 				const Operation* ternaryFalseOperation = nullptr;
 
 			public:
-				ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope);
+				ElseScope(const CodeEnvironment& environment, const uint32_t endPos, const IfScope* ifScope);
 
 				virtual string getHeader(const CodeEnvironment& environment) const override {
 					return " else ";
@@ -738,6 +777,8 @@ namespace Operations {
 				const CompareOperation* const condition;
 
 			private:
+				mutable bool inverted = true;
+
 				mutable const ElseScope* elseScope = nullptr;
 				friend ElseScope::ElseScope(const CodeEnvironment&, const uint32_t, const IfScope*);
 
@@ -757,7 +798,8 @@ namespace Operations {
 
 			protected:
 				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return (string)(isLoop ? (hasLabel ? getLabel(environment) + ": while" : "while") : "if") + '(' + condition->toString(environment) + ") ";
+					return (string)(isLoop ? (hasLabel ? getLabel(environment) + ": while" : "while") : "if") +
+							'(' + condition->toString(environment, inverted) + ") ";
 				}
 
 				virtual bool printNextOperation(const vector<const Operation*>::const_iterator i) const override {
@@ -811,8 +853,8 @@ namespace Operations {
 		}
 
 
-		ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t to, const IfScope* ifScope):
-				Scope(environment.index, to, ifScope->parentScope), ifScope(ifScope) {
+		ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t endPos, const IfScope* ifScope):
+				Scope(environment.index, endPos, ifScope->parentScope), ifScope(ifScope) {
 			ifScope->elseScope = this;
 		}
 
@@ -820,7 +862,8 @@ namespace Operations {
 			isTernary = ifScope->isTernary;
 			if(isTernary) {
 				ternaryFalseOperation = environment.stack.pop();
-				environment.stack.push(new TernaryOperatorOperation(ifScope->condition, ifScope->ternaryTrueOperation, ternaryFalseOperation));
+				environment.stack.push(new TernaryOperatorOperation(ifScope->condition,
+						ifScope->ternaryTrueOperation, ternaryFalseOperation, ifScope->inverted));
 			}
 		}
 
@@ -869,7 +912,7 @@ namespace Operations {
 
 					const uint32_t defaultExprIndex = exprIndexTable.at(defaultIndex);
 
-					uint32_t i = exprIndexTable.at(this->from);
+					uint32_t i = exprIndexTable.at(this->startPos);
 					for(const Operation* operation : code) {
 						if(i == defaultExprIndex) {
 							environment.classinfo.reduceIndent();
@@ -902,10 +945,10 @@ namespace Operations {
 
 
 		struct CatchScopeDataHolder {
-			uint32_t from;
+			uint32_t startPos;
 			vector<const ClassType*> catchTypes;
 
-			CatchScopeDataHolder(uint32_t from, const ClassType* catchType): from(from), catchTypes({catchType}) {}
+			CatchScopeDataHolder(uint32_t startPos, const ClassType* catchType): startPos(startPos), catchTypes{catchType} {}
 		};
 
 
@@ -915,8 +958,8 @@ namespace Operations {
 				friend const CodeEnvironment& Method::decompileCode(const ClassInfo&);
 
 			public:
-				TryScope(uint32_t from, uint32_t to, Scope* parentScope):
-						Scope(from, to, parentScope) {}
+				TryScope(uint32_t startPos, uint32_t endPos, Scope* parentScope):
+						Scope(startPos, endPos, parentScope) {}
 
 				virtual string getHeader(const CodeEnvironment& environment) const override {
 					return "try ";
@@ -942,37 +985,29 @@ namespace Operations {
 				CatchScope* const nextHandler;
 
 			public:
-				CatchScope(const CodeEnvironment& environment, uint32_t from, uint32_t to, const vector<const ClassType*>& catchTypes, CatchScope* nextHandler):
-						Scope(from, to, environment.getCurrentScope()), catchTypes(catchTypes), catchType(catchTypes[0]), nextHandler(nextHandler) {
-					//LOG("constructor CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " }");
+				CatchScope(const CodeEnvironment& environment, uint32_t startPos, uint32_t endPos,
+						const vector<const ClassType*>& catchTypes, CatchScope* nextHandler):
+						Scope(startPos, endPos, environment.getCurrentScope()), catchTypes(catchTypes), catchType(catchTypes[0]), nextHandler(nextHandler) {
 				}
 
-				CatchScope(const CodeEnvironment& environment, const CatchScopeDataHolder& dataHolder, uint32_t to, CatchScope* nextHandler):
-						CatchScope(environment, dataHolder.from, to, dataHolder.catchTypes, nextHandler) {}
+				CatchScope(const CodeEnvironment& environment, const CatchScopeDataHolder& dataHolder, uint32_t endPos, CatchScope* nextHandler):
+						CatchScope(environment, dataHolder.startPos, endPos, dataHolder.catchTypes, nextHandler) {}
 
 
 				virtual void add(const Operation* operation, const CodeEnvironment& environment) override {
-
-					//LOG("add         CatchScope 0x" << hex<4>((uint64_t)this * (uint64_t)this) << ' '\
-							<< (exceptionVariable != nullptr ? "not null" : "null") << ' '  << from << ".." << to << ' ' << typeid(*operation).name());
-
 					if(exceptionVariable == nullptr) {
-						const StoreOperation* storeOperation = dynamic_cast<const StoreOperation*>(operation);
-						if(storeOperation == nullptr) {
-							exceptionVariableIndex = storeOperation->index;
+						if(instanceof<const StoreOperation*>(operation)) {
+							exceptionVariableIndex = static_cast<const StoreOperation*>(operation)->index;
 							exceptionVariable = new NamedVariable(catchType, "ex");
 							return;
 						} else {
-							environment.warning("first instruction in the try block should be `astore`");
+							environment.warning("first instruction in the catch or finally block should be `astore`");
 						}
 					}
 					Scope::add(operation, environment);
 				}
 
 				virtual const Variable& getVariable(uint32_t index) const {
-					//LOG("getVariable CatchScope 0x" << hex<4>((uint64_t)this * (uint64_t)this) << ' '\
-							<< (exceptionVariable != nullptr ? "not null" : "null"));
-
 					if(exceptionVariable != nullptr && index == exceptionVariableIndex)
 						return *exceptionVariable;
 					return Scope::getVariable(index);
@@ -984,10 +1019,6 @@ namespace Operations {
 				}
 
 				virtual string getHeader(const CodeEnvironment& environment) const override {
-					//LOG("getHeader   CatchScope 0x" << hex<4>((uint64_t)this * (uint64_t)this) << ' '\
-							<< (exceptionVariable != nullptr ? "not null" : "null"));
-
-					//assert(exceptionVariable != nullptr);
 					return catchType == nullptr ? "finally" :
 							"catch(" + join<const ClassType*>(catchTypes,
 									[&environment] (const ClassType* catchType) { return catchType->toString(environment.classinfo); }, " | ") +
@@ -999,9 +1030,6 @@ namespace Operations {
 				}
 
 				void initiate(const CodeEnvironment& environment) {
-					//LOG("initiate    CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " } at "\
-							<< environment.index);
-
 					tmpStack.reserve(environment.stack.size());
 					while(!environment.stack.empty())
 						tmpStack.push_back(environment.stack.pop());
@@ -1026,15 +1054,11 @@ namespace Operations {
 
 			public:
 				virtual void finalize(const CodeEnvironment& environment) override {
-					//LOG("finalize    CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " } at "\
-							<< environment.index);
 					reverse(tmpStack.begin(), tmpStack.end());
 					for(const Operation* operation : tmpStack)
 						environment.stack.push(operation);
 
 					if(nextHandler != nullptr) {
-						//LOG("environment.addScope(nextHandler) CatchScope 0x" << hex((uint64_t)this * (uint64_t)this) << " (0x"\
-								<< hex((uint64_t)nextHandler * (uint64_t)nextHandler) << ")");
 						environment.addScope(nextHandler);
 						nextHandler->initiate(environment);
 					}
@@ -1043,16 +1067,14 @@ namespace Operations {
 
 
 		void TryScope::finalize(const CodeEnvironment& environment) {
-			//LOG("finalize    TryScope 0x" << hex((uint64_t)this * (uint64_t)this) << " { from = " << from << ", to = " << to << " }");
-
 			assert(handlersData.size() > 0);
-			sort(handlersData.begin(), handlersData.end(), [](auto& handler1, auto& handler2) { return handler1.from > handler2.from; });
+			sort(handlersData.begin(), handlersData.end(), [](auto& handler1, auto& handler2) { return handler1.startPos > handler2.startPos; });
 
 			CatchScope* lastHandler = nullptr;
 
 			for(const CatchScopeDataHolder& handlerData : handlersData)
 				lastHandler = new CatchScope(environment, handlerData,
-						lastHandler == nullptr ? environment.getCurrentScope()->to : lastHandler->from, lastHandler);
+						lastHandler == nullptr ? environment.getCurrentScope()->end() : lastHandler->start(), lastHandler);
 
 			environment.addScope(lastHandler);
 			lastHandler->initiate(environment);
@@ -1090,7 +1112,7 @@ namespace Operations {
 		};
 
 		struct AReturnOperation: ReturnOperation {
-			AReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, &AnyObjectType::getInstance()) {}
+			AReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, AnyObjectType::getInstance()) {}
 		};
 
 
@@ -1109,13 +1131,13 @@ namespace Operations {
 
 				inline string staticFieldToString(const CodeEnvironment& environment) const {
 					return clazz == environment.classinfo.thisType && !environment.getCurrentScope()->hasVariable(descriptor.name) ?
-							(string)descriptor.name : clazz.toString(environment.classinfo) + '.' + descriptor.name;
+							descriptor.name : clazz.toString(environment.classinfo) + '.' + descriptor.name;
 				}
 
 				inline string instanceFieldToString(const CodeEnvironment& environment, const Operation* object) const {
 					return !(environment.modifiers & ACC_STATIC) && instanceof<const ALoadOperation*>(object) &&
-							((const ALoadOperation*)object)->index == 0 && !environment.getCurrentScope()->hasVariable(descriptor.name) ?
-								(string)descriptor.name : object->toString(environment) + '.' + descriptor.name;
+							static_cast<const ALoadOperation*>(object)->index == 0 && !environment.getCurrentScope()->hasVariable(descriptor.name) ?
+								descriptor.name : object->toString(environment) + '.' + descriptor.name;
 				}
 		};
 
@@ -1198,6 +1220,27 @@ namespace Operations {
 
 
 
+		struct NewOperation: Operation {
+			public:
+				const ClassType clazz;
+
+				NewOperation(const CodeEnvironment& environment, const ClassConstant* classConstant):
+						clazz(classConstant) {}
+
+				NewOperation(const CodeEnvironment& environment, uint16_t classIndex):
+						NewOperation(environment, environment.constPool.get<ClassConstant>(classIndex)) {}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return "new " + clazz.toString(environment.classinfo);
+				}
+
+				virtual const Type* getReturnType() const override {
+					return &clazz;
+				}
+		};
+
+
+
 		struct InvokeOperation: Operation {
 			public:
 				const MethodDescriptor& descriptor;
@@ -1245,7 +1288,7 @@ namespace Operations {
 
 				InvokeNonStaticOperation(const CodeEnvironment& environment, const Operation* object, uint16_t index):
 						InvokeOperation(environment, index), object(object) {
-					object->getReturnTypeAs(&descriptor.clazz);
+					object->castReturnTypeTo(&descriptor.clazz);
 				}
 
 				inline string nonStaticMethodToString(const CodeEnvironment& environment) const {
@@ -1284,7 +1327,7 @@ namespace Operations {
 
 				inline bool getIsSuperConstructor(const CodeEnvironment& environment) {
 					return (!(environment.modifiers & ACC_STATIC) && // check that we invoking this (or super) constructor
-							instanceof<const ALoadOperation*>(object) && ((const ALoadOperation*)object)->index == 0 &&
+							instanceof<const ALoadOperation*>(object) && static_cast<const ALoadOperation*>(object)->index == 0 &&
 							descriptor.clazz == environment.classinfo.superType);
 				}
 
@@ -1298,10 +1341,25 @@ namespace Operations {
 						isConstructor(getIsConstructor()), isSuperConstructor(getIsSuperConstructor(environment)), returnType(getReturnType(environment)) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					if(isConstructor)
+					if(isConstructor) {
+						if(const NewOperation* newOperation = castOperationTo<const NewOperation*>(object)) {
+							const ClassType& classType = newOperation->clazz;
+							if(classType.isAnonymous) {
+								const Class* clazz = JDecompiler::instance.getClass(classType.getEncodedName());
+								if(clazz != nullptr) {
+									clazz->classinfo.copyFormattingFrom(environment.classinfo);
+									const string result = "new " + clazz->toString();
+									clazz->classinfo.resetFormatting();
+
+									return result;
+								}
+							}
+						}
+
 						return (isSuperConstructor ? "super" : object->toString(environment, priority, Associativity::LEFT)) +
 							'(' + rjoin<const Operation*>(arguments,
 								[&environment] (const Operation* operation) { return operation->toString(environment); }) + ')';
+					}
 
 					return InvokeNonStaticOperation::toString(environment);
 				}
@@ -1382,27 +1440,6 @@ namespace Operations {
 			virtual const Type* getReturnType() const override {
 				return STRING;
 			}
-		};
-
-
-
-		struct NewOperation: Operation {
-			public:
-				const ClassType clazz;
-
-				NewOperation(const CodeEnvironment& environment, const ClassConstant* classConstant):
-						clazz(classConstant) {}
-
-				NewOperation(const CodeEnvironment& environment, uint16_t classIndex):
-						NewOperation(environment, environment.constPool.get<ClassConstant>(classIndex)) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return "new " + clazz.toString(environment.classinfo);
-				}
-
-				virtual const Type* getReturnType() const override {
-					return &clazz;
-				}
 		};
 
 
@@ -1508,7 +1545,7 @@ namespace Operations {
 
 		struct AAStoreOperation: ArrayStoreOperation {
 			AAStoreOperation(const CodeEnvironment& environment): ArrayStoreOperation(
-					environment.stack.lookup(2)->getReturnTypeAs(&AnyType::getArrayTypeInstance())->elementType, environment) {}
+					environment.stack.lookup(2)->getReturnTypeAs(AnyType::getArrayTypeInstance())->elementType, environment) {}
 		};
 
 		struct BAStoreOperation: ArrayStoreOperation {
@@ -1587,8 +1624,8 @@ namespace Operations {
 				CompareWithNullOperation(const CodeEnvironment& environment, const EqualsCompareType& compareType):
 						CompareOperation(compareType), operand(environment.stack.pop()) {}
 
-				virtual string toString(const CodeEnvironment& environment) const {
-					return operand->toString(environment) + ' ' + compareType.stringOperator + " null";
+				virtual string toString(const CodeEnvironment& environment, bool inverted) const override {
+					return operand->toString(environment) + ' ' + compareType.getOperator(inverted) + " null";
 				}
 		};
 
@@ -1607,7 +1644,7 @@ namespace Operations {
 
 
 	void StaticInitializerScope::add(const Operation* operation, const CodeEnvironment& environment) {
-		using namespace Operations;
+		using namespace operations;
 
 		if(!fieldsInitialized) {
 			const PutStaticFieldOperation* putOperation = dynamic_cast<const PutStaticFieldOperation*>(operation);

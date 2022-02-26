@@ -2,9 +2,10 @@
 #define JDECOMPILER_TYPES_CPP
 
 #undef inline
-#include <algorithm>
 #include <cassert>
 #define inline FORCE_INLINE
+#include "const-pool.cpp"
+#include "jdecompiler.cpp"
 
 namespace jdecompiler {
 
@@ -15,7 +16,7 @@ namespace jdecompiler {
 		ZERO_BYTES, FOUR_BYTES, EIGHT_BYTES
 	};
 
-	static string TypeSize_nameOf(TypeSize typeSize) {
+	static const char* TypeSize_nameOf(const TypeSize typeSize) {
 		switch(typeSize) {
 			case TypeSize::ZERO_BYTES: return "ZERO_BYTES";
 			case TypeSize::FOUR_BYTES: return "FOUR_BYTES";
@@ -35,7 +36,7 @@ namespace jdecompiler {
 				return toString();
 			}
 
-			virtual const string& getEncodedName() const = 0;
+			virtual string getEncodedName() const = 0;
 
 			virtual const string& getName() const = 0;
 
@@ -47,38 +48,44 @@ namespace jdecompiler {
 			virtual bool isBasic() const = 0;
 
 			inline bool isSpecial() const {
-			    assert(this != nullptr);
 				return !isBasic();
 			}
 
 			template<class T>
-			const T* castTo(const T* t) const {
-				static_assert(is_base_of<Type, T>::value, "template class T of function Type::castTo is not subclass of class Type");
-
-				if(const Type* castedType = this->isBasic() && t->isSpecial() ? // delegate cast to indefinite type
-						t->reversedCastTo((const Type*)this) : this->castToImpl((const Type*)t))
-					return safe_cast<const T*>(castedType);
+			inline const T* castTo(const T* t) const {
+				if(const T* castedType = this->castToNoexcept(t))
+					return castedType;
 				throw DecompilationException("incopatible types: " + this->toString() + " and " + t->toString());
 			}
 
-			const Type* reversedCastTo(const Type* other) const {
-				if(const Type* castedType = this->castToImpl(other))
-					return castedType;
-				throw DecompilationException("incopatible types: " + other->toString() + " and " + this->toString());
+			template<class T>
+			const T* castToNoexcept(const T* t) const {
+				static_assert(is_base_of<Type, T>::value, "template class T of function Type::castTo is not subclass of class Type");
+
+				const Type* castedType;
+
+				if(castedType = this->castToImpl((const Type*)t))
+					return safe_cast<const T*>(castedType);
+
+				if(castedType = ((const Type*)t)->castToImpl(this))
+					return safe_cast<const T*>(castedType);
+
+				return nullptr;
 			}
 
 			bool isInstanceof(const Type* type) const {
-			    return this->isBasic() && type->isSpecial() ? type->isInstanceofImpl(this) : this->isInstanceofImpl(type);
+			    return this->isInstanceofImpl(type) || type->isInstanceofImpl(this);
 			}
 
 		protected:
 			virtual bool isInstanceofImpl(const Type* type) const = 0;
 
-			virtual const Type* castToImpl(const Type*) const = 0;
+			virtual const Type* castToImpl(const Type* type) const = 0;
 
 		public:
 			bool operator==(const Type& type) const {
 				assert(this != nullptr);
+				assert(&type != nullptr);
 				return this == &type || (typeid(*this) == typeid(type) && this->getEncodedName() == type.getEncodedName());
 			}
 	};
@@ -91,7 +98,7 @@ namespace jdecompiler {
 			BasicType(const string& encodedName, const string& name): encodedName(encodedName), name(name) {}
 
 		public:
-			virtual const string& getEncodedName() const override final {
+			virtual string getEncodedName() const override final {
 				return encodedName;
 			}
 
@@ -135,7 +142,7 @@ namespace jdecompiler {
 
 		protected:
 			virtual bool isInstanceofImpl(const Type* type) const override {
-				return this == type || (type->isSpecial() && type->isInstanceof(this));
+				return this == type;
 			}
 
 			virtual const Type* castToImpl(const Type* other) const override {
@@ -223,7 +230,7 @@ namespace jdecompiler {
 					enclosingClass = nullptr;
 					fullSimpleName = simpleName;
 				} else {
-					isAnonymous = all_of(simpleName.begin(), simpleName.end(), [](unsigned char c) { return isdigit(c); });
+					isAnonymous = all_of(simpleName.begin(), simpleName.end(), [] (unsigned char c) { return isdigit(c); });
 					enclosingClass = new ClassType(string(name, 0, enclosingClassNameEndPos));
 					fullSimpleName = enclosingClass->fullSimpleName + (isAnonymous ? '$' : '.') + simpleName;
 				}
@@ -352,39 +359,41 @@ namespace jdecompiler {
 
 
 	struct AmbigousType: SpecialType {
-		private:
-			const vector<const Type*> types;
+		public:
+			const vector<const BasicType*> types;
+
+		protected:
 			const bool isPrimitiveTypes;
 			const TypeSize size;
 
 		public:
-			AmbigousType(const vector<const Type*>& types): types(types),
+			AmbigousType(const vector<const BasicType*>& types): types(types),
 					isPrimitiveTypes(
-						all_of(types.begin(), types.end(), [](auto type) { return  type->isPrimitive(); }) ? true :
-						all_of(types.begin(), types.end(), [](auto type) { return !type->isPrimitive(); }) ? false :
+						all_of(types.begin(), types.end(), [] (auto type) { return  type->isPrimitive(); }) ? true :
+						all_of(types.begin(), types.end(), [] (auto type) { return !type->isPrimitive(); }) ? false :
 						throw IllegalArgumentException("All types in type list must be only primitive or only non-primitive")
 					),
 					size(
-						all_of(types.begin(), types.end(), [](auto type) { return type->getSize() == TypeSize::FOUR_BYTES; }) ? TypeSize::FOUR_BYTES :
-						all_of(types.begin(), types.end(), [](auto type) { return type->getSize() == TypeSize::EIGHT_BYTES; }) ? TypeSize::EIGHT_BYTES :
+						all_of(types.begin(), types.end(), [] (auto type) { return type->getSize() == TypeSize::FOUR_BYTES; }) ? TypeSize::FOUR_BYTES :
+						all_of(types.begin(), types.end(), [] (auto type) { return type->getSize() == TypeSize::EIGHT_BYTES; }) ? TypeSize::EIGHT_BYTES :
 						throw IllegalArgumentException("All types in type list must have same size")
 					) {
 				if(types.empty())
 					throw IllegalArgumentException("Type list cannot be empty");
 			}
 
-			AmbigousType(initializer_list<const Type*> typeList): AmbigousType(vector<const Type*>(typeList)) {}
+			AmbigousType(const initializer_list<const BasicType*> typeList): AmbigousType(vector<const BasicType*>(typeList)) {}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
 				return types[0]->toString(classinfo);
 			}
 
 			virtual string toString() const override {
-				return "AmbigousType {" + join<const Type*>(types, [](auto type) { return type->toString(); }) + '}';
+				return "AmbigousType {" + join<const BasicType*>(types, [](auto type) { return type->toString(); }) + '}';
 			}
 
-			virtual const string& getEncodedName() const override final {
-				return types[0]->getEncodedName();
+			virtual string getEncodedName() const override final {
+				return "S/AmbigousType";
 			}
 
 			virtual const string& getName() const override final {
@@ -423,13 +432,13 @@ namespace jdecompiler {
 					return this;
 
 				for(const Type* type : types)
-					if(*type == *other)
-						return type;
+					if(const Type* castedType = type->castToNoexcept(other))
+						return castedType;
 
-				if(const AmbigousType* ambigousType = dynamic_cast<const AmbigousType*>(other)) {
-					vector<const Type*> newTypes;
-					for(const Type* type1 : types)
-						for(const Type* type2 : ambigousType->types)
+				if(instanceof<const AmbigousType*>(other)) {
+					vector<const BasicType*> newTypes;
+					for(const BasicType* type1 : types)
+						for(const BasicType* type2 : static_cast<const AmbigousType*>(other)->types)
 							if(*type1 == *type2)
 								newTypes.push_back(type1);
 					return newTypes.empty() ? nullptr : new AmbigousType(newTypes);
@@ -452,9 +461,8 @@ namespace jdecompiler {
 				return "AnyType";
 			}
 
-			virtual const string& getEncodedName() const override final {
-				static const string encodedName("Ljava/lang/Object");
-				return encodedName;
+			virtual string getEncodedName() const override final {
+				return "S/AnyType";
 			}
 
 			virtual const string& getName() const override final {
@@ -480,14 +488,14 @@ namespace jdecompiler {
 			}
 
 		public:
-			static AnyType& getInstance() {
-				static AnyType instance;
-				return instance;
+			static const AnyType* getInstance() {
+				static const AnyType instance;
+				return &instance;
 			}
 
-			static ArrayType& getArrayTypeInstance() {
-				static ArrayType instance(&AnyType::getInstance());
-				return instance;
+			static const ArrayType* getArrayTypeInstance() {
+				static const ArrayType instance(AnyType::getInstance());
+				return &instance;
 			}
 	};
 
@@ -504,9 +512,8 @@ namespace jdecompiler {
 				return "AnyObjectType";
 			}
 
-			virtual const string& getEncodedName() const override final {
-				static const string encodedName("Ljava/lang/Object");
-				return encodedName;
+			virtual string getEncodedName() const override final {
+				return "S/AnyObjectType";
 			}
 
 			virtual const string& getName() const override final {
@@ -523,7 +530,7 @@ namespace jdecompiler {
 			}
 
 			virtual bool isInstanceofImpl(const Type* other) const override {
-				return *this == *other || !other->isPrimitive();
+				return *this == *other || (other->isBasic() && !other->isPrimitive());
 			}
 
 		protected:
@@ -532,14 +539,14 @@ namespace jdecompiler {
 			}
 
 		public:
-			static AnyObjectType& getInstance() {
-				static AnyObjectType instance;
-				return instance;
+			static const AnyObjectType* getInstance() {
+				static const AnyObjectType instance;
+				return &instance;
 			}
 
-			static ArrayType& getArrayTypeInstance() {
-				static ArrayType instance(&AnyObjectType::getInstance());
-				return instance;
+			static const ArrayType* getArrayTypeInstance() {
+				static const ArrayType instance(AnyObjectType::getInstance());
+				return &instance;
 			}
 	};
 
@@ -547,6 +554,84 @@ namespace jdecompiler {
 	static const AmbigousType
 			*const ANY_INT_OR_BOOLEAN = new AmbigousType({BOOLEAN, BYTE, CHAR, SHORT, INT}),
 			*const ANY_INT = new AmbigousType({BYTE, CHAR, SHORT, INT});
+
+
+	struct ExcludingType final: SpecialType {
+		public:
+			const vector<const BasicType*> types;
+
+			ExcludingType(const vector<const BasicType*>& types): types(types) {
+				if(types.empty())
+					throw IllegalArgumentException("Type list cannot be empty");
+			}
+
+			ExcludingType(const initializer_list<const BasicType*> typeList): ExcludingType(vector<const BasicType*>(typeList)) {}
+
+			virtual string toString() const override {
+				return "ExcludingType {" + join<const BasicType*>(types, [](const BasicType* type) { return type->toString(); }) + '}';
+			}
+
+			virtual string getEncodedName() const override final {
+				return "S/ExcludingType";
+			}
+
+			virtual const string& getName() const override final {
+				static const string name("java.lang.Object");
+				return name;
+			}
+
+			virtual bool isPrimitive() const override {
+				return false;
+			}
+
+			virtual TypeSize getSize() const override {
+				return TypeSize::FOUR_BYTES;
+			}
+
+			virtual bool isInstanceofImpl(const Type* other) const override {
+				if(*this == *other);
+					return true;
+
+				if(!other->isBasic())
+					return false;
+
+				if(const AmbigousType* ambigousType = dynamic_cast<const AmbigousType*>(other)) {
+					for(const BasicType* t1 : this->types) {
+						for(const Type* t2 : ambigousType->types) {
+							if(!t2->isInstanceof(t1)) {
+								return true;
+							}
+						}
+					}
+
+					return false;
+				}
+
+				for(const BasicType* type : this->types) {
+					if(type->isInstanceof(other)) {
+						return false;
+					}
+				}
+
+				return true;
+			}
+
+		protected:
+			virtual const Type* castToImpl(const Type* other) const override {
+				if(const AmbigousType* ambigousType = dynamic_cast<const AmbigousType*>(other)) {
+					vector<const BasicType*> newTypes = ambigousType->types;
+					newTypes.erase(remove_if(newTypes.begin(), newTypes.end(), [this] (const BasicType* t1) {
+							for(const BasicType* t2 : types)
+								if(*t1 == *t2)
+									return true;
+							return false;
+						}), newTypes.end());
+
+					return newTypes.empty() ? nullptr : new AmbigousType(newTypes);
+				}
+				return nullptr;
+			}
+	};
 
 
 
@@ -581,9 +666,7 @@ namespace jdecompiler {
 
 
 	static const ReferenceType* parseReferenceType(const string& encodedName) {
-		if(encodedName[0] == '[')
-			return new ArrayType(encodedName);
-		return new ClassType(encodedName);
+		return encodedName[0] == '[' ? (const ReferenceType*)new ArrayType(encodedName) : (const ReferenceType*)new ClassType(encodedName);
 	}
 
 

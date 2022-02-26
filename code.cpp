@@ -1,18 +1,12 @@
 #ifndef JDECOMPILER_CODE_CPP
 #define JDECOMPILER_CODE_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
-
-#undef inline
-#include <map>
-#define inline FORCE_INLINE
+#include "types.cpp"
 
 namespace jdecompiler {
 
 	string ClassConstant::toString(const ClassInfo& classinfo) const {
-		return ClassType(*name).toString(classinfo);
+		return ClassType(*name).toString(classinfo) + ".class";
 	}
 
 
@@ -158,6 +152,10 @@ namespace jdecompiler {
 				return newType;
 			}
 
+			inline void castReturnTypeTo(const Type* type) const {
+				onCastReturnType(getReturnType()->castTo(type));
+			}
+
 		protected:
 			virtual void onCastReturnType(const Type* newType) const {}
 
@@ -168,8 +166,8 @@ namespace jdecompiler {
 
 			template<class D, class... Ds>
 			static bool checkDup(const CodeEnvironment& environment, const Operation* operation) {
-				if(const D* dupOperation = dynamic_cast<const D*>(operation)) {
-					if(dupOperation->operation != environment.stack.pop())
+				if(instanceof<const D*>(operation)) {
+					if(static_cast<const D*>(operation)->operation != environment.stack.pop())
 						throw DecompilationException("Illegal stack state after dup operation");
 					return true;
 				}
@@ -178,7 +176,7 @@ namespace jdecompiler {
 					return false;
 				else
 					return checkDup<Ds...>(environment, operation);
-		}
+			}
 
 
 			template<class D, class... Ds>
@@ -462,6 +460,11 @@ namespace jdecompiler {
 			CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers,
 					const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals);
 
+			CodeEnvironment(const CodeEnvironment&) = delete;
+
+			CodeEnvironment& operator=(const CodeEnvironment&) = delete;
+
+
 			void checkCurrentScope();
 
 			inline Scope* getCurrentScope() const {
@@ -476,17 +479,13 @@ namespace jdecompiler {
 				delete &stack;
 			}
 
-			CodeEnvironment(const CodeEnvironment&) = delete;
-
-			CodeEnvironment& operator=(const CodeEnvironment&) = delete;
-
 		protected:
 			template<typename Arg, typename... Args>
 			inline void print(ostream& out, Arg arg, Args... args) const {
 				if constexpr(sizeof...(Args) != 0)
 					print(out << arg, args...);
 				else
-					out << endl;
+					out << arg << endl;
 			}
 
 		public:
@@ -499,10 +498,10 @@ namespace jdecompiler {
 
 	struct Scope: Operation {
 		public:
-			const uint32_t from, to;
 			Scope *const parentScope;
 
 		protected:
+			uint32_t startPos, endPos;
 			vector<Variable*> variables;
 			vector<const Operation*> code;
 			map<const Variable*, string> varNames;
@@ -510,7 +509,17 @@ namespace jdecompiler {
 		public:
 			vector<Scope*> innerScopes;
 
-			Scope(uint32_t from, uint32_t to, Scope* parentScope): from(from), to(to), parentScope(parentScope) {}
+			Scope(uint32_t startPos, uint32_t endPos, Scope* parentScope): startPos(startPos), endPos(endPos), parentScope(parentScope) {}
+
+
+			inline uint32_t start() const {
+				return startPos;
+			}
+
+			inline uint32_t end() const {
+				return endPos;
+			}
+
 
 			virtual const Variable& getVariable(uint32_t index) const {
 				if(index >= variables.size() && parentScope == nullptr)
@@ -615,7 +624,7 @@ namespace jdecompiler {
 
 	struct MethodScope: Scope {
 		public:
-			MethodScope(uint32_t from, uint32_t to, uint16_t localsCount): Scope(from, to, nullptr) {
+			MethodScope(uint32_t startPos, uint32_t endPos, uint16_t localsCount): Scope(startPos, endPos, nullptr) {
 				variables.reserve(localsCount);
 			}
 	};
@@ -626,8 +635,8 @@ namespace jdecompiler {
 			bool fieldsInitialized = false;
 
 		public:
-			StaticInitializerScope(uint32_t from, uint32_t to, uint16_t localsCount):
-					MethodScope(from, to, localsCount) {}
+			StaticInitializerScope(uint32_t startPos, uint32_t endPos, uint16_t localsCount):
+					MethodScope(startPos, endPos, localsCount) {}
 
 			virtual void add(const Operation* operation, const CodeEnvironment& environment) override;
 

@@ -1,9 +1,7 @@
 #ifndef JDECOMPILER_ATTRIBUTES_CPP
 #define JDECOMPILER_ATTRIBUTES_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
+#include "types.cpp"
 
 namespace jdecompiler {
 
@@ -296,7 +294,7 @@ namespace jdecompiler {
 		virtual string toString(const ClassInfo& classinfo) const override {
 			string str;
 			for(const Annotation* annotation : annotations)
-				str += annotation->toString(classinfo) + '\n' + classinfo.getIndent();
+				str += classinfo.getIndent() + annotation->toString(classinfo) + '\n';
 			return str;
 		}
 	};

@@ -1,11 +1,12 @@
 #ifndef JDECOMPILER_H
 #define JDECOMPILER_H
 
-#define LOG(s) cout << "[ jdecompiler/" __FILE__ " ]: " << s << endl;
+#define LOG(s) cout << "[ jdecompiler/" __FILE__ " ]: " << s << endl
 
-#ifndef NO_FORCE_INLINE
-// For gcc
-#	ifdef __GNUC__
+#ifdef NO_INLINE
+#	define FORCE_INLINE
+#elif !defined(NO_FORCE_INLINE)
+#	ifdef __GNUC__ // For gcc
 #		define FORCE_INLINE inline __attribute__((always_inline))
 #	endif
 #else
@@ -25,6 +26,30 @@
 namespace jdecompiler {
 
 	using namespace std;
+
+
+	static const uint32_t CLASS_SIGNATURE = 0xCAFEBABE;
+
+	static const uint32_t
+			ACC_VISIBLE      = 0x0000, // class, field, method
+			ACC_PUBLIC       = 0x0001, // class, field, method
+			ACC_PRIVATE      = 0x0002, // class, field, method
+			ACC_PROTECTED    = 0x0004, // class, field, method
+			ACC_STATIC       = 0x0008, // nested class, field, method
+			ACC_FINAL        = 0x0010, // class, field, method
+			ACC_SYNCHRONIZED = 0x0020, // method, block
+			ACC_SUPER        = 0x0020, // class (deprecated)
+			ACC_VOLATILE     = 0x0040, // field
+			ACC_BRIDGE       = 0x0040, // method
+			ACC_TRANSIENT    = 0x0080, // field
+			ACC_VARARGS      = 0x0080, // args
+			ACC_NATIVE       = 0x0100, // method
+			ACC_INTERFACE    = 0x0200, // class
+			ACC_ABSTRACT     = 0x0400, // class, method
+			ACC_STRICT       = 0x0800, // class, non-abstract method
+			ACC_SYNTHETIC    = 0x1000, // method
+			ACC_ANNOTATION   = 0x2000, // class
+			ACC_ENUM         = 0x4000; // class
 
 
 	// jdecompiler-util

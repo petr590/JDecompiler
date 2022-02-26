@@ -1,9 +1,8 @@
 #ifndef JDECOMPILER_METHOD_CPP
 #define JDECOMPILER_METHOD_CPP
 
-#ifndef JDECOMPILER_MAIN_CPP
-#error required file "jdecompiler/main.cpp" for correct compilation
-#endif
+#include "code.cpp"
+#include "attributes.cpp"
 
 namespace jdecompiler {
 	struct MethodDescriptor {
@@ -92,7 +91,7 @@ namespace jdecompiler {
 
 				function<string(const Type*, uint32_t)> concater = [&environment, isNonStatic] (const Type* type, uint32_t i) {
 					return type->toString(environment.classinfo) + ' ' +
-							environment.getCurrentScope()->getNameFor(environment.methodScope.getVariable(i + isNonStatic));
+							environment.getCurrentScope()->getNameFor(environment.methodScope.getVariable(i + (uint32_t)isNonStatic));
 				};
 
 				if(environment.modifiers & ACC_VARARGS) {
@@ -138,7 +137,7 @@ namespace jdecompiler {
 	}
 
 
-	struct Method: Stringified {
+	struct Method: ClassElement {
 		public:
 			const uint16_t modifiers;
 			const MethodDescriptor& descriptor;
@@ -173,6 +172,8 @@ namespace jdecompiler {
 				if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
 					str += annotationsAttribute->toString(classinfo);
 
+				str += classinfo.getIndent();
+
 				if(descriptor.type == MethodType::STATIC_INITIALIZER) {
 					if(modifiers != ACC_STATIC)
 						throw IllegalModifiersException("0x" + hex<4>(modifiers) + ": static initializer must have only static modifier");
@@ -191,16 +192,18 @@ namespace jdecompiler {
 				}
 
 				return str + (codeAttribute == nullptr ? ";" : ' ' + scope.toString(environment));
+						//&environment.classinfo == &classinfo ? environment : CodeEnvironment(environment, classinfo))); // For anonymous classes
 			}
 
 			virtual bool canStringify(const ClassInfo& classinfo) const override {
 				return !((modifiers & (ACC_SYNTHETIC | ACC_BRIDGE)) ||
 						(descriptor.type == MethodType::STATIC_INITIALIZER && scope.isEmpty()) || // empty static {}
 
-						(descriptor.type == MethodType::CONSTRUCTOR && // constructor by default
-							((modifiers & ACC_PUBLIC) ||
-								((modifiers & ACC_PUBLIC) == ACC_VISIBLE && (classinfo.modifiers & ACC_PUBLIC) == ACC_VISIBLE)) &&
-							scope.isEmpty()) ||
+						(descriptor.type == MethodType::CONSTRUCTOR &&
+							(scope.isEmpty() && ((modifiers & ACC_PUBLIC) == ACC_PUBLIC ||
+								(modifiers & ACC_PUBLIC) == (classinfo.modifiers & ACC_PUBLIC)) || // constructor by default
+							classinfo.thisType.isAnonymous)) // anonymous class constructor
+						||
 
 						(classinfo.modifiers & ACC_ENUM && (
 							descriptor == MethodDescriptor(classinfo.thisType, "valueOf", &classinfo.thisType, {STRING}) || // Enum valueOf(String name)

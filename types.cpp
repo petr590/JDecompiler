@@ -16,6 +16,7 @@ namespace jdecompiler {
 		ZERO_BYTES, FOUR_BYTES, EIGHT_BYTES
 	};
 
+
 	static const char* TypeSize_nameOf(const TypeSize typeSize) {
 		switch(typeSize) {
 			case TypeSize::ZERO_BYTES: return "ZERO_BYTES";
@@ -27,7 +28,7 @@ namespace jdecompiler {
 
 	struct Type: Stringified {
 		protected:
-			Type() {}
+			constexpr Type() {}
 
 		public:
 			virtual string toString() const = 0;
@@ -62,22 +63,26 @@ namespace jdecompiler {
 			const T* castToNoexcept(const T* t) const {
 				static_assert(is_base_of<Type, T>::value, "template class T of function Type::castTo is not subclass of class Type");
 
-				const Type* castedType;
+				const Type* castedType = this->castToImpl(t);
 
-				if(castedType = this->castToImpl((const Type*)t))
+				if((castedType = this->castToImpl(t)) != nullptr)
 					return safe_cast<const T*>(castedType);
 
-				if(castedType = ((const Type*)t)->castToImpl(this))
+				if(this->canReverseCast(t) && (castedType = ((const Type*)t)->castToImpl(this)) != nullptr)
 					return safe_cast<const T*>(castedType);
 
 				return nullptr;
 			}
 
 			bool isInstanceof(const Type* type) const {
-			    return this->isInstanceofImpl(type) || type->isInstanceofImpl(this);
+			    return this->isInstanceofImpl(type) || (this->canReverseCast(type) && type->isInstanceofImpl(this));
 			}
 
 		protected:
+			virtual bool canReverseCast(const Type* other) const {
+				return true;
+			}
+
 			virtual bool isInstanceofImpl(const Type* type) const = 0;
 
 			virtual const Type* castToImpl(const Type* type) const = 0;
@@ -114,7 +119,7 @@ namespace jdecompiler {
 
 	struct SpecialType: Type {
 		protected:
-			SpecialType() {}
+			constexpr SpecialType() {}
 
 		public:
 			virtual bool isBasic() const override final {
@@ -128,25 +133,29 @@ namespace jdecompiler {
 		public:
 			PrimitiveType(const string& encodedName, const string& name): BasicType(encodedName, name) {}
 
-			virtual string toString() const override {
+			virtual string toString() const override final {
 				return name;
 			}
 
-			virtual bool isPrimitive() const override {
+			virtual bool isPrimitive() const override final {
 				return true;
 			}
 
-			virtual TypeSize getSize() const override {
+			virtual TypeSize getSize() const override final {
 				return size;
 			}
 
 		protected:
-			virtual bool isInstanceofImpl(const Type* type) const override {
-				return this == type;
+			virtual bool canReverseCast(const Type* other) const override final {
+				return other->isSpecial();
+			}
+
+			virtual bool isInstanceofImpl(const Type* other) const override {
+				return this == other;
 			}
 
 			virtual const Type* castToImpl(const Type* other) const override {
-				return *this == *other ? this : nullptr;
+				return this->isInstanceofImpl(other) ? other : nullptr;
 			}
 	};
 
@@ -176,9 +185,9 @@ namespace jdecompiler {
 	struct ClassType final: ReferenceType {
 		public:
 			string simpleName, fullSimpleName /* fullSimpleName is a class name including enclosing class name */, packageName;
-			const ClassType* enclosingClass;
 			vector<const ReferenceType*> parameters;
 
+			const ClassType* enclosingClass;
 			bool isAnonymous = false;
 
 			ClassType(const ClassConstant* clazz): ClassType(*clazz->name) {}
@@ -214,7 +223,7 @@ namespace jdecompiler {
 							encodedName = string(encodedName, 0, i);
 							goto ForEnd;
 						default:
-							throw InvalidClassNameException(name);
+							throw InvalidClassNameException(encodedName + ' ' + to_string(i));
 					}
 				}
 				ForEnd:
@@ -231,7 +240,7 @@ namespace jdecompiler {
 					fullSimpleName = simpleName;
 				} else {
 					isAnonymous = all_of(simpleName.begin(), simpleName.end(), [] (unsigned char c) { return isdigit(c); });
-					enclosingClass = new ClassType(string(name, 0, enclosingClassNameEndPos));
+					enclosingClass = new ClassType(string(encodedName, 0, enclosingClassNameEndPos));
 					fullSimpleName = enclosingClass->fullSimpleName + (isAnonymous ? '$' : '.') + simpleName;
 				}
 			}
@@ -332,6 +341,38 @@ namespace jdecompiler {
 	};
 
 
+	/*static constexpr const PrimitiveType<TypeSize::ZERO_BYTES>
+			VOID_TYPE("V", "void");
+
+	static constexpr const PrimitiveType<TypeSize::FOUR_BYTES>
+			BYTE_TYPE("B", "byte"),
+			CHAR_TYPE("C", "char"),
+			SHORT_TYPE("S", "short"),
+			INT_TYPE("I", "int"),
+			FLOAT_TYPE("F", "float"),
+			BOOLEAN_TYPE("Z", "boolean");
+
+	static constexpr const PrimitiveType<TypeSize::EIGHT_BYTES>
+			LONG_TYPE("J", "long"),
+			DOUBLE_TYPE("D", "double");
+
+
+	static constexpr const PrimitiveType<TypeSize::ZERO_BYTES>
+			*const VOID = &VOID_TYPE;
+
+	static constexpr const PrimitiveType<TypeSize::FOUR_BYTES>
+			*const BYTE = &BYTE_TYPE,
+			*const CHAR = &CHAR_TYPE,
+			*const SHORT = &SHORT_TYPE,
+			*const INT = &INT_TYPE,
+			*const FLOAT = &FLOAT_TYPE,
+			*const BOOLEAN = &BOOLEAN_TYPE;
+
+	static constexpr const PrimitiveType<TypeSize::EIGHT_BYTES>
+			*const LONG = &LONG_TYPE,
+			*const DOUBLE = &DOUBLE_TYPE;*/
+
+
 	static const PrimitiveType<TypeSize::ZERO_BYTES>
 			*const VOID = new PrimitiveType<TypeSize::ZERO_BYTES>("V", "void");
 
@@ -346,6 +387,13 @@ namespace jdecompiler {
 	static const PrimitiveType<TypeSize::EIGHT_BYTES>
 			*const LONG = new PrimitiveType<TypeSize::EIGHT_BYTES>("J", "long"),
 			*const DOUBLE = new PrimitiveType<TypeSize::EIGHT_BYTES>("D", "double");
+
+
+	template<>
+	bool PrimitiveType<TypeSize::FOUR_BYTES>::isInstanceofImpl(const Type* other) const {
+		return this == other || (other == INT && (this == BYTE || this == CHAR || this == SHORT)) || // allow cast byte, char and short to int
+				((other == SHORT || other == CHAR) && this == BYTE); // allow cast byte to char and short
+	}
 
 
 	static const ClassType
@@ -412,13 +460,14 @@ namespace jdecompiler {
 				if(*this == *other)
 					return true;
 
-				for(const Type* type : types)
-					if(*type == *other)
-						return true;
+				if(other->isBasic())
+					for(const BasicType* type : types)
+						if(type->isInstanceof(other))
+							return true;
 
-				if(const AmbigousType* ambigousType = dynamic_cast<const AmbigousType*>(other)) {
+				if(instanceof<const AmbigousType*>(other)) {
 					for(const Type* type1 : types)
-						for(const Type* type2 : ambigousType->types)
+						for(const Type* type2 : static_cast<const AmbigousType*>(other)->types)
 							if(*type1 == *type2)
 								return true;
 				}
@@ -431,9 +480,10 @@ namespace jdecompiler {
 				if(*this == *other)
 					return this;
 
-				for(const Type* type : types)
-					if(const Type* castedType = type->castToNoexcept(other))
-						return castedType;
+				if(other->isBasic())
+					for(const BasicType* type : types)
+						if(const Type* castedType = type->castToNoexcept(other))
+							return castedType;
 
 				if(instanceof<const AmbigousType*>(other)) {
 					vector<const BasicType*> newTypes;
@@ -530,7 +580,7 @@ namespace jdecompiler {
 			}
 
 			virtual bool isInstanceofImpl(const Type* other) const override {
-				return *this == *other || (other->isBasic() && !other->isPrimitive());
+				return this == other || (other->isBasic() && !other->isPrimitive());
 			}
 
 		protected:

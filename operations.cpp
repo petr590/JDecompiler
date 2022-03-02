@@ -208,7 +208,9 @@ namespace operations {
 			public:
 				const T value;
 
-				ConstOperation(const Type* returnType, T value): returnType(returnType), value(value) {}
+				ConstOperation(const Type* returnType, const T value): returnType(returnType), value(value) {}
+
+				ConstOperation(const T value): returnType(BasicTypeOf<T>::value), value(value) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return primitiveToString(value);
@@ -252,40 +254,11 @@ namespace operations {
 				}
 		};
 
-		struct LConstOperation: ConstOperation<int64_t> {
-			LConstOperation(int64_t value): ConstOperation(LONG, value) {}
-		};
+		using LConstOperation = ConstOperation<int64_t>;
 
-		struct FConstOperation: ConstOperation<float> {
-			FConstOperation(float value): ConstOperation(FLOAT, value) {}
-		};
+		using FConstOperation = ConstOperation<float>;
 
-		struct DConstOperation: ConstOperation<double> {
-			DConstOperation(double value): ConstOperation(DOUBLE, value) {}
-		};
-
-		template<typename T>
-		struct IPushOperation: TransientReturnableOperation {
-			static_assert(is_same<T, int8_t>::value || is_same<T, int16_t>::value, "template type T of struct IPushOperation is not uint8_t or uint16_t type");
-
-			public:
-				const T value;
-
-				IPushOperation(T value): TransientReturnableOperation(ANY_INT_OR_BOOLEAN), value(value) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					if(returnType->isInstanceof(BOOLEAN)) return primitiveToString((bool)value);
-					if(returnType->isInstanceof(BYTE))    return primitiveToString((int8_t)value);
-					if(returnType->isInstanceof(CHAR))    return primitiveToString((char16_t)value);
-					if(returnType->isInstanceof(SHORT))   return primitiveToString((int16_t)value);
-					if(returnType->isInstanceof(INT))     return primitiveToString((int32_t)value);
-					throw IllegalStateException("Illegal type of ipush operation: " + returnType->toString());
-				}
-
-				virtual void onCastReturnType(const Type* newType) const override {
-					returnType = newType;
-				}
-		};
+		using DConstOperation = ConstOperation<double>;
 
 
 		template<TypeSize size>
@@ -331,6 +304,7 @@ namespace operations {
 			public:
 				const uint16_t index;
 				const Variable& variable;
+				//const Type* t = PrimitiveByType<int32_t>::value;
 
 			protected:
 				LoadOperation(const Type* returnType, uint16_t index, const Variable& variable):
@@ -427,7 +401,7 @@ namespace operations {
 						value(environment.stack.popAs(requiredType)), index(index), variable(environment.getCurrentScope()->getVariable(index)) {
 
 					initReturnType<DupOperation<TypeSize::FOUR_BYTES>>(environment, value);
-					variable.type = variable.type->castTo(requiredType->castTo(value->getReturnType()));
+					variable.type = variable.type->castTo(value->getReturnType()->castTo(requiredType));
 				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
@@ -482,7 +456,7 @@ namespace operations {
 
 		struct OperatorOperation: ReturnableOperation<> {
 			public:
-				const string operation;
+				const char* const operation;
 
 				OperatorOperation(const Type* type, char32_t operation, uint16_t priority):
 						ReturnableOperation(type, priority), operation(char32ToString(operation)) {}
@@ -685,6 +659,7 @@ namespace operations {
 
 			CompareBinaryOperation(const CmpOperation* cmpOperation, const CompareType& compareType):
 					CompareOperation(compareType), operand2(cmpOperation->operand2), operand1(cmpOperation->operand1) {
+				operand1->castReturnTypeTo(compareType.getRequiredType());
 				operand2->castReturnTypeTo(compareType.getRequiredType());
 			}
 
@@ -1475,7 +1450,7 @@ namespace operations {
 					const uint16_t dimensions = arrayType->nestingLevel;
 					lengths.reserve(dimensions);
 					for(uint16_t i = 0; i < dimensions; i++)
-						lengths.push_back(environment.stack.pop());
+						lengths.push_back(environment.stack.popAs(INT));
 				}
 
 				NewArrayOperation(const CodeEnvironment& environment, const Type* memberType, uint16_t dimensions = 1):
@@ -1487,9 +1462,11 @@ namespace operations {
 				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					if(initializer.empty())
-						return "new " + arrayType->memberType->toString(environment.classinfo) +
-								rjoin<const Operation*>(lengths, [&environment] (auto length) { return '[' + length->toString(environment) + ']'; }, EMPTY_STRING);
+					if(initializer.empty()) {
+						return "new " + arrayType->memberType->toString(environment.classinfo) + rjoin<const Operation*>(lengths,
+								[&environment] (auto length) { return '[' + length->toString(environment) + ']'; }, EMPTY_STRING);
+					}
+
 					return "new " + arrayType->toString(environment.classinfo) + ' ' + toArrayInitString(environment);
 				}
 

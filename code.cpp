@@ -13,6 +13,7 @@ namespace jdecompiler {
 	struct Variable {
 		protected:
 			static string getRawNameByType(const Type* type, bool& unchecked) {
+
 				if(type->isPrimitive()) {
 					if(type->isInstanceof(BOOLEAN)) return "bool";
 					if(type->isInstanceof(BYTE)) return "b";
@@ -125,6 +126,32 @@ namespace jdecompiler {
 
 
 	enum class Associativity { LEFT, RIGHT };
+
+	/* Serves as a marker for the struct BasicTypeOf */
+	struct Object {
+		private: Object() {}
+	};
+
+	template<typename T>
+	struct BasicTypeOf {
+		static_assert(is_one_of<T, bool, int32_t, int64_t, float, double, Object>::value, "illegal basic type");
+
+		static const Type* const value;
+	};
+
+	template<> struct BasicTypeOf<bool>    { static const Type* const value; };
+	template<> struct BasicTypeOf<int32_t> { static const Type* const value; };
+	template<> struct BasicTypeOf<int64_t> { static const Type* const value; };
+	template<> struct BasicTypeOf<float>   { static const Type* const value; };
+	template<> struct BasicTypeOf<double>  { static const Type* const value; };
+	template<> struct BasicTypeOf<Object>  { static const Type* const value; };
+
+	const Type* const BasicTypeOf<bool>::value = BOOLEAN;
+	const Type* const BasicTypeOf<int32_t>::value = ANY_INT_OR_BOOLEAN;
+	const Type* const BasicTypeOf<int64_t>::value = LONG;
+	const Type* const BasicTypeOf<float>::value = FLOAT;
+	const Type* const BasicTypeOf<double>::value = DOUBLE;
+	const Type* const BasicTypeOf<Object>::value = AnyObjectType::getInstance();
 
 
 	struct Operation {
@@ -543,16 +570,18 @@ namespace jdecompiler {
 			}
 
 			string getNameFor(const Variable* var) {
-				auto findResult = varNames.find(var);
-				if(findResult != varNames.end())
-					return findResult->second;
+				const auto varName = varNames.find(var);
+				if(varName != varNames.end()) {
+					return varName->second;
+				}
 
 				const string baseName = var->getName();
 				string name = baseName;
 				unsigned int i = 1;
 
-				while(find_if(varNames.begin(), varNames.end(), [&name] (const auto& it) { return it.second == name; }) != varNames.end())
+				while(find_if(varNames.begin(), varNames.end(), [&name] (const auto& it) { return it.second == name; }) != varNames.end()) {
 					name = baseName + to_string(++i);
+				}
 
 				varNames[var] = name;
 

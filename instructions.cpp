@@ -88,7 +88,7 @@ namespace jdecompiler {
 
 				IPushInstruction(T value): value(value) {}
 
-				virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new IPushOperation<T>(value); }
+				virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new IConstOperation(value); }
 		};
 
 		using BIPushInstruction = IPushInstruction<int8_t>;
@@ -350,11 +350,11 @@ namespace jdecompiler {
 
 		using NegOperatorInstruction = UnaryOperatorInstruction<'-', 13>;
 
-		using ShiftLeftOperatorInstruction = ShiftOperatorInstruction<'<<', 10>;
+		using ShiftLeftOperatorInstruction = ShiftOperatorInstruction<"<<"_c32, 10>;
 
-		using ShiftRightOperatorInstruction = ShiftOperatorInstruction<'>>', 10>;
+		using ShiftRightOperatorInstruction = ShiftOperatorInstruction<">>"_c32, 10>;
 
-		using UShiftRightOperatorInstruction = ShiftOperatorInstruction<'>>>', 10>;
+		using UShiftRightOperatorInstruction = ShiftOperatorInstruction<">>>"_c32, 10>;
 
 		using AndOperatorInstruction = BinaryOperatorInstruction<'&', 7>;
 

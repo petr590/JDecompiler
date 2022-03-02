@@ -323,14 +323,35 @@ namespace jdecompiler {
 	}
 
 
-	static string char32ToString(char32_t ch) {
+	struct IllegalLiteralException: Exception {
+		IllegalLiteralException(): Exception() {}
+		IllegalLiteralException(const char* message): Exception(message) {}
+		IllegalLiteralException(const string& message): Exception(message) {}
+	};
+
+
+	static constexpr char32_t operator"" _c32(const char* const str, size_t length) {
+		char32_t c = 0;
+
+		if(length > 4)
+			throw IllegalLiteralException((string)"char32_t literal '" + str + "' too long");
+
+		for(size_t i = 0; i < length; i++) {
+			c = (c << 8) | str[i];
+		}
+
+		return c;
+	}
+
+
+	static const char* char32ToString(char32_t ch) {
 		if(ch >> 24)
-			return { (char)(ch >> 24), (char)(ch >> 16), (char)(ch >> 8), (char)ch };
+			return new char[5] { (char)(ch >> 24), (char)(ch >> 16), (char)(ch >> 8), (char)ch, '\0' };
 		if(ch >> 16)
-			return { (char)(ch >> 16), (char)(ch >>  8), (char)ch };
+			return new char[4] { (char)(ch >> 16), (char)(ch >>  8), (char)ch, '\0' };
 		if(ch >> 8)
-			return { (char)(ch >>  8), (char)ch };
-		return { (char)ch };
+			return new char[3] { (char)(ch >>  8), (char)ch, '\0' };
+		return new char[2] { (char)ch, '\0' };
 	}
 
 
@@ -519,6 +540,7 @@ namespace jdecompiler {
 		if(isnan(num)) return "Float.NaN";
 		if(!isfinite(num)) return num > 0 ? "Float.POSITIVE_INFINITY" : "Float.NEGATIVE_INFINITY";
 		ostringstream out;
+		out.precision(9);
 		out << num << 'f';
 		return out.str();
 	}
@@ -527,6 +549,7 @@ namespace jdecompiler {
 		if(isnan(num)) return "Double.NaN";
 		if(!isfinite(num)) return num > 0 ? "Double.POSITIVE_INFINITY" : "Double.NEGATIVE_INFINITY";
 		ostringstream out;
+		out.precision(17);
 		out << num;
 		return out.str();
 	}
@@ -569,6 +592,16 @@ namespace jdecompiler {
 
 		#undef checkLength
 	}
+
+	template <typename...>
+	struct is_one_of {
+		static constexpr bool value = false;
+	};
+
+	template <typename F, typename S, typename... T>
+	struct is_one_of<F, S, T...> {
+		static constexpr bool value = is_same<F, S>::value || is_one_of<F, T...>::value;
+	};
 }
 
 #endif

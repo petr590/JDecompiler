@@ -38,7 +38,7 @@ namespace jdecompiler {
 				if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
 					str += annotationsAttribute->toString(classinfo);
 
-				return str + (string)(modifiersToString(modifiers) + descriptor.type.toString(classinfo)) + ' ' + descriptor.name +
+				return str + classinfo.getIndent() + (string)(modifiersToString(modifiers) + descriptor.type.toString(classinfo)) + ' ' + descriptor.name +
 						(constantValueAttribute != nullptr ? " = " + constantValueAttribute->toString(classinfo) :
 						initializer != nullptr ? " = " + initializer->toString(*environment) : EMPTY_STRING);
 			}

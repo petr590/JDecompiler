@@ -132,7 +132,7 @@ namespace jdecompiler {
 
 				for(const Field* field : fields) {
 					if(field->canStringify(classinfo)) {
-						str += (string)"\n" + classinfo.getIndent() + field->toString(classinfo) + ';';
+						str += (string)"\n" + field->toString(classinfo) + ';';
 						anyFieldStringified = true;
 					}
 				}

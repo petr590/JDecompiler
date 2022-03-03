@@ -187,6 +187,7 @@ namespace jdecompiler {
 			virtual void onCastReturnType(const Type* newType) const {}
 
 
+		public:
 			template<class O>
 			static inline O castOperationTo(const Operation* operation);
 

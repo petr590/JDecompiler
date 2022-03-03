@@ -455,6 +455,35 @@ namespace jdecompiler {
 			const int32_t offset;
 
 			IfInstruction(const int32_t offset): offset(offset) {}
+
+			virtual const Operation* toOperation(const CodeEnvironment& environment) const override final {
+				Scope* currentScope = environment.getCurrentScope();
+
+				const uint32_t index = environment.bytecode.posToIndex(environment.pos + offset);
+
+				if(IfScope* ifScope = dynamic_cast<IfScope*>(currentScope)) {
+					//LOG(offset << ' ' << index << ' ' << ifScope->end() << ' ' << environment.index);
+					if(offset > 0 && index - 1 == ifScope->end()) {
+						ifScope->condition->invert();
+						ifScope->condition = new AndOperation(ifScope->condition, getCondition(environment));
+
+						ifScope->setEnd(index);
+						return nullptr;
+					}
+
+					if(offset > 0 && environment.index == ifScope->end()) {
+						ifScope->condition->invert();
+						ifScope->condition = new OrOperation(ifScope->condition, getCondition(environment));
+
+						ifScope->setEnd(index);
+						return nullptr;
+					}
+				}
+
+				return new IfScope(environment, offset, getCondition(environment));
+			}
+
+			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const = 0;
 		};
 
 		struct IfCmpInstruction: IfInstruction {
@@ -462,8 +491,11 @@ namespace jdecompiler {
 
 			IfCmpInstruction(const int32_t offset, const CompareType& compareType): IfInstruction(offset), compareType(compareType) {}
 
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				return new IfCmpScope(environment, offset, compareType);
+			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
+				const Operation* operation = environment.stack.pop();
+				if(const CmpOperation* cmpOperation = Operation::castOperationTo<const CmpOperation*>(operation))
+					return new CompareBinaryOperation(cmpOperation, compareType);
+				return new CompareWithZeroOperation(operation, compareType);
 			}
 		};
 
@@ -496,9 +528,8 @@ namespace jdecompiler {
 		struct IfICmpInstruction: IfCmpInstruction {
 			IfICmpInstruction(int32_t offset, const CompareType& compareType): IfCmpInstruction(offset, compareType) {}
 
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				environment.stack.push(new ICmpOperation(environment));
-				return new IfCmpScope(environment, offset, compareType);
+			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
+				return new CompareBinaryOperation(environment, INT, compareType);
 			}
 		};
 
@@ -531,9 +562,8 @@ namespace jdecompiler {
 		struct IfACmpInstruction: IfCmpInstruction {
 			IfACmpInstruction(int32_t offset, const EqualsCompareType& compareType): IfCmpInstruction(offset, compareType) {}
 
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				environment.stack.push(new ACmpOperation(environment));
-				return new IfCmpScope(environment, offset, compareType);
+			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
+				return new CompareBinaryOperation(environment, AnyObjectType::getInstance(), compareType);
 			}
 		};
 
@@ -547,18 +577,37 @@ namespace jdecompiler {
 		};
 
 
+		struct IfNullInstruction: IfInstruction {
+			IfNullInstruction(const int32_t offset): IfInstruction(offset) {}
+
+			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
+				return new CompareWithNullOperation(environment, CompareType::EQUALS);
+			}
+		};
+
+		struct IfNonNullInstruction: IfInstruction {
+			IfNonNullInstruction(const int32_t offset): IfInstruction(offset) {}
+
+			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
+				return new CompareWithNullOperation(environment, CompareType::NOT_EQUALS);
+			}
+		};
+
+
 		struct GotoInstruction: Instruction {
 			const int32_t offset;
 
 			GotoInstruction(int32_t offset): offset(offset) {}
 
 
-			virtual inline const Operation* toOperation(const CodeEnvironment& environment) const override {
+			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
 				if(offset == 0) return new EmptyInfiniteLoopScope(environment);
 
 				const uint32_t index = environment.bytecode.posToIndex(environment.pos + offset);
 
 				const Scope* const currentScope = environment.getCurrentScope();
+
+				LOG(typeid(*currentScope).name());
 
 				if(const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope)) {
 					// Here goto instruction creates else scope
@@ -880,19 +929,6 @@ namespace jdecompiler {
 			public: MultiANewArrayInstruction(uint16_t index, uint16_t dimensions): InstructionWithIndex(index), dimensions(dimensions) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new MultiANewArrayOperation(environment, index, dimensions); }
-		};
-
-
-		struct IfNullInstruction: IfInstruction {
-			IfNullInstruction(const int32_t offset): IfInstruction(offset) {}
-
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new IfNullScope(environment, offset); }
-		};
-
-		struct IfNonNullInstruction: IfInstruction {
-			IfNonNullInstruction(const int32_t offset): IfInstruction(offset) {}
-
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new IfNonNullScope(environment, offset); }
 		};
 
 

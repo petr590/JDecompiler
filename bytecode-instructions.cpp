@@ -221,8 +221,8 @@ namespace jdecompiler {
 				default: throw IllegalOpcodeException("Illegal wide opcode: 0x" + hex(current()));
 			}
 			case 0xC5: return new MultiANewArrayInstruction(nextUShort(), nextUByte());
-			case 0xC6: return new IfNonNullInstruction(nextShort());
-			case 0xC7: return new IfNullInstruction(nextShort());
+			case 0xC6: return new IfNullInstruction(nextShort());
+			case 0xC7: return new IfNonNullInstruction(nextShort());
 			case 0xC8: return new GotoInstruction(nextInt());
 			/*case 0xC9: i+=4; return "JSR_W";
 			case 0xCA: return "BREAKPOINT";
@@ -250,9 +250,19 @@ namespace jdecompiler {
 		if(!(modifiers & ACC_STATIC))
 			methodScope->addVariable(new NamedVariable(&classinfo.thisType, "this"));
 
-		const uint32_t argumentsCount = descriptor.arguments.size();
-		for(uint32_t i = 0; i < argumentsCount; i++)
-			methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i]));
+		{ // add variables
+			const uint32_t argumentsCount = descriptor.arguments.size();
+
+			static const ArrayType STRING_ARRAY(STRING);
+
+			if(descriptor.name == "main" && descriptor.returnType == VOID && modifiers == (ACC_PUBLIC | ACC_STATIC) &&
+					argumentsCount == 1 && *descriptor.arguments[0] == STRING_ARRAY) {
+				methodScope->addVariable(new NamedVariable(&STRING_ARRAY, "args"));
+			}
+
+			for(uint32_t i = 0; i < argumentsCount; i++)
+				methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i]));
+		}
 
 		if(!hasCodeAttribute)
 			return *new CodeEnvironment(*new Bytecode(0, (const uint8_t*)""), classinfo, methodScope, modifiers, descriptor, attributes, 0);

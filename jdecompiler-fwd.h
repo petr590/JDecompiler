@@ -171,331 +171,253 @@ namespace jdecompiler {
 
 	struct CodeEnvironment;
 
-
-	// jdecompiler-operations
-
-	/*struct ReturnableOperation;
-
-	struct VoidOperation;
-
-	struct ConstOperation;
-
-	struct NumberConstOperation;
-
-	struct IConstOperation;
-
-	struct LConstOperation;
-
-	struct FConstOperation;
-
-	struct DConstOperation;
-
-	struct IPushOperation;
-
-	struct BIPushOperation;
-
-	struct SIPushOperation;
-
-	struct AbstractLdcOperation;
-
-	struct LdcOperation;
-
-	struct Ldc2Operation;
-
-	struct LoadOperation;
-
-	struct ILoadOperation;
-
-	struct LLoadOperation;
-
-	struct FLoadOperation;
-
-	struct DLoadOperation;
-
-	struct ALoadOperation;
-
-	struct ArrayLoadOperation;
-
-	struct IALoadOperation;
-
-	struct LALoadOperation;
-
-	struct FALoadOperation;
-
-	struct DALoadOperation;
-
-	struct AALoadOperation;
-
-	struct BALoadOperation;
-
-	struct CALoadOperation;
-
-	struct SALoadOperation;
-
-	struct StoreOperation;
-
-	struct IStoreOperation;
-
-	struct LStoreOperation;
-
-	struct FStoreOperation;
-
-	struct DStoreOperation;
-
-	struct AStoreOperation;
-
-	struct ArrayStoreOperation;
-
-	struct IAStoreOperation;
-
-	struct LAStoreOperation;
-
-	struct FAStoreOperation;
-
-	struct DAStoreOperation;
-
-	struct AAStoreOperation;
-
-	struct BAStoreOperation;
-
-	struct CAStoreOperation;
-
-	struct SAStoreOperation;
-
-	struct PopOperation;
-
-	struct DupOperation;
-
-	struct SwapOperation;
-
-	struct BinaryOperatorOperation;
-
-	struct UnaryOperatorOperation;
-
-	struct IIncOperation;
-
-	struct CastOperation;
-
-	struct LCpmOperation;
-
-	struct IfScope;
-
-	struct IfCmpScope;
-
-	struct IfIEqScope;
-
-	struct IfINotEqScope;
-
-	struct IfIGtScope;
-
-	struct IfIGeScope;
-
-	struct IfILtScope;
-
-	struct IfILeScope;
-
-	struct IfAEqScope;
-
-	struct IfANotEqScope;
-
-	struct ReturnOperation;
-
-	struct GetstaticOperation;
-
-	struct PutstaticOperation;
-
-	struct GetfieldOperation;
-
-	struct PutfieldOperation;
-
-	struct InvokeOperation;
-
-	struct InvokestaticOperation;
-
-	struct NewOperation;
-
-	struct NewArrayOperation;
-
-	struct ANewArrayOperation;
-
-	struct ArrayLengthOperation;
-
-	struct AThrowOperation;
-
-	struct CheckCastOperation;
-
-	struct InstanceofOperation;
-
-	struct MultiANewArrayOperation;*/
-
-
-	// jdecompiler-instructions
-
-	/*struct InstructionWithIndex;
-
-	struct InstructionAndOperation;
-
-	struct VoidInstructionAndOperation;
-
-	struct Nop;
-
-	struct AConstNull;
-
-	struct NumberConstInstruction;
-
-	struct IConstInstruction;
-
-	struct LConstInstruction;
-
-	struct FConstInstruction;
-
-	struct DConstInstruction;
-
-	struct IPushInstruction;
-
-	struct BIPushInstruction;
-
-	struct SIPushInstruction;
-
-	struct AbstractLdcInstruction;
-
-	struct LdcInstruction;
-
-	struct Ldc2Instruction;
-
-	struct LoadInstruction;
-
-	struct ILoadInstruction;
-
-	struct LLoadInstruction;
-
-	struct FLoadInstruction;
-
-	struct DLoadInstruction;
-
-	struct ALoadInstruction;
-
-	struct ArrayLoadInstruction;
-
-	struct IALoadInstruction;
-
-	struct LALoadInstruction;
-
-	struct FALoadInstruction;
-
-	struct DALoadInstruction;
-
-	struct AALoadInstruction;
-
-	struct BALoadInstruction;
-
-	struct CALoadInstruction;
-
-	struct SALoadInstruction;
-
-	struct StoreInstruction;
-
-	struct IStoreInstruction;
-
-	struct LStoreInstruction;
-
-	struct FStoreInstruction;
-
-	struct DStoreInstruction;
-
-	struct AStoreInstruction;
-
-	struct ArrayStoreInstruction;
-
-	struct IAStoreInstruction;
-
-	struct LAStoreInstruction;
-
-	struct FAStoreInstruction;
-
-	struct DAStoreInstruction;
-
-	struct AAStoreInstruction;
-
-	struct BAStoreInstruction;
-
-	struct CAStoreInstruction;
-
-	struct SAStoreInstruction;
-
-	struct PopInstruction;
-
-	struct DupInstruction;
-
-	struct SwapInstruction;
-
-	static Type* getTypeByCode(uint16_t code);
-
-	struct OperatorInstruction;
-
-	struct BinaryOperatorInstruction;
-
-	struct UnaryOperatorInstruction;
-
-	struct IIncInstruction;
-
-	struct CastInstruction;
-
-	struct LCpmInstruction;
-
-	struct IfInstruction;
-
-	struct IfIEqInstruction;
-
-	struct IfINotEqInstruction;
-
-	struct IfIGtInstruction;
-
-	struct IfIGeInstruction;
-
-	struct IfILtInstruction;
-
-	struct IfILeInstruction;
-
-	struct IfAEqInstruction;
-
-	struct IfANotEqInstruction;
-
-	struct Goto;
-
-	struct ReturnInstruction;
-
-	struct VReturn;
-
-	struct GetstaticInstruction;
-
-	struct PutstaticInstruction;
-
-	struct GetfieldInstruction;
-
-	struct PutfieldInstruction;
-
-	struct InvokeInstruction;
-
-	struct InvokestaticInstruction;
-
-	struct NewInstruction;
-
-	static const PrimitiveType* getArrayTypeByCode(uint8_t code);
-
-	struct NewArrayInstruction;
-
-	struct ANewArrayInstruction;
-
-	struct ArrayLengthInstruction;
-
-	struct AThrowInstruction;
-
-	struct CheckCastInstruction;
-
-	struct InstanceofInstruction;
-
-	struct MultiANewArrayInstruction;*/
+	// types.cpp
+
+	enum class TypeSize;
+
+	struct Type;
+
+
+	// operations.cpp
+
+	namespace operations {
+		template<class T>
+		struct ReturnableOperation; // ReturnableOperation is an operation which returns specified type
+		struct IntOperation;
+		struct AnyIntOperation;
+		struct BooleanOperation;
+		struct VoidOperation;
+		struct TransientReturnableOperation;
+
+		template<TypeSize size>
+		struct TypeSizeTemplatedOperation;
+		template<TypeSize size>
+		struct AbstractDupOperation;
+		template<TypeSize size>
+		struct DupOperation;
+		struct DupX1Operation;
+		struct DupX2Operation;
+		struct Dup2X1Operation;
+		struct Dup2X2Operation;
+		template<typename T>
+		struct ConstOperation;
+		struct IConstOperation;
+		template<TypeSize size>
+		struct LdcOperation;
+		struct LoadOperation;
+		struct ILoadOperation;
+		struct LLoadOperation;
+		struct FLoadOperation;
+		struct DLoadOperation;
+		struct ALoadOperation;
+		struct ArrayLoadOperation;
+		struct IALoadOperation;
+		struct LALoadOperation;
+		struct FALoadOperation;
+		struct DALoadOperation;
+		struct AALoadOperation;
+		struct BALoadOperation;
+		struct CALoadOperation;
+		struct SALoadOperation;
+		struct StoreOperation;
+		struct IStoreOperation;
+		struct LStoreOperation;
+		struct FStoreOperation;
+		struct DStoreOperation;
+		struct AStoreOperation;
+
+		template<TypeSize size>
+		struct PopOperation;
+		//template<TypeSize size>
+		struct SwapOperation;
+
+		struct OperatorOperation;
+		struct BinaryOperatorOperation;
+		struct UnaryOperatorOperation;
+
+		struct IIncOperation;
+
+		template<bool required>
+		struct CastOperation;
+
+		struct CmpOperation;
+		struct ICmpOperation;
+		struct LCmpOperation;
+		struct FCmpOperation;
+		struct DCmpOperation;
+		struct ACmpOperation;
+		struct CompareType;
+		struct EqualsCompareType;
+		struct CompareType;
+		struct EqualsCompareType;
+		struct ConditionOperation;
+		struct CompareBinaryOperation;
+		struct CompareWithZeroOperation;
+		struct CompareWithNullOperation;
+		struct TernaryOperatorOperation;
+		struct IfScope;
+		struct ElseScope;
+		struct ContinueOperation;
+		struct EmptyInfiniteLoopScope;
+		struct SwitchScope;
+		struct CatchScopeDataHolder;
+		struct TryScope;
+		struct CatchScope;
+		struct ReturnOperation;
+		struct IReturnOperation;
+		struct LReturnOperation;
+		struct FReturnOperation;
+		struct DReturnOperation;
+		struct AReturnOperation;
+		struct FieldOperation;
+		struct PutFieldOperation;
+		struct PutStaticFieldOperation;
+		struct PutInstanceFieldOperation;
+		struct GetFieldOperation;
+		struct GetStaticFieldOperation;
+		struct GetInstanceFieldOperation;
+		struct NewOperation;
+		struct InvokeOperation;
+		struct InvokeNonStaticOperation;
+		struct InvokevirtualOperation;
+		struct InvokespecialOperation;
+		struct InvokestaticOperation;
+		struct InvokeinterfaceOperation;
+		struct ConcatStringsOperation;
+		struct ArrayStoreOperation;
+		struct NewArrayOperation;
+		struct ANewArrayOperation;
+		struct MultiANewArrayOperation;
+		struct IAStoreOperation;
+		struct LAStoreOperation;
+		struct FAStoreOperation;
+		struct DAStoreOperation;
+		struct AAStoreOperation;
+		struct BAStoreOperation;
+		struct CAStoreOperation;
+		struct SAStoreOperation;
+		struct ArrayLengthOperation;
+		struct AThrowOperation;
+		struct CheckCastOperation;
+		struct InstanceofOperation;
+	}
+
+
+	// instructions.cpp
+
+	namespace instructions {
+		struct InstructionWithIndex;
+		struct InstructionAndOperation;
+		struct VoidInstructionAndOperation;
+		struct AConstNull;
+		template<typename T>
+		struct NumberConstInstruction;
+		struct IConstInstruction;
+		struct LConstInstruction;
+		struct FConstInstruction;
+		struct DConstInstruction;
+		template<typename T>
+		struct IPushInstruction;
+		template<TypeSize size>
+		struct LdcInstruction;
+		struct LoadInstruction;
+		struct ILoadInstruction;
+		struct LLoadInstruction;
+		struct FLoadInstruction;
+		struct DLoadInstruction;
+		struct ALoadInstruction;
+		struct ArrayLoadInstruction;
+		struct IALoadInstruction;
+		struct LALoadInstruction;
+		struct FALoadInstruction;
+		struct DALoadInstruction;
+		struct AALoadInstruction;
+		struct BALoadInstruction;
+		struct CALoadInstruction;
+		struct SALoadInstruction;
+		struct StoreInstruction;
+		struct IStoreInstruction;
+		struct LStoreInstruction;
+		struct FStoreInstruction;
+		struct DStoreInstruction;
+		struct AStoreInstruction;
+		struct ArrayStoreInstruction;
+		struct IAStoreInstruction;
+		struct LAStoreInstruction;
+		struct FAStoreInstruction;
+		struct DAStoreInstruction;
+		struct AAStoreInstruction;
+		struct BAStoreInstruction;
+		struct CAStoreInstruction;
+		struct SAStoreInstruction;
+
+		template<TypeSize size>
+		struct PopInstruction;
+		template<TypeSize size>
+		struct DupInstruction;
+		struct DupX1Instruction;
+		struct DupX2Instruction;
+		struct Dup2X1Instruction;
+		struct Dup2X2Instruction;
+		struct SwapInstruction;
+		template<char32_t operation, uint16_t priority>
+		struct OperatorInstruction;
+		template<char32_t operation, uint16_t priority>
+		struct BinaryOperatorInstruction;
+		template<char32_t operation, uint16_t priority>
+		struct ShiftOperatorInstruction;
+		template<char32_t operation, uint16_t priority>
+		struct UnaryOperatorInstruction;
+		struct IIncInstruction;
+		template<bool required>
+		struct CastInstruction;
+		struct LCmpInstruction;
+		struct FCmpInstruction;
+		struct DCmpInstruction;
+		struct IfInstruction;
+		struct IfCmpInstruction;
+		struct IfEqInstruction;
+		struct IfNotEqInstruction;
+		struct IfGtInstruction;
+		struct IfGeInstruction;
+		struct IfLtInstruction;
+		struct IfLeInstruction;
+		struct IfICmpInstruction;
+		struct IfIEqInstruction;
+		struct IfINotEqInstruction;
+		struct IfIGtInstruction;
+		struct IfIGeInstruction;
+		struct IfILtInstruction;
+		struct IfILeInstruction;
+		struct IfACmpInstruction;
+		struct IfAEqInstruction;
+		struct IfANotEqInstruction;
+		struct IfNullInstruction;
+		struct IfNonNullInstruction;
+		struct GotoInstruction;
+		struct SwitchInstruction;
+		template<class ReturnOperation>
+		struct ReturnInstruction;
+		struct VReturn;
+		struct GetStaticFieldInstruction;
+		struct PutStaticFieldInstruction;
+		struct GetInstanceFieldInstruction;
+		struct PutInstanceFieldInstruction;
+		struct InvokeInstruction;
+		struct InvokevirtualInstruction;
+		struct InvokespecialInstruction;
+		struct InvokestaticInstruction;
+		struct InvokeinterfaceInstruction;
+		struct InvokedynamicInstruction;
+		struct NewInstruction;
+		struct NewArrayInstruction;
+		struct ANewArrayInstruction;
+		struct ArrayLengthInstruction;
+		struct AThrowInstruction;
+		struct CheckCastInstruction;
+		struct InstanceofInstruction;
+		struct MultiANewArrayInstruction;
+	}
 
 }
 

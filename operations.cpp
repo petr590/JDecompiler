@@ -26,22 +26,22 @@ namespace jdecompiler {
 		};
 
 		struct IntOperation: Operation {
-			IntOperation(): Operation() {}
-			IntOperation(uint16_t priority): Operation(priority) {}
+			inline IntOperation(): Operation() {}
+			inline IntOperation(uint16_t priority): Operation(priority) {}
 
 			virtual const Type* getReturnType() const override { return INT; }
 		};
 
 		struct AnyIntOperation: Operation {
-			AnyIntOperation(): Operation() {}
-			AnyIntOperation(uint16_t priority): Operation(priority) {}
+			inline AnyIntOperation(): Operation() {}
+			inline AnyIntOperation(uint16_t priority): Operation(priority) {}
 
 			virtual const Type* getReturnType() const override { return ANY_INT; }
 		};
 
 		struct BooleanOperation: Operation {
-			BooleanOperation(): Operation() {}
-			BooleanOperation(uint16_t priority): Operation(priority) {}
+			inline BooleanOperation(): Operation() {}
+			inline BooleanOperation(uint16_t priority): Operation(priority) {}
 
 			virtual const Type* getReturnType() const override { return BOOLEAN; }
 		};
@@ -206,7 +206,7 @@ namespace operations {
 
 				ConstOperation(const Type* returnType, const T value): returnType(returnType), value(value) {}
 
-				ConstOperation(const T value): returnType(BasicTypeOf<T>::value), value(value) {}
+				ConstOperation(const T value): returnType(TypeByBuiltinType<T>::value), value(value) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return primitiveToString(value);
@@ -257,43 +257,53 @@ namespace operations {
 		using DConstOperation = ConstOperation<double>;
 
 
-		template<TypeSize size>
+		template<TypeSize size, class CT, typename RT>
 		struct LdcOperation: ReturnableOperation<> {
+			static_assert(is_base_of<ConstValueConstant, CT>::value,
+					"template type CT of struct LdcOperation is not subclass of class ConstValueConstant");
+
 			public:
 				const uint16_t index;
-				const ConstValueConstant* const value;
+				const CT* const value;
 
-			private:
-				static const Type* getReturnTypeFor(uint16_t index, const ConstValueConstant* value) {
-					if(instanceof<const StringConstant*>(value)) return STRING;
-					if(instanceof<const ClassConstant*>(value)) return CLASS;
-					if(instanceof<const IntegerConstant*>(value)) return INT;
-					if(instanceof<const FloatConstant*>(value)) return FLOAT;
-					if(instanceof<const LongConstant*>(value)) return LONG;
-					if(instanceof<const DoubleConstant*>(value)) return DOUBLE;
-					if(instanceof<const MethodTypeConstant*>(value)) return METHOD_TYPE;
-					if(instanceof<const MethodHandleConstant*>(value)) return METHOD_HANDLE;
-					throw IllegalStateException("Illegal constant pointer " + to_string(index) +
-							": expected String, Class, Integer, Float, Long, Double, MethodType or MethodHandle constant");
-				}
-
-			public:
-				LdcOperation(uint16_t index, const ConstValueConstant* value):
-						ReturnableOperation(getReturnTypeFor(index, value)), index(index), value(value) {
-
+				LdcOperation(uint16_t index, const CT* value): ReturnableOperation(TypeByBuiltinType<RT>::value), index(index), value(value) {
 					if(returnType->getSize() != size)
 						throw TypeSizeMismatchException(TypeSize_nameOf(size), TypeSize_nameOf(returnType->getSize()), returnType->toString());
 				}
 
-				LdcOperation(const CodeEnvironment& environment, uint16_t index): LdcOperation(index, environment.constPool.get<ConstValueConstant>(index)) {}
+				LdcOperation(const CodeEnvironment& environment, uint16_t index): LdcOperation(index, environment.constPool.get<CT>(index)) {}
 
-				LdcOperation(const StringConstant* value): ReturnableOperation(STRING), index(0), value(value) {}
-				LdcOperation(const MethodTypeConstant* value): ReturnableOperation(METHOD_TYPE), index(0), value(value) {}
+				LdcOperation(const CT* value): LdcOperation(0, value) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return value->toString(environment.classinfo);
 				}
 		};
+
+
+		using StringConstOperation = LdcOperation<TypeSize::FOUR_BYTES, StringConstant, BuiltinTypes::String>;
+		using ClassConstOperation = LdcOperation<TypeSize::FOUR_BYTES, ClassConstant, BuiltinTypes::Class>;
+		using MethodTypeConstOperation = LdcOperation<TypeSize::FOUR_BYTES, MethodTypeConstant, BuiltinTypes::MethodType>;
+		using MethodHandleConstOperation = LdcOperation<TypeSize::FOUR_BYTES, MethodHandleConstant, BuiltinTypes::MethodHandle>;
+
+
+		static const Operation* LdcOperation_valueOf(uint16_t index, const ConstValueConstant* value) {
+			if(instanceof<const StringConstant*>(value))       return new StringConstOperation(static_cast<const StringConstant*>(value));
+			if(instanceof<const ClassConstant*>(value))        return new ClassConstOperation(static_cast<const ClassConstant*>(value));
+			if(instanceof<const IntegerConstant*>(value))      return new IConstOperation(static_cast<const IntegerConstant*>(value)->value);
+			if(instanceof<const FloatConstant*>(value))        return new FConstOperation(static_cast<const FloatConstant*>(value)->value);
+			if(instanceof<const LongConstant*>(value))         return new LConstOperation(static_cast<const LongConstant*>(value)->value);
+			if(instanceof<const DoubleConstant*>(value))       return new DConstOperation(static_cast<const DoubleConstant*>(value)->value);
+			if(instanceof<const MethodTypeConstant*>(value))   return new MethodTypeConstOperation(static_cast<const MethodTypeConstant*>(value));
+			if(instanceof<const MethodHandleConstant*>(value)) return new MethodHandleConstOperation(static_cast<const MethodHandleConstant*>(value));
+			throw IllegalStateException("Illegal constant pointer " + to_string(index) +
+					": expected String, Class, Integer, Float, Long, Double, MethodType or MethodHandle constant");
+		}
+
+		static inline const Operation* LdcOperation_valueOf(const CodeEnvironment& environment, uint16_t index) {
+			return LdcOperation_valueOf(index, environment.constPool.get<ConstValueConstant>(index));
+		}
+
 
 
 		struct LoadOperation: ReturnableOperation<> {
@@ -533,382 +543,7 @@ namespace operations {
 
 
 
-		//template<BasicType type>
-		struct CmpOperation: BooleanOperation {
-			const Operation *const operand2, *const operand1;
 
-			CmpOperation(const CodeEnvironment& environment, const Type* operandType):
-					operand2(environment.stack.pop()), operand1(environment.stack.pop()) {
-						operandType = operandType->castTo(operand1->getReturnType())->castTo(operand2->getReturnType());
-						operand1->castReturnTypeTo(operandType);
-						operand2->castReturnTypeTo(operandType);
-					}
-		};
-
-
-		struct LCmpOperation: CmpOperation {
-			LCmpOperation(const CodeEnvironment& environment): CmpOperation(environment, LONG) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of lcmp: toString()"); }
-		};
-
-		struct FCmpOperation: CmpOperation {
-			FCmpOperation(const CodeEnvironment& environment): CmpOperation(environment, FLOAT) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of fcmp: toString()"); }
-		};
-
-		struct DCmpOperation: CmpOperation {
-			DCmpOperation(const CodeEnvironment& environment): CmpOperation(environment, DOUBLE) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of dcmp: toString()"); }
-		};
-
-
-		struct CompareType;
-
-		struct EqualsCompareType;
-
-		struct CompareType {
-			static const EqualsCompareType EQUALS, NOT_EQUALS;
-			static const CompareType GREATER, LESS_OR_EQUALS, LESS, GREATER_OR_EQUALS;
-
-			protected:
-				const char* const binaryOperator;
-				const CompareType& invertedType;
-
-			public:
-				const bool isEqualsCompareType;
-
-				CompareType(const char* const binaryOperator, const CompareType& invertedType, bool isEqualsCompareType = false):
-						binaryOperator(binaryOperator), invertedType(invertedType), isEqualsCompareType(isEqualsCompareType) {}
-
-				inline string getOperator(bool inverted) const {
-					return inverted ? invertedType.binaryOperator : binaryOperator;
-				}
-
-				virtual const Type* getRequiredType() const {
-					static const ExcludingType requiredType({BOOLEAN});
-					return &requiredType;
-				}
-
-				virtual uint16_t getPriority() const {
-					return 9;
-				}
-		};
-
-		struct EqualsCompareType final: CompareType {
-			protected:
-				const char* const unaryOperator;
-
-			public:
-				EqualsCompareType(const char* binaryOperator, const char* unaryOperator, const EqualsCompareType& invertedType):
-						CompareType(binaryOperator, invertedType, true), unaryOperator(unaryOperator) {}
-
-				inline string getUnaryOperator(bool inverted) const {
-					return inverted ? ((const EqualsCompareType&)invertedType).unaryOperator : unaryOperator;
-				}
-
-				virtual const Type* getRequiredType() const override {
-					return AnyType::getInstance();
-				}
-
-				virtual uint16_t getPriority() const override {
-					return 8;
-				}
-		};
-
-
-		const EqualsCompareType
-				CompareType::EQUALS("==", "!", CompareType::NOT_EQUALS),
-				CompareType::NOT_EQUALS("!=", "", CompareType::EQUALS);
-		const CompareType
-				CompareType::GREATER(">", CompareType::LESS_OR_EQUALS),
-				CompareType::LESS_OR_EQUALS("<=", CompareType::GREATER),
-				CompareType::LESS("<", CompareType::GREATER_OR_EQUALS),
-				CompareType::GREATER_OR_EQUALS(">=", CompareType::LESS);
-
-
-		struct ConditionOperation: BooleanOperation {
-			protected:
-				mutable bool inverted = true;
-
-			public:
-				ConditionOperation() {}
-
-				virtual string toString(const CodeEnvironment& environment) const = 0;
-
-				inline void invert() const {
-					inverted = !inverted;
-				}
-		};
-
-		struct CompareOperation: ConditionOperation {
-			public:
-				const CompareType& compareType;
-
-				CompareOperation(const CompareType& compareType): compareType(compareType) {}
-		};
-
-
-		struct CompareBinaryOperation: CompareOperation {
-			public:
-				const Operation *const operand2, *const operand1;
-
-			protected:
-				inline void castOperandsTo(const Type* requiredType) {
-					operand1->castReturnTypeTo(requiredType);
-					operand2->castReturnTypeTo(requiredType);
-				}
-
-			public:
-				CompareBinaryOperation(const CmpOperation* cmpOperation, const CompareType& compareType):
-						CompareOperation(compareType), operand2(cmpOperation->operand2), operand1(cmpOperation->operand1) {
-					castOperandsTo(compareType.getRequiredType());
-				}
-
-				CompareBinaryOperation(const CodeEnvironment& environment, const Type* requiredType, const CompareType& compareType):
-						/* We don't delegate constructor because of undefined order of initialization of the function arguments
-						 * which is important in this case */
-						CompareOperation(compareType), operand2(environment.stack.pop()), operand1(environment.stack.pop()) {
-					castOperandsTo(compareType.getRequiredType()->castTo(requiredType));
-				}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return operand1->toString(environment, compareType.getPriority(), Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + ' '
-							+ operand2->toString(environment, compareType.getPriority(), Associativity::RIGHT);
-				}
-		};
-
-
-		struct CompareWithZeroOperation: CompareOperation {
-			const Operation* const operand;
-
-			CompareWithZeroOperation(const Operation* operand, const CompareType& compareType): CompareOperation(compareType), operand(operand) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return operand->getReturnType()->isInstanceof(BOOLEAN) && compareType.isEqualsCompareType ? // write `!bool` instead of `bool == false`
-						((const EqualsCompareType&)compareType).getUnaryOperator(inverted) +
-								operand->toString(environment, compareType.getPriority(), Associativity::RIGHT) :
-						operand->toString(environment, compareType.getPriority(), Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + " 0";
-			}
-		};
-
-
-		struct CompareWithNullOperation: CompareOperation {
-			protected:
-				const Operation* const operand;
-
-			public:
-				CompareWithNullOperation(const CodeEnvironment& environment, const EqualsCompareType& compareType):
-						CompareOperation(compareType), operand(environment.stack.pop()) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return operand->toString(environment) + ' ' + compareType.getOperator(inverted) + " null";
-				}
-		};
-
-
-		struct BinaryConditionOperation: ConditionOperation {
-			protected:
-				const Operation *const operand1, *const operand2;
-
-			public:
-				BinaryConditionOperation(const Operation* operand1, const Operation* operand2): operand1(operand1), operand2(operand2) {}
-		};
-
-
-		struct AndOperation: BinaryConditionOperation {
-			public:
-				AndOperation(const Operation* operand1, const Operation* operand2): BinaryConditionOperation(operand1, operand2) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return operand1->toString(environment) + " && " + operand2->toString(environment);
-				}
-		};
-
-
-		struct OrOperation: BinaryConditionOperation {
-			public:
-				OrOperation(const Operation* operand1, const Operation* operand2): BinaryConditionOperation(operand1, operand2) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return operand1->toString(environment) + " || " + operand2->toString(environment);
-				}
-		};
-
-
-		struct TernaryOperatorOperation: ReturnableOperation<> {
-			const ConditionOperation *const condition;
-			const Operation *const trueCase, *const falseCase;
-
-			const bool isShort;
-
-			TernaryOperatorOperation(const ConditionOperation* condition, const Operation* trueCase, const Operation* falseCase):
-					ReturnableOperation(trueCase->getReturnTypeAs(falseCase->getReturnType())),
-					condition(condition), trueCase(trueCase), falseCase(falseCase),
-					isShort(instanceof<const IConstOperation*>(trueCase) && static_cast<const IConstOperation*>(trueCase)->value == 1 &&
-					        instanceof<const IConstOperation*>(falseCase) && static_cast<const IConstOperation*>(falseCase)->value == 0) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return isShort ? condition->toString(environment) :
-						condition->toString(environment) + " ? " + trueCase->toString(environment) + " : " + falseCase->toString(environment);
-			}
-		};
-
-
-		struct IfScope;
-
-		struct ElseScope;
-
-
-		struct ContinueOperation: VoidOperation {
-			const IfScope* const ifScope;
-
-			ContinueOperation(const CodeEnvironment& environment, const IfScope* ifScope);
-
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return //ifScope->hasLabel ? "continue " + ifScope->getLabel() : "continue";
-					"continue";
-			}
-		};
-
-
-		struct IfScope: Scope {
-			private:
-				mutable const ConditionOperation* condition;
-
-				friend struct instructions::IfInstruction;
-				inline void setEnd(uint32_t endPos) {
-					this->endPos = endPos;
-				}
-
-				friend struct ElseScope;
-				mutable const ElseScope* elseScope = nullptr;
-				//friend ElseScope::ElseScope(const CodeEnvironment&, const uint32_t, const IfScope*);
-
-				bool isTernary = false;
-				const Operation* ternaryTrueOperation = nullptr;
-				//friend void ElseScope::finalize(const CodeEnvironment&);
-
-				friend struct ContinueOperation;
-				mutable bool hasLabel = false;
-				//friend ContinueOperation::ContinueOperation(const CodeEnvironment&, const IfScope*);
-
-			public: mutable bool isLoop = false;
-
-
-			protected:
-				/*static inline const ConditionOperation* getCondition(const CodeEnvironment& environment, const CompareType& compareType) {
-					const Operation* operation = environment.stack.pop();
-					if(const CmpOperation* cmpOperation = castOperationTo<const CmpOperation*>(operation))
-						return new CompareBinaryOperation(cmpOperation, compareType);
-					return new CompareWithZeroOperation(operation, compareType);
-				}*/
-
-			public:
-				IfScope(const CodeEnvironment& environment, const int32_t offset, const ConditionOperation* condition):
-						Scope(environment.exprStartIndex, environment.bytecode.posToIndex(environment.pos + offset) - 1, environment.getCurrentScope()),
-						condition(condition) {}
-
-				/*IfScope(const CodeEnvironment& environment, const int32_t offset, const CompareType& compareType):
-						IfScope(environment, offset, getCondition(environment, compareType)) {}
-
-				IfScope(const CodeEnvironment& environment, const int32_t offset, const CompareType& compareType, const CmpOperation* cmpOperation):
-						IfScope(environment, offset, new CompareBinaryOperation(cmpOperation, compareType)) {}*/
-
-
-			protected:
-				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return (string)(isLoop ? (hasLabel ? getLabel(environment) + ": while" : "while") : "if") +
-							'(' + condition->toString(environment) + ") ";
-				}
-
-				virtual bool printNextOperation(const vector<const Operation*>::const_iterator i) const override {
-					if(next(i) != code.end())
-						return true;
-					const ContinueOperation* continueOperation = dynamic_cast<const ContinueOperation*>(*i);
-					return continueOperation == nullptr || continueOperation->ifScope != this;
-				}
-
-				virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
-					return isLoop || elseScope == nullptr ? this->Scope::getBackSeparator(classinfo) : EMPTY_STRING;
-				}
-
-				string getLabel(const CodeEnvironment& environment) const {
-					if(isLoop)
-						return "Loop";
-					throw DecompilationException("Cannot get label for if scope");
-				}
-
-			public:
-				virtual void finalize(const CodeEnvironment& environment) override {
-					isTernary = elseScope != nullptr && !environment.stack.empty() && code.empty();
-					if(isTernary)
-						ternaryTrueOperation = environment.stack.pop();
-				}
-
-				virtual const Type* getReturnType() const override {
-					return isTernary ? ternaryTrueOperation->getReturnType() : this->Scope::getReturnType();
-				}
-		};
-
-
-		struct ElseScope: Scope {
-			public:
-				const IfScope* const ifScope;
-
-			protected:
-				bool isTernary = false;
-				const Operation* ternaryFalseOperation = nullptr;
-
-			public:
-				ElseScope(const CodeEnvironment& environment, const uint32_t endPos, const IfScope* ifScope);
-
-				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return " else ";
-				}
-
-				virtual inline string getFrontSeparator(const ClassInfo& classinfo) const override {
-					return EMPTY_STRING;
-				}
-
-				virtual void finalize(const CodeEnvironment& environment) override;
-
-				virtual const Type* getReturnType() const override {
-					return isTernary ? ternaryFalseOperation->getReturnType() : this->Scope::getReturnType();
-				}
-		};
-
-
-
-		ContinueOperation::ContinueOperation(const CodeEnvironment& environment, const IfScope* ifScope): ifScope(ifScope) {
-			if(ifScope != environment.getCurrentScope())
-				ifScope->hasLabel = true;
-		}
-
-
-		ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t endPos, const IfScope* ifScope):
-				Scope(environment.index, endPos, ifScope->parentScope), ifScope(ifScope) {
-			ifScope->elseScope = this;
-		}
-
-		void ElseScope::finalize(const CodeEnvironment& environment) {
-			isTernary = ifScope->isTernary;
-			if(isTernary) {
-				ternaryFalseOperation = environment.stack.pop();
-				environment.stack.push(new TernaryOperatorOperation(ifScope->condition,
-						ifScope->ternaryTrueOperation, ternaryFalseOperation));
-			}
-		}
-
-
-
-		struct EmptyInfiniteLoopScope: Scope {
-			EmptyInfiniteLoopScope(const CodeEnvironment& environment): Scope(environment.index, environment.index, environment.getCurrentScope()) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override { return "while(true);"; }
-		};
 
 
 
@@ -1103,7 +738,7 @@ namespace operations {
 
 		void TryScope::finalize(const CodeEnvironment& environment) {
 			assert(handlersData.size() > 0);
-			sort(handlersData.begin(), handlersData.end(), [](auto& handler1, auto& handler2) { return handler1.startPos > handler2.startPos; });
+			sort(handlersData.begin(), handlersData.end(), [] (auto& handler1, auto& handler2) { return handler1.startPos > handler2.startPos; });
 
 			CatchScope* lastHandler = nullptr;
 
@@ -1435,7 +1070,7 @@ namespace operations {
 
 
 		struct ConcatStringsOperation: InvokeOperation {
-			const LdcOperation<TypeSize::FOUR_BYTES>* const pattern;
+			const StringConstOperation* const pattern;
 
 			struct StringOperand {
 				bool isOperation;
@@ -1448,7 +1083,7 @@ namespace operations {
 			vector<StringOperand> operands;
 
 			ConcatStringsOperation(const CodeEnvironment& environment, const MethodDescriptor& concater):
-					InvokeOperation(environment, concater), pattern(safe_cast<const LdcOperation<TypeSize::FOUR_BYTES>*>(environment.stack.popAs(STRING))) {
+					InvokeOperation(environment, concater), pattern(safe_cast<const StringConstOperation*>(environment.stack.popAs(STRING))) {
 				auto arg = arguments.begin();
 				string str;
 
@@ -1651,7 +1286,6 @@ namespace operations {
 					return object->toString(environment, priority, Associativity::LEFT) + " instanceof " + type->toString(environment.classinfo);
 				}
 		};
-
 	}
 
 
@@ -1673,5 +1307,7 @@ namespace operations {
 			code.push_back(operation);
 	}
 }
+
+#include "condition-operations.cpp"
 
 #endif

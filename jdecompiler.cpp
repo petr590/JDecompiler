@@ -100,7 +100,7 @@ namespace jdecompiler {
 								parseError("Argument value '" << value << "' is out of range");
 							}
 
-							isIndentWidthSpecified;
+							isIndentWidthSpecified = true;
 
 						} else if(option == "-i" || option == "--indent") {
 							requireValue();

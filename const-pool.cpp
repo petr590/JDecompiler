@@ -43,7 +43,7 @@ namespace jdecompiler {
 
 		public:
 
-			Constant*& operator[](uint16_t index) const {
+			Constant*& operator[] (uint16_t index) const {
 				checkIndex(index);
 				return pool[index];
 			}

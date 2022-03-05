@@ -258,10 +258,10 @@ namespace jdecompiler {
 			if(descriptor.name == "main" && descriptor.returnType == VOID && modifiers == (ACC_PUBLIC | ACC_STATIC) &&
 					argumentsCount == 1 && *descriptor.arguments[0] == STRING_ARRAY) {
 				methodScope->addVariable(new NamedVariable(&STRING_ARRAY, "args"));
+			} else {
+				for(uint32_t i = 0; i < argumentsCount; i++)
+					methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i]));
 			}
-
-			for(uint32_t i = 0; i < argumentsCount; i++)
-				methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i]));
 		}
 
 		if(!hasCodeAttribute)

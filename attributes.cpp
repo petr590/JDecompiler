@@ -336,11 +336,6 @@ namespace jdecompiler {
 	};
 
 
-	struct ClassSignature {
-		vector<ReferenceType> parameters;
-	};
-
-
 
 	struct LocalVariableTableAttribute: Attribute {
 		private:
@@ -360,11 +355,17 @@ namespace jdecompiler {
 		public:
 			LocalVariableTableAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
 					Attribute("LocalVariableTable", length) {
+
 				const uint16_t localVariableTableLength = instream.readUShort();
 				localVariableTable.reserve(localVariableTableLength);
-				for(int i = localVariableTableLength; i > 0; i--)
+				for(uint16_t i = 0; i < localVariableTableLength; i++)
 					localVariableTable.push_back(new LocalVariable(instream, constPool));
 			}
+	};
+
+
+	struct ClassSignature {
+		vector<ReferenceType> parameters;
 	};
 
 
@@ -375,6 +376,7 @@ namespace jdecompiler {
 			if(length != 2) throw IllegalAttributeException("Length of Signature attribute must be 2");
 		}
 	};*/
+
 
 	struct BootstrapMethod {
 		const MethodHandleConstant* const methodHandle;
@@ -407,7 +409,7 @@ namespace jdecompiler {
 					bootstrapMethods.push_back(new BootstrapMethod(instream, constPool));
 			}
 
-			inline const BootstrapMethod* operator[](uint16_t index) const {
+			inline const BootstrapMethod* operator[] (uint16_t index) const {
 				return bootstrapMethods[index];
 			}
 	};

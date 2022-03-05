@@ -101,7 +101,9 @@ namespace jdecompiler {
 		struct LdcInstruction: InstructionWithIndex {
 			LdcInstruction(uint16_t index): InstructionWithIndex(index) {}
 
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new LdcOperation<size>(environment, index); }
+			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+				return LdcOperation_valueOf(environment, index);
+			}
 		};
 
 
@@ -289,14 +291,14 @@ namespace jdecompiler {
 		};
 
 
-		template<char32_t operation, uint16_t priority>
+		template<char32_t operation, uint16_t priority, bool canUseBoolean = false>
 		struct OperatorInstruction: Instruction {
 			protected:
 				const Type *const type;
 
 				static inline const Type* getTypeByCode(uint16_t code) {
 					switch(code) {
-						case 0: return ANY_INT_OR_BOOLEAN;
+						case 0: return canUseBoolean ? ANY_INT_OR_BOOLEAN : ANY_INT;
 						case 1: return LONG;
 						case 2: return FLOAT;
 						case 3: return DOUBLE;
@@ -309,12 +311,12 @@ namespace jdecompiler {
 		};
 
 
-		template<char32_t operation, uint16_t priority>
-		struct BinaryOperatorInstruction: OperatorInstruction<operation, priority> {
-			BinaryOperatorInstruction(uint16_t typeCode): OperatorInstruction<operation, priority>(typeCode) {}
+		template<char32_t operation, uint16_t priority, bool canUseBoolean = false>
+		struct BinaryOperatorInstruction: OperatorInstruction<operation, priority, canUseBoolean> {
+			BinaryOperatorInstruction(uint16_t typeCode): OperatorInstruction<operation, priority, canUseBoolean>(typeCode) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				return new BinaryOperatorOperation(this->OperatorInstruction<operation, priority>::type, environment, operation, priority);
+				return new BinaryOperatorOperation(this->OperatorInstruction<operation, priority, canUseBoolean>::type, environment, operation, priority);
 			}
 		};
 
@@ -330,6 +332,13 @@ namespace jdecompiler {
 
 
 		template<char32_t operation, uint16_t priority>
+		struct BooleanBinaryOperatorInstruction: BinaryOperatorInstruction<operation, priority, true> {
+			BooleanBinaryOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction<operation, priority, true>(typeCode) {}
+		};
+
+
+
+		template<char32_t operation, uint16_t priority>
 		struct UnaryOperatorInstruction: OperatorInstruction<operation, priority> {
 			UnaryOperatorInstruction(uint16_t typeCode): OperatorInstruction<operation, priority>(typeCode) {}
 
@@ -339,28 +348,20 @@ namespace jdecompiler {
 		};
 
 		using AddOperatorInstruction = BinaryOperatorInstruction<'+', 11>;
-
 		using SubOperatorInstruction = BinaryOperatorInstruction<'-', 11>;
-
 		using MulOperatorInstruction = BinaryOperatorInstruction<'*', 12>;
-
 		using DivOperatorInstruction = BinaryOperatorInstruction<'/', 12>;
-
 		using RemOperatorInstruction = BinaryOperatorInstruction<'%', 12>;
 
 		using NegOperatorInstruction = UnaryOperatorInstruction<'-', 13>;
 
 		using ShiftLeftOperatorInstruction = ShiftOperatorInstruction<"<<"_c32, 10>;
-
 		using ShiftRightOperatorInstruction = ShiftOperatorInstruction<">>"_c32, 10>;
-
 		using UShiftRightOperatorInstruction = ShiftOperatorInstruction<">>>"_c32, 10>;
 
-		using AndOperatorInstruction = BinaryOperatorInstruction<'&', 7>;
-
-		using OrOperatorInstruction = BinaryOperatorInstruction<'|', 5>;
-
-		using XorOperatorInstruction = BinaryOperatorInstruction<'^', 6>;
+		using AndOperatorInstruction = BooleanBinaryOperatorInstruction<'&', 7>;
+		using OrOperatorInstruction  = BooleanBinaryOperatorInstruction<'|', 5>;
+		using XorOperatorInstruction = BooleanBinaryOperatorInstruction<'^', 6>;
 
 
 		/* maybe TODO
@@ -462,25 +463,23 @@ namespace jdecompiler {
 				const uint32_t index = environment.bytecode.posToIndex(environment.pos + offset);
 
 				if(IfScope* ifScope = dynamic_cast<IfScope*>(currentScope)) {
-					//LOG(offset << ' ' << index << ' ' << ifScope->end() << ' ' << environment.index);
-					if(offset > 0 && index - 1 == ifScope->end()) {
-						ifScope->condition->invert();
-						ifScope->condition = new AndOperation(ifScope->condition, getCondition(environment));
+					if(offset > 0) {
+						//LOG(environment.index << ' ' << index << ' ' << ifScope->end());
 
-						ifScope->setEnd(index);
-						return nullptr;
-					}
+						if(index - 1 == ifScope->end()) {
+							ifScope->condition = new AndOperation(ifScope->condition, getCondition(environment)->invert());
+							return nullptr;
+						}
 
-					if(offset > 0 && environment.index == ifScope->end()) {
-						ifScope->condition->invert();
-						ifScope->condition = new OrOperation(ifScope->condition, getCondition(environment));
-
-						ifScope->setEnd(index);
-						return nullptr;
+						if(environment.index == ifScope->end()) {
+							ifScope->condition = new OrOperation(ifScope->condition->invert(), getCondition(environment)->invert());
+							ifScope->setEnd(index);
+							return nullptr;
+						}
 					}
 				}
 
-				return new IfScope(environment, offset, getCondition(environment));
+				return new IfScope(environment, offset, getCondition(environment)->invert());
 			}
 
 			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const = 0;
@@ -817,7 +816,7 @@ namespace jdecompiler {
 						{
 							// push static arguments on stack
 							for(uint32_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
-								environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(bootstrapMethod->argumentIndexes[i], bootstrapMethod->arguments[i]));
+								environment.stack.push(LdcOperation_valueOf(bootstrapMethod->argumentIndexes[i], bootstrapMethod->arguments[i]));
 
 							// push non-static arguments on stack
 							for(const Operation* operation : arguments)
@@ -833,15 +832,15 @@ namespace jdecompiler {
 
 						StringConstant* nameArgument = new StringConstant(invokeDynamicConstant->nameAndType->nameRef);
 						nameArgument->init(environment.constPool);
-						environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(nameArgument));
+						environment.stack.push(new StringConstOperation(nameArgument));
 
 						MethodTypeConstant* typeArgument = new MethodTypeConstant(invokeDynamicConstant->nameAndType->descriptorRef);
 						typeArgument->init(environment.constPool);
-						environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(typeArgument));
+						environment.stack.push(new MethodTypeConstOperation(typeArgument));
 
 						// push static arguments on stack
 						for(uint32_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
-							environment.stack.push(new LdcOperation<TypeSize::FOUR_BYTES>(bootstrapMethod->argumentIndexes[i], bootstrapMethod->arguments[i]));
+							environment.stack.push(LdcOperation_valueOf(bootstrapMethod->argumentIndexes[i], bootstrapMethod->arguments[i]));
 
 						// push non-static arguments on stack
 						for(const Operation* operation : arguments)

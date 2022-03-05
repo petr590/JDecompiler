@@ -89,6 +89,7 @@ namespace jdecompiler {
 		return str.empty() ? str : str + '\n';
 	}
 
+	/* Returns true if we can write simple class name */
 	bool ClassInfo::addImport(const ClassType* clazz) const {
 		if(imports.find(clazz) == imports.end()) {
 			imports.insert(clazz);
@@ -100,9 +101,7 @@ namespace jdecompiler {
 	}
 
 	string ClassType::toString(const ClassInfo& classinfo) const {
-
-		const bool imported = classinfo.addImport(this);
-		return isAnonymous ? fullSimpleName : simpleName;
+		return classinfo.addImport(this) ? simpleName : fullSimpleName;
 	}
 
 	void JDecompiler::readClassFiles() const {

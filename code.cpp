@@ -63,7 +63,7 @@ namespace jdecompiler {
 						{"strictfp", "strict"}, {"const", "cnst"}, {"goto", "gt"}
 					};
 
-					for(auto& keyword : keywords)
+					for(const auto& keyword : keywords)
 						if(name == keyword.first)
 							return keyword.second;
 				}
@@ -125,41 +125,57 @@ namespace jdecompiler {
 	};
 
 
-	enum class Associativity { LEFT, RIGHT };
+	namespace BuiltinTypes {
+		/* Serves as a marker for the struct TypeByBuiltinType */
+		struct MarkerStruct { MarkerStruct() = delete; };
 
-	/* Serves as a marker for the struct BasicTypeOf */
-	struct Object {
-		private: Object() {}
+		struct Object: MarkerStruct {};
+		struct String: MarkerStruct {};
+		struct Class: MarkerStruct {};
+		struct MethodType: MarkerStruct {};
+		struct MethodHandle: MarkerStruct {};
 	};
 
 	template<typename T>
-	struct BasicTypeOf {
-		static_assert(is_one_of<T, bool, int32_t, int64_t, float, double, Object>::value, "illegal basic type");
-
-		static const Type* const value;
+	struct TypeByBuiltinType {
+		static_assert(is_one_of<T, bool, int32_t, int64_t, float, double, BuiltinTypes::MarkerStruct>::value, "illegal basic type T");
 	};
 
-	template<> struct BasicTypeOf<bool>    { static const Type* const value; };
-	template<> struct BasicTypeOf<int32_t> { static const Type* const value; };
-	template<> struct BasicTypeOf<int64_t> { static const Type* const value; };
-	template<> struct BasicTypeOf<float>   { static const Type* const value; };
-	template<> struct BasicTypeOf<double>  { static const Type* const value; };
-	template<> struct BasicTypeOf<Object>  { static const Type* const value; };
+	template<> struct TypeByBuiltinType<bool>    { static const Type* const value; };
+	template<> struct TypeByBuiltinType<int32_t> { static const Type* const value; };
+	template<> struct TypeByBuiltinType<int64_t> { static const Type* const value; };
+	template<> struct TypeByBuiltinType<float>   { static const Type* const value; };
+	template<> struct TypeByBuiltinType<double>  { static const Type* const value; };
+	template<> struct TypeByBuiltinType<BuiltinTypes::Object>       { static const Type* const value; };
+	template<> struct TypeByBuiltinType<BuiltinTypes::String>       { static const Type* const value; };
+	template<> struct TypeByBuiltinType<BuiltinTypes::Class>        { static const Type* const value; };
+	template<> struct TypeByBuiltinType<BuiltinTypes::MethodType>   { static const Type* const value; };
+	template<> struct TypeByBuiltinType<BuiltinTypes::MethodHandle> { static const Type* const value; };
 
-	const Type* const BasicTypeOf<bool>::value = BOOLEAN;
-	const Type* const BasicTypeOf<int32_t>::value = ANY_INT_OR_BOOLEAN;
-	const Type* const BasicTypeOf<int64_t>::value = LONG;
-	const Type* const BasicTypeOf<float>::value = FLOAT;
-	const Type* const BasicTypeOf<double>::value = DOUBLE;
-	const Type* const BasicTypeOf<Object>::value = AnyObjectType::getInstance();
+	const Type* const TypeByBuiltinType<bool>::value =    BOOLEAN;
+	const Type* const TypeByBuiltinType<int32_t>::value = ANY_INT_OR_BOOLEAN;
+	const Type* const TypeByBuiltinType<int64_t>::value = LONG;
+	const Type* const TypeByBuiltinType<float>::value =   FLOAT;
+	const Type* const TypeByBuiltinType<double>::value =  DOUBLE;
+	const Type* const TypeByBuiltinType<BuiltinTypes::Object>::value =       AnyObjectType::getInstance();
+	const Type* const TypeByBuiltinType<BuiltinTypes::String>::value =       STRING;
+	const Type* const TypeByBuiltinType<BuiltinTypes::Class>::value =        CLASS;
+	const Type* const TypeByBuiltinType<BuiltinTypes::MethodType>::value =   METHOD_TYPE;
+	const Type* const TypeByBuiltinType<BuiltinTypes::MethodHandle>::value = METHOD_HANDLE;
+
+
+	enum class Associativity { LEFT, RIGHT };
 
 
 	struct Operation {
 		public:
+			static const uint16_t DEFAULT_PRIORITY = 15;
+
 			const uint16_t priority;
+			const Associativity associativity;
 
 		protected:
-			Operation(uint16_t priority = 15): priority(priority) {}
+			Operation(uint16_t priority = DEFAULT_PRIORITY): priority(priority), associativity(getAssociativityByPriority(priority)) {}
 
 			virtual ~Operation() {}
 
@@ -193,18 +209,7 @@ namespace jdecompiler {
 
 
 			template<class D, class... Ds>
-			static bool checkDup(const CodeEnvironment& environment, const Operation* operation) {
-				if(instanceof<const D*>(operation)) {
-					if(static_cast<const D*>(operation)->operation != environment.stack.pop())
-						throw DecompilationException("Illegal stack state after dup operation");
-					return true;
-				}
-
-				if constexpr(sizeof...(Ds) == 0)
-					return false;
-				else
-					return checkDup<Ds...>(environment, operation);
-			}
+			static bool checkDup(const CodeEnvironment& environment, const Operation* operation);
 
 
 			template<class D, class... Ds>
@@ -214,8 +219,8 @@ namespace jdecompiler {
 
 
 		public:
-			string toString(const CodeEnvironment& environment, uint16_t priority, const Associativity& associativity) const {
-				if(this->priority < priority || (this->priority == priority && getAssociativityByPriority(this->priority) != associativity))
+			string toString(const CodeEnvironment& environment, uint16_t priority, const Associativity associativity) const {
+				if(this->priority < priority || (this->priority == priority && this->associativity != associativity))
 					return '(' + this->toString(environment) + ')';
 				return this->toString(environment);
 			}
@@ -234,7 +239,7 @@ namespace jdecompiler {
 			}
 
 		private:
-			static inline Associativity getAssociativityByPriority(uint16_t priority) {
+			static inline constexpr Associativity getAssociativityByPriority(uint16_t priority) {
 				return priority == 1 || priority == 2 || priority == 13 ? Associativity::RIGHT : Associativity::LEFT;
 			}
 	};
@@ -524,12 +529,29 @@ namespace jdecompiler {
 	};
 
 
+	template<class D, class... Ds>
+	bool Operation::checkDup(const CodeEnvironment& environment, const Operation* operation) {
+		if(instanceof<const D*>(operation)) {
+			if(static_cast<const D*>(operation)->operation != environment.stack.pop())
+				throw DecompilationException("Illegal stack state after dup operation");
+			return true;
+		}
+
+		if constexpr(sizeof...(Ds) == 0)
+			return false;
+		else
+			return checkDup<Ds...>(environment, operation);
+	}
+
+
 	struct Scope: Operation {
+		protected:
+			uint32_t startPos, endPos;
+
 		public:
 			Scope *const parentScope;
 
 		protected:
-			uint32_t startPos, endPos;
 			vector<Variable*> variables;
 			vector<const Operation*> code;
 			map<const Variable*, string> varNames;

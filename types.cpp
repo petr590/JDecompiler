@@ -437,11 +437,11 @@ namespace jdecompiler {
 			}
 
 			virtual string toString() const override {
-				return "AmbigousType {" + join<const BasicType*>(types, [](auto type) { return type->toString(); }) + '}';
+				return "AmbigousType {" + join<const BasicType*>(types, [] (auto type) { return type->toString(); }) + '}';
 			}
 
 			virtual string getEncodedName() const override final {
-				return "S/AmbigousType";
+				return "SAmbigousType(" + join<const BasicType*>(types, [] (auto type) { return type->getEncodedName(); }) + ')';
 			}
 
 			virtual const string& getName() const override final {
@@ -512,7 +512,7 @@ namespace jdecompiler {
 			}
 
 			virtual string getEncodedName() const override final {
-				return "S/AnyType";
+				return "SAnyType";
 			}
 
 			virtual const string& getName() const override final {
@@ -563,7 +563,7 @@ namespace jdecompiler {
 			}
 
 			virtual string getEncodedName() const override final {
-				return "S/AnyObjectType";
+				return "SAnyObjectType";
 			}
 
 			virtual const string& getName() const override final {
@@ -618,11 +618,11 @@ namespace jdecompiler {
 			ExcludingType(const initializer_list<const BasicType*> typeList): ExcludingType(vector<const BasicType*>(typeList)) {}
 
 			virtual string toString() const override {
-				return "ExcludingType {" + join<const BasicType*>(types, [](const BasicType* type) { return type->toString(); }) + '}';
+				return "ExcludingType {" + join<const BasicType*>(types, [] (const BasicType* type) { return type->toString(); }) + '}';
 			}
 
 			virtual string getEncodedName() const override final {
-				return "S/ExcludingType";
+				return "SExcludingType(" + join<const BasicType*>(types, [] (const BasicType* type) { return type->getEncodedName(); }) + ')';
 			}
 
 			virtual const string& getName() const override final {
@@ -639,7 +639,7 @@ namespace jdecompiler {
 			}
 
 			virtual bool isInstanceofImpl(const Type* other) const override {
-				if(*this == *other);
+				if(*this == *other)
 					return true;
 
 				if(!other->isBasic())

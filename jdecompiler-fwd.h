@@ -54,12 +54,12 @@ namespace jdecompiler {
 
 	// jdecompiler-util
 
-	class Exception;
+	struct Exception;
 
-	class BinaryInputStream;
+	struct BinaryInputStream;
 
 
-	class FormatString;
+	struct FormatString;
 
 	// jdecompiler-const-pool
 
@@ -202,7 +202,7 @@ namespace jdecompiler {
 		template<typename T>
 		struct ConstOperation;
 		struct IConstOperation;
-		template<TypeSize size>
+		template<TypeSize size, class CT, typename RT>
 		struct LdcOperation;
 		struct LoadOperation;
 		struct ILoadOperation;
@@ -241,11 +241,9 @@ namespace jdecompiler {
 		struct CastOperation;
 
 		struct CmpOperation;
-		struct ICmpOperation;
 		struct LCmpOperation;
 		struct FCmpOperation;
 		struct DCmpOperation;
-		struct ACmpOperation;
 		struct CompareType;
 		struct EqualsCompareType;
 		struct CompareType;
@@ -360,9 +358,9 @@ namespace jdecompiler {
 		struct Dup2X1Instruction;
 		struct Dup2X2Instruction;
 		struct SwapInstruction;
-		template<char32_t operation, uint16_t priority>
+		template<char32_t operation, uint16_t priority, bool canUseBoolean>
 		struct OperatorInstruction;
-		template<char32_t operation, uint16_t priority>
+		template<char32_t operation, uint16_t priority, bool canUseBoolean>
 		struct BinaryOperatorInstruction;
 		template<char32_t operation, uint16_t priority>
 		struct ShiftOperatorInstruction;

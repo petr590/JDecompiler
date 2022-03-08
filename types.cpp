@@ -33,13 +33,13 @@ namespace jdecompiler {
 		public:
 			virtual string toString() const = 0;
 
-			virtual string toString(const ClassInfo&) const override {
-				return toString();
-			}
+			virtual string toString(const ClassInfo&) const override = 0;
 
 			virtual string getEncodedName() const = 0;
 
 			virtual const string& getName() const = 0;
+
+			virtual string getVarName() const = 0;
 
 
 			virtual bool isPrimitive() const = 0;
@@ -89,8 +89,6 @@ namespace jdecompiler {
 
 		public:
 			bool operator==(const Type& type) const {
-				assert(this != nullptr);
-				assert(&type != nullptr);
 				return this == &type || (typeid(*this) == typeid(type) && this->getEncodedName() == type.getEncodedName());
 			}
 	};
@@ -131,10 +129,20 @@ namespace jdecompiler {
 	template<TypeSize size>
 	struct PrimitiveType final: BasicType {
 		public:
-			PrimitiveType(const string& encodedName, const string& name): BasicType(encodedName, name) {}
+			const string varName;
+
+			PrimitiveType(const string& encodedName, const string& name, const string& varName): BasicType(encodedName, name), varName(varName) {}
 
 			virtual string toString() const override final {
 				return name;
+			}
+
+			virtual string toString(const ClassInfo&) const override final {
+				return name;
+			}
+
+			virtual string getVarName() const override final {
+				return varName;
 			}
 
 			virtual bool isPrimitive() const override final {
@@ -251,6 +259,10 @@ namespace jdecompiler {
 				return "ClassType {" + name + '}';
 			}
 
+			virtual string getVarName() const override final {
+				return toLowerCamelCase(simpleName);
+			}
+
 		protected:
 			virtual bool isInstanceofImpl(const Type* other) const override {
 				return instanceof<const ClassType*>(other);
@@ -278,15 +290,13 @@ namespace jdecompiler {
 
 				this->name = memberType->getName() + braces;
 				this->encodedName = string(name, 0, memberType->getEncodedName().size() + nestingLevel);
-
-				assert(elementType != nullptr);
-				assert(memberType != nullptr);
 			}
 
 			ArrayType(const Type& memberType, uint16_t nestingLevel = 1): ArrayType(&memberType, nestingLevel) {}
 
 			ArrayType(const Type* memberType, uint16_t nestingLevel = 1): memberType(memberType), nestingLevel(nestingLevel) {
-				assert(nestingLevel > 0);
+				if(nestingLevel == 0)
+					throw IllegalArgumentException("nestingLevel cannot be zero");
 
 				for(uint16_t i = 0; i < nestingLevel; i++)
 					braces += "[]";
@@ -296,9 +306,6 @@ namespace jdecompiler {
 
 				this->memberType = memberType;
 				this->elementType = nestingLevel == 1 ? memberType : new ArrayType(memberType, (uint16_t)(nestingLevel - 1));
-
-				assert(elementType != nullptr);
-				assert(memberType != nullptr);
 			}
 
 			ArrayType(const string& memberName, uint16_t nestingLevel): ArrayType(parseType(memberName), nestingLevel) {}
@@ -309,6 +316,10 @@ namespace jdecompiler {
 
 			virtual string toString() const override {
 				return "ArrayType {" + memberType->toString() + braces + '}';
+			}
+
+			virtual string getVarName() const override {
+				return memberType->getVarName() + "Array";
 			}
 
 		protected:
@@ -333,6 +344,14 @@ namespace jdecompiler {
 		    virtual string toString() const override {
 			    return "ParameterType {" + name + '}';
 		    }
+
+			virtual string toString(const ClassInfo& classinfo) const override final {
+				return name;
+			}
+
+			virtual string getVarName() const override final {
+				return toLowerCamelCase(name);
+			}
 
 		protected:
 			virtual bool isInstanceofImpl(const Type* other) const override {
@@ -374,19 +393,19 @@ namespace jdecompiler {
 
 
 	static const PrimitiveType<TypeSize::ZERO_BYTES>
-			*const VOID = new PrimitiveType<TypeSize::ZERO_BYTES>("V", "void");
+			*const VOID = new PrimitiveType<TypeSize::ZERO_BYTES>("V", "void", "v");
 
 	static const PrimitiveType<TypeSize::FOUR_BYTES>
-			*const BYTE = new PrimitiveType<TypeSize::FOUR_BYTES>("B", "byte"),
-			*const CHAR = new PrimitiveType<TypeSize::FOUR_BYTES>("C", "char"),
-			*const SHORT = new PrimitiveType<TypeSize::FOUR_BYTES>("S", "short"),
-			*const INT = new PrimitiveType<TypeSize::FOUR_BYTES>("I", "int"),
-			*const FLOAT = new PrimitiveType<TypeSize::FOUR_BYTES>("F", "float"),
-			*const BOOLEAN = new PrimitiveType<TypeSize::FOUR_BYTES>("Z", "boolean");
+			*const BYTE = new PrimitiveType<TypeSize::FOUR_BYTES>("B", "byte", "b"),
+			*const CHAR = new PrimitiveType<TypeSize::FOUR_BYTES>("C", "char", "c"),
+			*const SHORT = new PrimitiveType<TypeSize::FOUR_BYTES>("S", "short", "s"),
+			*const INT = new PrimitiveType<TypeSize::FOUR_BYTES>("I", "int", "n"),
+			*const FLOAT = new PrimitiveType<TypeSize::FOUR_BYTES>("F", "float", "f"),
+			*const BOOLEAN = new PrimitiveType<TypeSize::FOUR_BYTES>("Z", "boolean", "bool");
 
 	static const PrimitiveType<TypeSize::EIGHT_BYTES>
-			*const LONG = new PrimitiveType<TypeSize::EIGHT_BYTES>("J", "long"),
-			*const DOUBLE = new PrimitiveType<TypeSize::EIGHT_BYTES>("D", "double");
+			*const LONG = new PrimitiveType<TypeSize::EIGHT_BYTES>("J", "long", "l"),
+			*const DOUBLE = new PrimitiveType<TypeSize::EIGHT_BYTES>("D", "double", "d");
 
 
 	template<>
@@ -446,6 +465,10 @@ namespace jdecompiler {
 
 			virtual const string& getName() const override final {
 				return types[0]->getName();
+			}
+
+			virtual string getVarName() const override final {
+				return types[0]->getVarName();
 			}
 
 			virtual bool isPrimitive() const override final {
@@ -520,6 +543,10 @@ namespace jdecompiler {
 				return name;
 			}
 
+			virtual string getVarName() const override final {
+				return "o";
+			}
+
 			virtual bool isPrimitive() const override {
 				return false; // ???
 			}
@@ -571,6 +598,10 @@ namespace jdecompiler {
 				return name;
 			}
 
+			virtual string getVarName() const override final {
+				return "o";
+			}
+
 			virtual bool isPrimitive() const override {
 				return false;
 			}
@@ -602,8 +633,9 @@ namespace jdecompiler {
 
 
 	static const AmbigousType
-			*const ANY_INT_OR_BOOLEAN = new AmbigousType({BOOLEAN, BYTE, CHAR, SHORT, INT}),
-			*const ANY_INT = new AmbigousType({BYTE, CHAR, SHORT, INT});
+			*const ANY_INT_OR_BOOLEAN = new AmbigousType({BOOLEAN, INT, SHORT, CHAR, BYTE}),
+			*const ANY_INT = new AmbigousType({INT, SHORT, CHAR, BYTE}),
+			*const BYTE_OR_BOOLEAN = new AmbigousType({BOOLEAN, BYTE});
 
 
 	struct ExcludingType final: SpecialType {
@@ -621,6 +653,10 @@ namespace jdecompiler {
 				return "ExcludingType {" + join<const BasicType*>(types, [] (const BasicType* type) { return type->toString(); }) + '}';
 			}
 
+			virtual string toString(const ClassInfo& classinfo) const override final {
+				return OBJECT->toString(classinfo);
+			}
+
 			virtual string getEncodedName() const override final {
 				return "SExcludingType(" + join<const BasicType*>(types, [] (const BasicType* type) { return type->getEncodedName(); }) + ')';
 			}
@@ -628,6 +664,10 @@ namespace jdecompiler {
 			virtual const string& getName() const override final {
 				static const string name("java.lang.Object");
 				return name;
+			}
+
+			virtual string getVarName() const override final {
+				return "o";
 			}
 
 			virtual bool isPrimitive() const override {

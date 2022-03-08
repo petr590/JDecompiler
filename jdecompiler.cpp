@@ -4,6 +4,7 @@
 #undef inline
 #include <map>
 #include <set>
+#include <filesystem>
 #define inline FORCE_INLINE
 #include "util.cpp"
 
@@ -14,27 +15,48 @@ namespace jdecompiler {
 
 	struct JDecompiler {
 
-		public:
-			static const JDecompiler instance;
-
 		protected:
-			static bool isConfigParsed;
+			static const JDecompiler* instance;
 
-			vector<BinaryInputStream*> files;
-			uint16_t indentWidth = 4;
-			const char* indent = "    ";
-			bool failOnError = false;
+
+			const string progName;
+
+			const vector<BinaryInputStream*> files;
+
+			const uint16_t indentWidth = 4;
+			const char* const indent = "    ";
+
+			const bool failOnError;
 
 			mutable map<string, const Class*> classes;
 
+			JDecompiler(const string progName, const vector<BinaryInputStream*>& files, uint16_t indentWidth, const char* indent,
+					bool failOnError, map<string, const Class*>& classes):
+					progName(progName), files(files), indentWidth(indentWidth), indent(indent), failOnError(failOnError), classes(classes) {}
+
 		public:
-			static bool parseConfig(int argc, const char* args[]) {
-				if(isConfigParsed)
-					throw IllegalStateException("Global config already parsed");
+			static const JDecompiler& getInstance() {
+				if(instance == nullptr)
+					throw IllegalStateException("JDecompiler yet not initialized");
+				return *instance;
+			}
 
-				JDecompiler& instance = const_cast<JDecompiler&>(JDecompiler::instance);
+			static bool init(int argc, const char* args[]) {
+				if(instance != nullptr)
+					throw IllegalStateException("JDecompiler already initialized");
 
-				const char* const progName = args[0];
+				const string progPath = args[0];
+				const string progName = progPath.substr(progPath.find_last_of(filesystem::path::preferred_separator) + 1);
+
+				vector<BinaryInputStream*> files;
+
+				uint16_t indentWidth = 4;
+				const char* indent = "    ";
+
+				bool failOnError;
+
+				map<string, const Class*> classes;
+
 
 				if(argc <= 1) {
 					cout << "Usage: " << progName << " [options] <class-files>" << endl;
@@ -81,19 +103,18 @@ namespace jdecompiler {
 								"  -i=<indent> --indent=<indent>      set indent (by default four spaces)" << endl;
 							return false;
 						} else if(option == "-f" || option == "--fail-on-error") {
-							instance.failOnError = true;
+							failOnError = true;
 
 						} else if(option == "-w" || option == "--indent-width") {
 							requireValue();
 							try {
-								const int32_t indentWidth = stoi(value);
+								indentWidth = stoi(value);
 								if(indentWidth < 0)
-									parseError("Argument value '" << value << "' must not be negative");
+									parseError("Argument value '" << value << "' cannot be negative");
 								if(indentWidth < 0 || indentWidth > 16)
 									parseError("Argument value '" << value << "' is out of range");
 
-								instance.indentWidth = indentWidth;
-								instance.indent = repeatString(instance.indent, indentWidth);
+								indent = repeatString(indent, indentWidth);
 							} catch(const invalid_argument&) {
 								parseError("Invalid argument value: '" << value << '\'');
 							} catch(const out_of_range&) {
@@ -105,21 +126,21 @@ namespace jdecompiler {
 						} else if(option == "-i" || option == "--indent") {
 							requireValue();
 							value = unescapeString(value);
-							instance.indent = repeatString(value, isIndentWidthSpecified || value != "\t" ? instance.indentWidth : (instance.indentWidth = 1));
+							indent = repeatString(value, isIndentWidthSpecified || value != "\t" ? indentWidth : (indentWidth = 1));
 
 						} else {
 							parseError(progName << ": Unknown argument " << arg << "\n"
 								"Use " << progName << " --help for more information");
 						}
 					} else {
-						instance.files.push_back(new BinaryInputStream(arg));
+						files.push_back(new BinaryInputStream(arg));
 					}
 				}
 
 				#undef requireValue
 				#undef parseError
 
-				isConfigParsed = true;
+				instance = new JDecompiler(progName, files, indentWidth, indent, failOnError, classes);
 
 				return true;
 			}
@@ -144,19 +165,12 @@ namespace jdecompiler {
 			}
 
 			inline const Class* getClass(const string& name) const {
-				static int i = 0;
-				if(i == 2)
-					throw Exception();
-				i++;
 				const auto& classIterator = classes.find(name);
 				return classIterator != classes.end() ? classIterator->second : nullptr;
 			}
 	};
 
-	bool JDecompiler::isConfigParsed = false;
-
-	const JDecompiler JDecompiler::instance{};
-
+	const JDecompiler* JDecompiler::instance = nullptr;
 
 
 	struct Stringified {
@@ -200,13 +214,13 @@ namespace jdecompiler {
 
 			/*inline void setFormatting(uint16_t indentWidth, const char* indent, const set<const ClassType*>& imports) const {
 				this->indentWidth = indentWidth;
-				this->indent = repeatString(JDecompiler::instance.getIndent(), indentWidth);
+				this->indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth);
 				this->imports = imports;
 			}*/
 
 			inline void copyFormattingFrom(const ClassInfo& other) const {
 				indentWidth = other.indentWidth;
-				indent = repeatString(JDecompiler::instance.getIndent(), indentWidth);
+				indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth);
 				imports = other.imports;
 			}
 
@@ -223,22 +237,22 @@ namespace jdecompiler {
 
 			void increaseIndent() const {
 				delete[] indent;
-				indent = repeatString(JDecompiler::instance.getIndent(), ++indentWidth);
+				indent = repeatString(JDecompiler::getInstance().getIndent(), ++indentWidth);
 			}
 
 			void increaseIndent(uint16_t count) const {
 				delete[] indent;
-				indent = repeatString(JDecompiler::instance.getIndent(), indentWidth += count);
+				indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth += count);
 			}
 
 			void reduceIndent() const {
 				delete[] indent;
-				indent = repeatString(JDecompiler::instance.getIndent(), --indentWidth);
+				indent = repeatString(JDecompiler::getInstance().getIndent(), --indentWidth);
 			}
 
 			void reduceIndent(uint16_t count) const {
 				delete[] indent;
-				indent = repeatString(JDecompiler::instance.getIndent(), indentWidth -= count);
+				indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth -= count);
 			}
 
 

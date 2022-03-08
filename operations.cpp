@@ -20,35 +20,29 @@ namespace jdecompiler {
 			public:
 				ReturnableOperation(const T* returnType): returnType(returnType) {}
 
-				ReturnableOperation(const T* returnType, uint16_t priority): Operation(priority), returnType(returnType) {}
-
 				virtual const Type* getReturnType() const override { return returnType; }
 		};
 
 		struct IntOperation: Operation {
-			inline IntOperation(): Operation() {}
-			inline IntOperation(uint16_t priority): Operation(priority) {}
+			inline IntOperation() {}
 
 			virtual const Type* getReturnType() const override { return INT; }
 		};
 
 		struct AnyIntOperation: Operation {
-			inline AnyIntOperation(): Operation() {}
-			inline AnyIntOperation(uint16_t priority): Operation(priority) {}
+			inline AnyIntOperation() {}
 
 			virtual const Type* getReturnType() const override { return ANY_INT; }
 		};
 
 		struct BooleanOperation: Operation {
-			inline BooleanOperation(): Operation() {}
-			inline BooleanOperation(uint16_t priority): Operation(priority) {}
+			inline BooleanOperation() {}
 
 			virtual const Type* getReturnType() const override { return BOOLEAN; }
 		};
 
 		struct VoidOperation: Operation {
-			VoidOperation(): Operation() {}
-			VoidOperation(uint16_t priority): Operation(priority) {}
+			VoidOperation() {}
 
 			virtual const Type* getReturnType() const override { return VOID; }
 		};
@@ -101,6 +95,10 @@ namespace jdecompiler {
 			virtual const Type* getReturnType() const override {
 				return operation->getReturnType();
 			}
+
+			virtual Priority getPriority() const override {
+				return operation->getPriority();
+			}
 		};
 
 
@@ -108,6 +106,9 @@ namespace jdecompiler {
 		struct DupOperation: AbstractDupOperation<size> {
 			DupOperation(const CodeEnvironment& environment): AbstractDupOperation<size>(environment) {}
 		};
+
+		using Dup1Operation = DupOperation<TypeSize::FOUR_BYTES>;
+		using Dup2Operation = DupOperation<TypeSize::EIGHT_BYTES>;
 
 
 		struct DupX1Operation: AbstractDupOperation<TypeSize::FOUR_BYTES> {
@@ -305,27 +306,25 @@ namespace operations {
 		}
 
 
-
 		struct LoadOperation: ReturnableOperation<> {
 			public:
 				const uint16_t index;
 				const Variable& variable;
-				//const Type* t = PrimitiveByType<int32_t>::value;
 
 			protected:
-				LoadOperation(const Type* returnType, uint16_t index, const Variable& variable):
-						ReturnableOperation(variable.type->castTo(returnType)), index(index), variable(variable) {}
+				LoadOperation(const Type* requiredType, uint16_t index, const Variable& variable):
+						ReturnableOperation(variable.getType()->castTo(requiredType)), index(index), variable(variable) {}
 
 			public:
-				LoadOperation(const Type* returnType, const CodeEnvironment& environment, uint16_t index):
-						LoadOperation(returnType, index, environment.getCurrentScope()->getVariable(index)) {}
+				LoadOperation(const Type* requiredType, const CodeEnvironment& environment, uint16_t index):
+						LoadOperation(requiredType, index, environment.getCurrentScope()->getVariable(index)) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return environment.getCurrentScope()->getNameFor(variable);
 				}
 
 				virtual void onCastReturnType(const Type* newType) const override {
-					variable.type = newType;
+					variable.setType(newType);
 				}
 		};
 
@@ -346,8 +345,7 @@ namespace operations {
 		};
 
 		struct ALoadOperation: LoadOperation {
-			ALoadOperation(const CodeEnvironment& environment, uint16_t index):
-					LoadOperation(environment.getCurrentScope()->getVariable(index).type, environment, index) {}
+			ALoadOperation(const CodeEnvironment& environment, uint16_t index): LoadOperation(AnyObjectType::getInstance(), environment, index) {}
 		};
 
 
@@ -355,9 +353,11 @@ namespace operations {
 			public:
 				const Operation *const index, *const array;
 
+			protected:
 				ArrayLoadOperation(const Type* returnType, const CodeEnvironment& environment):
-						ReturnableOperation(returnType), index(environment.stack.popAs(INT)), array(environment.stack.popAs(ArrayType(returnType))) {}
+						ReturnableOperation(returnType), index(environment.stack.popAs(INT)), array(getArray(environment, returnType)) {}
 
+			public:
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return array->toString(environment) + '[' + index->toString(environment) + ']';
 				}
@@ -385,15 +385,15 @@ namespace operations {
 		};
 
 		struct BALoadOperation: ArrayLoadOperation {
-			BALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(ANY_INT, environment) {}
+			BALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(BYTE_OR_BOOLEAN, environment) {}
 		};
 
 		struct CALoadOperation: ArrayLoadOperation {
-			CALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(ANY_INT, environment) {}
+			CALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(CHAR, environment) {}
 		};
 
 		struct SALoadOperation: ArrayLoadOperation {
-			SALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(ANY_INT, environment) {}
+			SALoadOperation(const CodeEnvironment& environment): ArrayLoadOperation(SHORT, environment) {}
 		};
 
 
@@ -403,15 +403,28 @@ namespace operations {
 				const uint16_t index;
 				const Variable& variable;
 
+			protected:
+				bool canDeclare = false;
+
+			public:
 				StoreOperation(const Type* requiredType, const CodeEnvironment& environment, uint16_t index):
 						value(environment.stack.popAs(requiredType)), index(index), variable(environment.getCurrentScope()->getVariable(index)) {
 
-					initReturnType<DupOperation<TypeSize::FOUR_BYTES>>(environment, value);
-					variable.type = variable.type->castTo(value->getReturnType()->castTo(requiredType));
+					initReturnType<Dup1Operation>(environment, value);
+					value->castReturnTypeTo(requiredType);
+					variable.linkWith(value);
+					if(!variable.isDeclared() && returnType == VOID) {
+						canDeclare = variable.setDeclared(true);
+					}
 				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return environment.getCurrentScope()->getNameFor(variable) + " = " + value->toString(environment);
+					return (canDeclare ? variable.getType()->toString(environment.classinfo) + ' ' : EMPTY_STRING) +
+							environment.getCurrentScope()->getNameFor(variable) + " = " + value->toString(environment);
+				}
+
+				virtual Priority getPriority() const override {
+					return Priority::ASSIGNMENT;
 				}
 		};
 
@@ -451,50 +464,71 @@ namespace operations {
 
 
 
-		struct SwapOperation: VoidOperation {
-			SwapOperation(const CodeEnvironment& environment) {
-				environment.stack.push(environment.stack.pop(), environment.stack.pop());
-			}
-
-			virtual string toString(const CodeEnvironment& environment) const override { return EMPTY_STRING; }
-		};
-
-
+		template<char32_t operation, Priority priority>
 		struct OperatorOperation: ReturnableOperation<> {
 			public:
-				const char* const operation;
+				const char* const stringOperator = char32ToString(operation);
 
-				OperatorOperation(const Type* type, char32_t operation, uint16_t priority):
-						ReturnableOperation(type, priority), operation(char32ToString(operation)) {}
+				OperatorOperation(const Type* type):
+						ReturnableOperation(type) {}
+
+				virtual Priority getPriority() const override {
+					return priority;
+				}
 		};
 
 
-		struct BinaryOperatorOperation: OperatorOperation {
+		template<char32_t operation, Priority priority>
+		struct BinaryOperatorOperation: OperatorOperation<operation, priority> {
 			public:
 				const Operation *const operand2, *const operand1;
 
-				BinaryOperatorOperation(const Type* type1, const Type* type2, const CodeEnvironment& environment, char32_t operation, uint16_t priority):
-						OperatorOperation(type1, operation, priority), operand2(environment.stack.popAs(type2)), operand1(environment.stack.popAs(type1)) {}
+				BinaryOperatorOperation(const Type* type1, const Type* type2, const CodeEnvironment& environment):
+						OperatorOperation<operation, priority>(type1), operand2(environment.stack.popAs(type2)), operand1(environment.stack.popAs(type1)) {}
 
-				BinaryOperatorOperation(const Type* type, const CodeEnvironment& environment, char32_t operation, uint16_t priority):
-						BinaryOperatorOperation(type, type, environment, operation, priority) {}
+				BinaryOperatorOperation(const Type* type, const CodeEnvironment& environment):
+						BinaryOperatorOperation(type, type, environment) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return operand1->toString(environment, priority, Associativity::LEFT) + ' ' + operation + ' ' +
-							operand2->toString(environment, priority, Associativity::RIGHT);
+					return this->toStringPriority(operand1, environment, Associativity::LEFT) + ' ' + this->stringOperator + ' ' +
+							this->toStringPriority(operand2, environment, Associativity::RIGHT);
 				}
 		};
 
-		struct UnaryOperatorOperation: OperatorOperation {
+		template<char32_t operation, Priority priority>
+		struct UnaryOperatorOperation: OperatorOperation<operation, priority> {
 			public:
 				const Operation* const operand;
 
-				UnaryOperatorOperation(const Type* type, const CodeEnvironment& environment, char32_t operation, uint16_t priority):
-						OperatorOperation(type, operation, priority), operand(environment.stack.popAs(type)) {}
+				UnaryOperatorOperation(const Type* type, const CodeEnvironment& environment):
+						OperatorOperation<operation, priority>(type), operand(environment.stack.popAs(type)) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return operation + operand->toString(environment, priority, Associativity::RIGHT);
+					return this->stringOperator + this->toStringPriority(operand, environment, Associativity::RIGHT);
 				}
+		};
+
+
+		/* Operator bit not realized in java through operator xor with value -1 */
+		template<Priority priority>
+		struct BinaryOperatorOperation<'^', priority>: OperatorOperation<'^', priority> {
+			const Operation *const operand2, *const operand1;
+
+			const bool isBitNot;
+
+			BinaryOperatorOperation(const Type* type, const CodeEnvironment& environment):
+						OperatorOperation<'^', priority>(type), operand2(environment.stack.popAs(type)), operand1(environment.stack.popAs(type)),
+						isBitNot(instanceof<const IConstOperation*>(operand2) && static_cast<const IConstOperation*>(operand2)->value == -1) {}
+
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return isBitNot ? '~' + this->toStringPriority(operand1, environment, Associativity::RIGHT):
+						this->toStringPriority(operand1, environment, Associativity::LEFT) + ' ' + this->stringOperator + ' ' +
+						this->toStringPriority(operand2, environment, Associativity::RIGHT);
+			}
+
+			virtual Priority getPriority() const override {
+				return isBitNot ? Priority::BIT_NOT : priority;
+			}
 		};
 
 
@@ -523,26 +557,56 @@ namespace operations {
 				virtual const Type* getReturnType() const override {
 					return returnType;
 				}
+
+				virtual Priority getPriority() const override {
+					return isShortInc ? (isPostInc ? Priority::POST_INCREMENT : Priority::PRE_INCREMENT) : Priority::ASSIGNMENT;
+				}
 		};
 
 
 		template<bool required>
 		struct CastOperation: ReturnableOperation<> {
 			public:
-				const Operation* const operation;
+				const Operation* const value;
 				const Type* const type;
 
 				CastOperation(const CodeEnvironment& environment, const Type* type):
-						ReturnableOperation(type), operation(environment.stack.pop()), type(type) {}
+						ReturnableOperation(type), value(environment.stack.pop()), type(type) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return required ? '(' + type->toString(environment.classinfo) + ')' + operation->toString(environment, priority, Associativity::LEFT) :
-							operation->toString(environment);
+					return required ? '(' + type->toString(environment.classinfo) + ')' + toStringPriority(value, environment, Associativity::LEFT) :
+							value->toString(environment);
+				}
+
+				virtual Priority getPriority() const override {
+					return required ? Priority::CAST : value->getPriority();
 				}
 		};
 
 
+		struct CheckCastOperation: CastOperation<true> {
+			CheckCastOperation(const CodeEnvironment& environment, uint16_t index):
+					CastOperation(environment, parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name)) {}
+		};
 
+
+		struct InstanceofOperation: BooleanOperation {
+			protected:
+				const Type* const type;
+				const Operation* const object;
+
+			public:
+				InstanceofOperation(const CodeEnvironment& environment, uint16_t index):
+						type(parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name)), object(environment.stack.pop()) {}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return toStringPriority(object, environment, Associativity::LEFT) + " instanceof " + type->toString(environment.classinfo);
+				}
+
+				virtual Priority getPriority() const override {
+					return Priority::INSTANCEOF;
+				}
+		};
 
 
 
@@ -668,7 +732,7 @@ namespace operations {
 					if(exceptionVariable == nullptr) {
 						if(instanceof<const StoreOperation*>(operation)) {
 							exceptionVariableIndex = static_cast<const StoreOperation*>(operation)->index;
-							exceptionVariable = new NamedVariable(catchType, "ex");
+							exceptionVariable = new NamedVariable(catchType, true, "ex");
 							return;
 						} else {
 							environment.warning("first instruction in the catch or finally block should be `astore`");
@@ -677,7 +741,7 @@ namespace operations {
 					Scope::add(operation, environment);
 				}
 
-				virtual const Variable& getVariable(uint32_t index) const {
+				virtual const Variable& getVariable(uint32_t index) const override {
 					if(exceptionVariable != nullptr && index == exceptionVariableIndex)
 						return *exceptionVariable;
 					return Scope::getVariable(index);
@@ -829,12 +893,16 @@ namespace operations {
 				virtual const Type* getReturnType() const override {
 					return returnType;
 				}
+
+				virtual Priority getPriority() const override {
+					return Priority::ASSIGNMENT;
+				}
 		};
 
 		struct PutStaticFieldOperation: PutFieldOperation {
 			public:
 				PutStaticFieldOperation(const CodeEnvironment& environment, uint16_t index): PutFieldOperation(environment, index) {
-					returnType = getDupReturnType<DupOperation<TypeSize::FOUR_BYTES>, DupOperation<TypeSize::EIGHT_BYTES>>(environment, value);
+					returnType = getDupReturnType<Dup1Operation, Dup2Operation>(environment, value);
 				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
@@ -847,7 +915,7 @@ namespace operations {
 				const Operation* const object;
 
 				PutInstanceFieldOperation(const CodeEnvironment& environment, uint16_t index):
-						PutFieldOperation(environment, index), object(environment.stack.popAs(clazz)) {
+						PutFieldOperation(environment, index), object(environment.stack.popAs(&clazz)) {
 					returnType = getDupReturnType<DupX1Operation, Dup2X1Operation>(environment, value);
 				}
 
@@ -881,7 +949,7 @@ namespace operations {
 				const Operation* const object;
 
 				GetInstanceFieldOperation(const CodeEnvironment& environment, uint16_t index):
-						GetFieldOperation(environment, index), object(environment.stack.popAs(clazz)) {}
+						GetFieldOperation(environment, index), object(environment.stack.popAs(&clazz)) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return instanceFieldToString(environment, object);
@@ -963,7 +1031,7 @@ namespace operations {
 
 				inline string nonStaticMethodToString(const CodeEnvironment& environment) const {
 					return (!(environment.modifiers & ACC_STATIC) && instanceof<const ALoadOperation*>(object) ?
-							EMPTY_STRING : object->toString(environment, priority, Associativity::LEFT) + '.') + descriptor.name + '(' +
+							EMPTY_STRING : toStringPriority(object, environment, Associativity::LEFT) + '.') + descriptor.name + '(' +
 							rjoin<const Operation*>(arguments, [&environment] (const Operation* operation) { return operation->toString(environment); }) + ')';
 				}
 
@@ -987,7 +1055,7 @@ namespace operations {
 
 			private:
 				inline const Type* getReturnType(const CodeEnvironment& environment) {
-					return isConstructor && checkDup<DupOperation<TypeSize::FOUR_BYTES>>(environment, object) ?
+					return isConstructor && checkDup<Dup1Operation>(environment, object) ?
 							object->getReturnType() : InvokeNonStaticOperation::getReturnType();
 				}
 
@@ -1015,7 +1083,7 @@ namespace operations {
 						if(const NewOperation* newOperation = castOperationTo<const NewOperation*>(object)) {
 							const ClassType& classType = newOperation->clazz;
 							if(classType.isAnonymous) {
-								const Class* clazz = JDecompiler::instance.getClass(classType.getEncodedName());
+								const Class* clazz = JDecompiler::getInstance().getClass(classType.getEncodedName());
 								if(clazz != nullptr) {
 									clazz->classinfo.copyFormattingFrom(environment.classinfo);
 									const string result = "new " + clazz->toString();
@@ -1026,7 +1094,7 @@ namespace operations {
 							}
 						}
 
-						return (isSuperConstructor ? "super" : object->toString(environment, priority, Associativity::LEFT)) +
+						return (isSuperConstructor ? "super" : toStringPriority(object, environment, Associativity::LEFT)) +
 							'(' + rjoin<const Operation*>(arguments,
 								[&environment] (const Operation* operation) { return operation->toString(environment); }) + ')';
 					}
@@ -1087,13 +1155,13 @@ namespace operations {
 				auto arg = arguments.begin();
 				string str;
 
-				for(const char* cp = safe_cast<const StringConstant*>(pattern->value)->value->c_str(); *cp != '\0'; cp++) {
+				for(const char* cp = pattern->value->value->c_str(); *cp != '\0'; cp++) {
 					if(*cp == '\1') {
 						if(!str.empty()) {
 							operands.push_back(StringOperand{ false, { .stringConstant = new string(str) } });
 							str.clear();
 						}
-						operands.push_back(StringOperand{ true, { .operation = *arg++ } });
+						operands.push_back(StringOperand{ true, { .operation = *(arg++) } });
 					} else {
 						str += *cp;
 					}
@@ -1102,7 +1170,7 @@ namespace operations {
 			}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
-				return rjoin<StringOperand>(operands, [&environment] (const StringOperand operand) {
+				return join<StringOperand>(operands, [&environment] (const StringOperand operand) {
 					return operand.isOperation ? operand.value.operation->toString(environment) : stringToLiteral(*operand.value.stringConstant);
 				}, " + ");
 			}
@@ -1110,25 +1178,10 @@ namespace operations {
 			virtual const Type* getReturnType() const override {
 				return STRING;
 			}
-		};
 
-
-		struct ArrayStoreOperation: VoidOperation {
-			protected:
-				const Operation *const value, *const index, *const array;
-				bool isInitializer = false;
-
-			public:
-				ArrayStoreOperation(const Type* returnType, const CodeEnvironment& environment);
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return isInitializer ? value->toString(environment) :
-							array->toString(environment) + '[' + index->toString(environment) + "] = " + value->toString(environment);
-				}
-
-				virtual bool canAddToCode() const override {
-					return !isInitializer;
-				}
+			virtual Priority getPriority() const override {
+				return Priority::PLUS;
+			}
 		};
 
 
@@ -1138,7 +1191,7 @@ namespace operations {
 				vector<const Operation*> lengths;
 
 				mutable vector<const Operation*> initializer;
-				friend ArrayStoreOperation::ArrayStoreOperation(const Type*, const CodeEnvironment&);
+				friend struct ArrayStoreOperation;
 
 			public:
 				NewArrayOperation(const CodeEnvironment& environment, const ArrayType* arrayType): arrayType(arrayType) {
@@ -1184,20 +1237,42 @@ namespace operations {
 
 
 
-		ArrayStoreOperation::ArrayStoreOperation(const Type* elementType, const CodeEnvironment& environment):
-				value(environment.stack.popAs(elementType)), index(environment.stack.popAs(INT)), array(environment.stack.pop()) {
 
-			//checkDup<DupOperation<TypeSize::FOUR_BYTES>>(environment, array);
+		struct ArrayStoreOperation: VoidOperation {
+			protected:
+				const Operation *const value, *const index, *const array;
+				bool isInitializer = false;
 
-			if(const DupOperation<TypeSize::FOUR_BYTES>* dupArray = dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(array)) {
-				if(const NewArrayOperation* newArray = dynamic_cast<const NewArrayOperation*>(dupArray->operation)) {
-					newArray->initializer.push_back(value);
-					isInitializer = true;
+			public:
+				ArrayStoreOperation(const Type* elementType, const CodeEnvironment& environment): value(environment.stack.popAs(elementType)),
+						index(environment.stack.popAs(INT)), array(getArray(environment, elementType)) {
+
+					//checkDup<Dup1Operation>(environment, array);
+
+					if(const Dup1Operation* dupArray = dynamic_cast<const Dup1Operation*>(array)) {
+						if(const NewArrayOperation* newArray = dynamic_cast<const NewArrayOperation*>(dupArray->operation)) {
+							newArray->initializer.push_back(value);
+							isInitializer = true;
+						}
+						/*else
+							cerr << "type mismatch: " << endl;*/
+					}
+				};
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return isInitializer ? value->toString(environment) :
+							array->toString(environment) + '[' + index->toString(environment) + "] = " + value->toString(environment);
 				}
-				/*else
-					cerr << "type mismatch: " << endl;*/
-			}
-		}
+
+				virtual bool canAddToCode() const override {
+					return !isInitializer;
+				}
+
+				virtual Priority getPriority() const override {
+					return Priority::ASSIGNMENT;
+				}
+		};
+
 
 		struct IAStoreOperation: ArrayStoreOperation {
 			IAStoreOperation(const CodeEnvironment& environment): ArrayStoreOperation(INT, environment) {}
@@ -1239,10 +1314,10 @@ namespace operations {
 				const Operation* const array;
 
 			public:
-				ArrayLengthOperation(const CodeEnvironment& environment): array(environment.stack.pop()) {}
+				ArrayLengthOperation(const CodeEnvironment& environment): array(environment.stack.popAs(AnyType::getArrayTypeInstance())) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return array->toString(environment, priority, Associativity::LEFT) + ".length";
+					return toStringPriority(array, environment, Associativity::LEFT) + ".length";
 				}
 		};
 
@@ -1256,34 +1331,6 @@ namespace operations {
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return "throw " + exceptionOperation->toString(environment);
-				}
-		};
-
-
-		struct CheckCastOperation: ReturnableOperation<> {
-			protected: const Operation* const object;
-
-			public:
-				CheckCastOperation(const CodeEnvironment& environment, uint16_t index):
-						ReturnableOperation(parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name), 13),
-						object(environment.stack.pop()) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return '(' + returnType->toString(environment.classinfo) + ')' + object->toString(environment, priority, Associativity::RIGHT);
-				}
-		};
-
-		struct InstanceofOperation: BooleanOperation {
-			protected:
-				const Type* const type;
-				const Operation* const object;
-
-			public:
-				InstanceofOperation(const CodeEnvironment& environment, uint16_t index): BooleanOperation(9),
-						type(parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name)), object(environment.stack.pop()) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return object->toString(environment, priority, Associativity::LEFT) + " instanceof " + type->toString(environment.classinfo);
 				}
 		};
 	}

@@ -38,7 +38,7 @@ namespace jdecompiler {
 			inline const T* get0(uint16_t index) const {
 				if(const T* constant = dynamic_cast<const T*>(pool[index]))
 					return constant;
-				throw DynamicCastException("Invalid constant pool referenceConstant 0x" + hex<4>(index) + " at " + typeid(T).name());
+				throw DynamicCastException("Invalid constant pool referenceConstant " + hexWithPrefix<4>(index) + " at " + typeid(T).name());
 			}
 
 		public:

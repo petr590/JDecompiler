@@ -10,7 +10,7 @@ namespace jdecompiler {
 
 	Instruction* Bytecode::nextInstruction0() {
 		using namespace instructions;
-		//LOG("OPCODE " << hex << current() << dec);
+
 		switch(current()) {
 			case 0x00: return nullptr;
 			case 0x01: return &AConstNull::getInstance();
@@ -101,10 +101,10 @@ namespace jdecompiler {
 			case 0x56: return new SAStoreInstruction();
 			case 0x57: return new PopInstruction<TypeSize::FOUR_BYTES>();
 			case 0x58: return new PopInstruction<TypeSize::EIGHT_BYTES>();
-			case 0x59: return new DupInstruction<TypeSize::FOUR_BYTES>();
+			case 0x59: return new Dup1Instruction();
 			case 0x5A: return new DupX1Instruction();
 			case 0x5B: return new DupX2Instruction();
-			case 0x5C: return new DupInstruction<TypeSize::EIGHT_BYTES>();
+			case 0x5C: return new Dup2Instruction();
 			case 0x5D: return new Dup2X1Instruction();
 			case 0x5E: return new Dup2X2Instruction();
 			case 0x5F: return new SwapInstruction();
@@ -218,7 +218,7 @@ namespace jdecompiler {
 				case 0x3A: return new AStoreInstruction(nextUShort());
 				case 0x84: return new IIncInstruction(nextUShort(), nextShort());
 				//case 0xA9: i+=2 ; return "RET";
-				default: throw IllegalOpcodeException("Illegal wide opcode: 0x" + hex(current()));
+				default: throw IllegalOpcodeException("Illegal wide opcode: " + hexWithPrefix(current()));
 			}
 			case 0xC5: return new MultiANewArrayInstruction(nextUShort(), nextUByte());
 			case 0xC6: return new IfNullInstruction(nextShort());
@@ -229,7 +229,7 @@ namespace jdecompiler {
 			case 0xFE: return "IMPDEP1";
 			case 0xFF: return "IMPDEP2";*/
 			default:
-				throw IllegalOpcodeException("0x" + hex<2>(current()));
+				throw IllegalOpcodeException(hexWithPrefix<2>(current()));
 		}
 	}
 
@@ -248,19 +248,19 @@ namespace jdecompiler {
 				new StaticInitializerScope(0, methodScopeEndPos, localsCount) : new MethodScope(0, methodScopeEndPos, localsCount);
 
 		if(!(modifiers & ACC_STATIC))
-			methodScope->addVariable(new NamedVariable(&classinfo.thisType, "this"));
+			methodScope->addVariable(new NamedVariable(&classinfo.thisType, true, "this"));
 
-		{ // add variables
+		{ // add arguments
 			const uint32_t argumentsCount = descriptor.arguments.size();
 
 			static const ArrayType STRING_ARRAY(STRING);
 
 			if(descriptor.name == "main" && descriptor.returnType == VOID && modifiers == (ACC_PUBLIC | ACC_STATIC) &&
 					argumentsCount == 1 && *descriptor.arguments[0] == STRING_ARRAY) {
-				methodScope->addVariable(new NamedVariable(&STRING_ARRAY, "args"));
+				methodScope->addVariable(new NamedVariable(&STRING_ARRAY, true, "args"));
 			} else {
 				for(uint32_t i = 0; i < argumentsCount; i++)
-					methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i]));
+					methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i], true));
 			}
 		}
 
@@ -311,6 +311,7 @@ namespace jdecompiler {
 			}
 		}
 
+
 		const vector<Instruction*>& instructions = bytecode.getInstructions();
 
 		for(uint32_t i = 0, exprIndex = 0, instructionsSize = instructions.size(); i < instructionsSize; i++) {
@@ -325,9 +326,9 @@ namespace jdecompiler {
 
 			if(const Operation* operation = instructions[i]->toOperation(environment)) {
 
-				if(operation->getReturnType() != VOID)
+				if(operation->getReturnType() != VOID) {
 					environment.stack.push(operation);
-				else if(operation->canAddToCode() && (i != instructionsSize - 1 || operation != &VReturn::getInstance())) {
+				} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == &VReturn::getInstance())) {
 					environment.getCurrentScope()->add(operation, environment);
 					exprIndex++;
 				}

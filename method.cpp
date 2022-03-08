@@ -176,7 +176,7 @@ namespace jdecompiler {
 
 				if(descriptor.type == MethodType::STATIC_INITIALIZER) {
 					if(modifiers != ACC_STATIC)
-						throw IllegalModifiersException("0x" + hex<4>(modifiers) + ": static initializer must have only static modifier");
+						throw IllegalModifiersException(hexWithPrefix<4>(modifiers) + ": static initializer must have only static modifier");
 					if(attributes.has<ExceptionsAttribute>())
 						throw IllegalAttributeException("static initializer cannot have Exceptions attribute");
 					str += "static";

@@ -64,8 +64,8 @@ namespace jdecompiler {
 					return &requiredType;
 				}
 
-				virtual uint16_t getPriority() const {
-					return 9;
+				virtual Priority getPriority() const {
+					return Priority::GREATER_LESS_COMPARASION;
 				}
 		};
 
@@ -85,8 +85,8 @@ namespace jdecompiler {
 					return AnyType::getInstance();
 				}
 
-				virtual uint16_t getPriority() const override {
-					return 8;
+				virtual Priority getPriority() const override {
+					return Priority::EQUALS_COMPARASION;
 				}
 		};
 
@@ -124,6 +124,10 @@ namespace jdecompiler {
 				const CompareType& compareType;
 
 				CompareOperation(const CompareType& compareType): compareType(compareType) {}
+
+				virtual Priority getPriority() const override {
+					return compareType.getPriority();
+				}
 		};
 
 
@@ -151,8 +155,8 @@ namespace jdecompiler {
 				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return operand1->toString(environment, compareType.getPriority(), Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + ' '
-							+ operand2->toString(environment, compareType.getPriority(), Associativity::RIGHT);
+					return toStringPriority(operand1, environment, Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + ' '
+							+ toStringPriority(operand2, environment, Associativity::RIGHT);
 				}
 		};
 
@@ -165,8 +169,8 @@ namespace jdecompiler {
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return operand->getReturnType()->isInstanceof(BOOLEAN) && compareType.isEqualsCompareType ? // write `!bool` instead of `bool == false`
 						((const EqualsCompareType&)compareType).getUnaryOperator(inverted) +
-								operand->toString(environment, compareType.getPriority(), Associativity::RIGHT) :
-						operand->toString(environment, compareType.getPriority(), Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + " 0";
+								toStringPriority(operand, environment, Associativity::RIGHT) :
+						toStringPriority(operand, environment, Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + " 0";
 			}
 		};
 
@@ -215,9 +219,16 @@ namespace jdecompiler {
 				AndOperation(const Operation* operand1, const Operation* operand2): BinaryConditionOperation(operand1, operand2) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return inverted ? (isConditionOperands ? operand1->toString(environment) + " || " + operand2->toString(environment) :
-							"!(" + operand1->toString(environment) + " && " + operand2->toString(environment) + ')') :
-							operand1->toString(environment) + " && " + operand2->toString(environment);
+					const string strOperand1 = toStringPriority(operand1, environment, Associativity::LEFT),
+							strOperand2 = toStringPriority(operand2, environment, Associativity::RIGHT);
+
+					return inverted ? (isConditionOperands ? strOperand1 + " || " + strOperand2 :
+							"!(" + strOperand1 + " && " + strOperand2 + ')') :
+							strOperand1 + " && " + strOperand2;
+				}
+
+				virtual Priority getPriority() const override {
+					return inverted && isConditionOperands ? Priority::LOGICAL_OR : Priority::LOGICAL_AND;
 				}
 		};
 
@@ -227,9 +238,16 @@ namespace jdecompiler {
 				OrOperation(const Operation* operand1, const Operation* operand2): BinaryConditionOperation(operand1, operand2) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
-					return inverted ? (isConditionOperands ? operand1->toString(environment) + " && " + operand2->toString(environment) :
-							"!(" + operand1->toString(environment) + " || " + operand2->toString(environment) + ')') :
-							operand1->toString(environment) + " || " + operand2->toString(environment);
+					const string strOperand1 = toStringPriority(operand1, environment, Associativity::LEFT),
+							strOperand2 = toStringPriority(operand2, environment, Associativity::RIGHT);
+
+					return inverted ? (isConditionOperands ? strOperand1 + " && " + strOperand2 :
+							"!(" + strOperand1 + " || " + strOperand2 + ')') :
+							strOperand1 + " || " + strOperand2;
+				}
+
+				virtual Priority getPriority() const override {
+					return inverted && isConditionOperands ? Priority::LOGICAL_AND : Priority::LOGICAL_OR;
 				}
 		};
 
@@ -249,6 +267,10 @@ namespace jdecompiler {
 			virtual string toString(const CodeEnvironment& environment) const override {
 				return isShort ? condition->toString(environment) :
 						condition->toString(environment) + " ? " + trueCase->toString(environment) + " : " + falseCase->toString(environment);
+			}
+
+			virtual Priority getPriority() const override {
+				return Priority::TERNARY_OPERATOR;
 			}
 		};
 

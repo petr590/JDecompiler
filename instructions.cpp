@@ -269,6 +269,9 @@ namespace jdecompiler {
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new DupOperation<size>(environment); }
 		};
 
+		using Dup1Instruction = DupInstruction<TypeSize::FOUR_BYTES>;
+		using Dup2Instruction = DupInstruction<TypeSize::EIGHT_BYTES>;
+
 		struct DupX1Instruction: Instruction {
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new DupX1Operation(environment); }
 		};
@@ -287,11 +290,14 @@ namespace jdecompiler {
 
 
 		struct SwapInstruction: Instruction {
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new SwapOperation(environment); }
+			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+				environment.stack.push(environment.stack.pop(), environment.stack.pop());
+				return nullptr;
+			}
 		};
 
 
-		template<char32_t operation, uint16_t priority, bool canUseBoolean = false>
+		template<char32_t operation, Priority priority, bool canUseBoolean = false>
 		struct OperatorInstruction: Instruction {
 			protected:
 				const Type *const type;
@@ -302,7 +308,7 @@ namespace jdecompiler {
 						case 1: return LONG;
 						case 2: return FLOAT;
 						case 3: return DOUBLE;
-						default: throw Exception("Illegal type code: 0x" + hex(code));
+						default: throw Exception("Illegal type code: " + hexWithPrefix(code));
 					}
 				}
 
@@ -311,57 +317,57 @@ namespace jdecompiler {
 		};
 
 
-		template<char32_t operation, uint16_t priority, bool canUseBoolean = false>
+		template<char32_t operation, Priority priority, bool canUseBoolean = false>
 		struct BinaryOperatorInstruction: OperatorInstruction<operation, priority, canUseBoolean> {
 			BinaryOperatorInstruction(uint16_t typeCode): OperatorInstruction<operation, priority, canUseBoolean>(typeCode) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				return new BinaryOperatorOperation(this->OperatorInstruction<operation, priority, canUseBoolean>::type, environment, operation, priority);
+				return new BinaryOperatorOperation<operation, priority>(this->type, environment);
 			}
 		};
 
 
-		template<char32_t operation, uint16_t priority>
+		template<char32_t operation, Priority priority>
 		struct ShiftOperatorInstruction: BinaryOperatorInstruction<operation, priority> {
 			ShiftOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction<operation, priority>(typeCode) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				return new BinaryOperatorOperation(this->BinaryOperatorInstruction<operation, priority>::type, INT, environment, operation, priority);
+				return new BinaryOperatorOperation<operation, priority>(this->type, INT, environment);
 			}
 		};
 
 
-		template<char32_t operation, uint16_t priority>
+		template<char32_t operation, Priority priority>
 		struct BooleanBinaryOperatorInstruction: BinaryOperatorInstruction<operation, priority, true> {
 			BooleanBinaryOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction<operation, priority, true>(typeCode) {}
 		};
 
 
 
-		template<char32_t operation, uint16_t priority>
+		template<char32_t operation, Priority priority>
 		struct UnaryOperatorInstruction: OperatorInstruction<operation, priority> {
 			UnaryOperatorInstruction(uint16_t typeCode): OperatorInstruction<operation, priority>(typeCode) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				return new UnaryOperatorOperation(this->OperatorInstruction<operation, priority>::type, environment, operation, priority);
+				return new UnaryOperatorOperation<operation, priority>(this->type, environment);
 			}
 		};
 
-		using AddOperatorInstruction = BinaryOperatorInstruction<'+', 11>;
-		using SubOperatorInstruction = BinaryOperatorInstruction<'-', 11>;
-		using MulOperatorInstruction = BinaryOperatorInstruction<'*', 12>;
-		using DivOperatorInstruction = BinaryOperatorInstruction<'/', 12>;
-		using RemOperatorInstruction = BinaryOperatorInstruction<'%', 12>;
+		using AddOperatorInstruction = BinaryOperatorInstruction<'+', Priority::PLUS>;
+		using SubOperatorInstruction = BinaryOperatorInstruction<'-', Priority::MINUS>;
+		using MulOperatorInstruction = BinaryOperatorInstruction<'*', Priority::MULTIPLE>;
+		using DivOperatorInstruction = BinaryOperatorInstruction<'/', Priority::DIVISION>;
+		using RemOperatorInstruction = BinaryOperatorInstruction<'%', Priority::REMAINDER>;
 
-		using NegOperatorInstruction = UnaryOperatorInstruction<'-', 13>;
+		using NegOperatorInstruction = UnaryOperatorInstruction<'-', Priority::UNARY_MINUS>;
 
-		using ShiftLeftOperatorInstruction = ShiftOperatorInstruction<"<<"_c32, 10>;
-		using ShiftRightOperatorInstruction = ShiftOperatorInstruction<">>"_c32, 10>;
-		using UShiftRightOperatorInstruction = ShiftOperatorInstruction<">>>"_c32, 10>;
+		using ShiftLeftOperatorInstruction = ShiftOperatorInstruction<"<<"_c32, Priority::SHIFT>;
+		using ShiftRightOperatorInstruction = ShiftOperatorInstruction<">>"_c32, Priority::SHIFT>;
+		using UShiftRightOperatorInstruction = ShiftOperatorInstruction<">>>"_c32, Priority::SHIFT>;
 
-		using AndOperatorInstruction = BooleanBinaryOperatorInstruction<'&', 7>;
-		using OrOperatorInstruction  = BooleanBinaryOperatorInstruction<'|', 5>;
-		using XorOperatorInstruction = BooleanBinaryOperatorInstruction<'^', 6>;
+		using AndOperatorInstruction = BooleanBinaryOperatorInstruction<'&', Priority::BIT_AND>;
+		using OrOperatorInstruction  = BooleanBinaryOperatorInstruction<'|', Priority::BIT_OR>;
+		using XorOperatorInstruction = BooleanBinaryOperatorInstruction<'^', Priority::BIT_XOR>;
 
 
 		/* maybe TODO
@@ -409,19 +415,23 @@ namespace jdecompiler {
 
 			using namespace instructions;
 
+			const Type* variableType = variable.castTypeTo(ANY_INT);
+
 			const ILoadOperation* iloadOperation = environment.stack.empty() ? nullptr : dynamic_cast<const ILoadOperation*>(environment.stack.top());
+
 			if(isShortInc && iloadOperation != nullptr && iloadOperation->variable == variable) {
 				environment.stack.pop();
-				returnType = INT;
+				returnType = variableType;
 				isPostInc = true;
 			} else {
 				const ILoadInstruction* iloadInstruction =
 						dynamic_cast<const ILoadInstruction*>(environment.bytecode.getInstructionNoexcept(environment.index + 1));
 				if(iloadInstruction != nullptr && iloadInstruction->index == index) {
 					iloadInstruction->setNullOperation();
-					returnType = INT;
-				} else
+					returnType = variableType;
+				} else {
 					returnType = VOID;
+				}
 			}
 		}
 	}
@@ -754,10 +764,10 @@ namespace jdecompiler {
 		struct InvokeinterfaceInstruction: InvokeInstruction {
 			InvokeinterfaceInstruction(uint16_t index, uint16_t count, uint16_t zeroByte, const Bytecode& bytecode): InvokeInstruction(index) {
 				if(count == 0)
-					cerr << "warning: illegal format of instruction invokeinterface at pos 0x" << hex(bytecode.getPos()) <<
+					cerr << "warning: illegal format of instruction invokeinterface at pos " << hexWithPrefix(bytecode.getPos()) <<
 							": by specification, count must not be zero" << endl;
 				if(zeroByte != 0)
-					cerr << "warning: illegal format of instruction invokeinterface at pos 0x" << hex(bytecode.getPos()) <<
+					cerr << "warning: illegal format of instruction invokeinterface at pos " << hexWithPrefix(bytecode.getPos()) <<
 							": by specification, fourth byte must be zero" << endl;
 			}
 
@@ -770,7 +780,7 @@ namespace jdecompiler {
 		struct InvokedynamicInstruction: InvokeInstruction {
 			InvokedynamicInstruction(uint16_t index, uint16_t zeroShort, const Bytecode& bytecode): InvokeInstruction(index) {
 				if(zeroShort != 0)
-					cerr << "warning: illegal format of instruction invokedynamic at pos " << hex(bytecode.getPos()) <<
+					cerr << "warning: illegal format of instruction invokedynamic at pos " << hexWithPrefix(bytecode.getPos()) <<
 							": by specification, third and fourth bytes must be zero" << endl;
 			}
 
@@ -881,7 +891,7 @@ namespace jdecompiler {
 				case 0x9: return SHORT;
 				case 0xA: return INT;
 				case 0xB: return LONG;
-				default: throw DecompilationException("Illegal array type code: 0x" + hex(code));
+				default: throw DecompilationException("Illegal array type code: " + hexWithPrefix(code));
 			}
 		}
 

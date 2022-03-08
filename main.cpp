@@ -11,10 +11,10 @@
 
 namespace jdecompiler {
 
-	EnumClass::EnumClass(const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
+	EnumClass::EnumClass(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 			const vector<const ClassType*>& interfaces, const Attributes& attributes,
 			const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders):
-			Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, processMethodData(methodDataHolders)) {
+			Class(version, thisType, superType, constPool, modifiers, interfaces, attributes, fields, processMethodData(methodDataHolders)) {
 
 		using namespace operations;
 
@@ -28,11 +28,12 @@ namespace jdecompiler {
 					(dupOperation = dynamic_cast<const DupOperation<TypeSize::FOUR_BYTES>*>(invokespecialOperation->object)) != nullptr &&
 					(newOperation = dynamic_cast<const NewOperation*>(dupOperation->operation)) != nullptr) {
 				if(invokespecialOperation->arguments.size() < 2)
-					throw DecompilationException("enum constant initializer must have at least two arguments, got " +
+					throw DecompilationException("enum constant initializer should have at least two arguments, got " +
 							to_string(invokespecialOperation->arguments.size()));
 				enumFields.push_back(new EnumField(*field, invokespecialOperation->arguments));
-			} else
+			} else {
 				otherFields.push_back(field);
+			}
 		}
 	}
 
@@ -42,7 +43,7 @@ namespace jdecompiler {
 			bytecode(bytecode), classinfo(classinfo), constPool(classinfo.constPool), stack(*new CodeStack()),
 			methodScope(*methodScope), currentScopes(methodScope), modifiers(modifiers), descriptor(descriptor), attributes(attributes) {
 		for(uint32_t i = methodScope->getVariablesCount(); i < maxLocals; i++)
-			methodScope->addVariable(new UnnamedVariable(AnyType::getInstance()));
+			methodScope->addVariable(new UnnamedVariable(AnyType::getInstance(), false));
 	}
 
 
@@ -61,8 +62,9 @@ namespace jdecompiler {
 			Scope* scope = *i;
 			if(scope->start() <= index) {
 				if(scope->end() > currentScope->end())
-					throw DecompilationException("Scope is out of bounds of the parent scope: " +
-						to_string(scope->start()) + ".." + to_string(scope->end()) + ", " + to_string(currentScope->start()) + ".." + to_string(currentScope->end()));
+					throw DecompilationException((string)"Scope " +
+						typeid(*scope).name() + " {" + to_string(scope->start()) + ".." + to_string(scope->end()) + "} is out of bounds of the parent scope " +
+						typeid(*currentScope).name() + " {" + to_string(currentScope->start()) + ".." + to_string(currentScope->end()) + '}');
 				currentScope->add(scope, *this);
 				//scope->initiate(*this);
 				currentScopes.push(currentScope = scope);
@@ -91,12 +93,15 @@ namespace jdecompiler {
 
 	/* Returns true if we can write simple class name */
 	bool ClassInfo::addImport(const ClassType* clazz) const {
-		if(imports.find(clazz) == imports.end()) {
-			imports.insert(clazz);
+		if(imports.find(clazz) != imports.end()) {
 			return true;
 		} else {
-			return all_of(imports.begin(), imports.end(), [clazz] (const ClassType* imp)
-					{ return imp->simpleName != clazz->simpleName; }); // check has no class with same name
+			if(all_of(imports.begin(), imports.end(), [clazz] (const ClassType* imp)
+					{ return imp->simpleName != clazz->simpleName; })) { // check has no class with same name
+				imports.insert(clazz);
+				return true;
+			}
+			return false;
 		}
 	}
 
@@ -106,8 +111,12 @@ namespace jdecompiler {
 
 	void JDecompiler::readClassFiles() const {
 		for(BinaryInputStream* file : files) {
-			const Class* clazz = Class::readClass(*file);
-			classes[clazz->thisType.getEncodedName()] = clazz;
+			try {
+				const Class* clazz = Class::readClass(*file);
+				classes[clazz->thisType.getEncodedName()] = clazz;
+			} catch(const EOFException& ex) {
+				cerr << JDecompiler::getInstance().progName << ": error: Unexpected end of file while reading " << file->path << endl;
+			}
 		}
 	}
 }
@@ -117,12 +126,12 @@ int main(int argc, const char* args[]) {
 	using namespace std;
 	using namespace jdecompiler;
 
-	if(!JDecompiler::parseConfig(argc, args))
+	if(!JDecompiler::init(argc, args))
 		return 0;
 
-	JDecompiler::instance.readClassFiles();
+	JDecompiler::getInstance().readClassFiles();
 
-	for(const auto& clazz : JDecompiler::instance.getClasses()) {
+	for(const auto& clazz : JDecompiler::getInstance().getClasses()) {
 		if(clazz.second->canStringify())
 			cout << clazz.second->toString() << endl;
 	}

@@ -27,9 +27,11 @@ namespace jdecompiler {
 
 	template<uint16_t length>
 	static string hex(uint64_t n) {
-		static const char* digits = "0123456789ABCDEF";
+		static_assert(length > 0, "length cannot be zero");
 
-		char str[length + 1u];
+		static constexpr const char* const digits = "0123456789ABCDEF";
+
+		char str[length + 1];
 		str[length] = '\0';
 
 		for(uint16_t i = length; i-- > 0; ) {
@@ -40,20 +42,28 @@ namespace jdecompiler {
 		return str;
 	}
 
-	static string hex(uint64_t n) {
-		if(n == 0) return "0";
+	template<uint16_t length>
+	static inline string hexWithPrefix(uint64_t n) {
+		return "0x" + hex<length>(n);
+	}
 
-		static const char* digits = "0123456789ABCDEF";
+
+	static string hex(uint64_t n) {
+		static constexpr const char* digits = "0123456789ABCDEF";
 		string str;
 
-		while(n != 0) {
+		do {
 			str += digits[n & 0xF];
 			n >>= 4;
-		}
+		} while(n != 0);
 
 		reverse(str.begin(), str.end());
 
 		return str;
+	}
+
+	static inline string hexWithPrefix(uint64_t n) {
+		return "0x" + hex(n);
 	}
 
 
@@ -126,7 +136,7 @@ namespace jdecompiler {
 	};
 
 	struct IllegalModifiersException: DecompilationException {
-		IllegalModifiersException(uint16_t modifiers): DecompilationException("0x" + hex<4>(modifiers)) {}
+		IllegalModifiersException(uint16_t modifiers): DecompilationException(hexWithPrefix<4>(modifiers)) {}
 			IllegalModifiersException(const string& message): DecompilationException(message) {}
 	};
 
@@ -368,21 +378,21 @@ namespace jdecompiler {
 
 
 	class BinaryInputStream {
-		#define bufferSize 4096
-
 		public:
+			static const uint32_t BUFFER_SIZE = 4096;
+
 			const string path;
 
 		private:
 			ifstream infile;
-			char buffer[bufferSize];
+			char buffer[BUFFER_SIZE];
 			streampos end;
 			streampos pos = 0, max = 0;
 
 			void check() {
 				if(pos >= max) {
-					max = min(infile.tellg() + (streampos)bufferSize, end);
-					infile.read(buffer, max % bufferSize + bufferSize);
+					max = min(infile.tellg() + (streampos)BUFFER_SIZE, end);
+					infile.read(buffer, max % BUFFER_SIZE + BUFFER_SIZE);
 				}
 				if(pos >= end)
 					throw EOFException();
@@ -476,7 +486,7 @@ namespace jdecompiler {
 			inline const char* readString(uint32_t size) {
 				return (const char*)readBytes(size);
 			}
-		#undef bufferSize
+		#undef BUFFER_SIZE
 	};
 
 

@@ -5,8 +5,15 @@
 #include "method.cpp"
 
 namespace jdecompiler {
+	struct Version {
+		const uint16_t majorVersion, minorVersion;
+
+		inline Version(uint16_t majorVersion, uint16_t minorVersion): majorVersion(majorVersion), minorVersion(minorVersion) {}
+	};
+
 	struct Class: Stringified {
 		public:
+			const Version version;
 			const ClassType & thisType, & superType;
 			const ConstantPool& constPool;
 			const uint16_t modifiers;
@@ -17,10 +24,10 @@ namespace jdecompiler {
 			const vector<const Method*> methods;
 
 		protected:
-			Class(const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
+			Class(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 					const vector<const ClassType*>& interfaces, const Attributes& attributes, const ClassInfo& classinfo,
 					const vector<const Field*>& fields, const vector<const Method*>& methods):
-					thisType(thisType), superType(superType), constPool(constPool), modifiers(modifiers),
+					version(version), thisType(thisType), superType(superType), constPool(constPool), modifiers(modifiers),
 					interfaces(interfaces), attributes(attributes), classinfo(classinfo),
 					fields(fields), methods(methods) {}
 
@@ -28,7 +35,7 @@ namespace jdecompiler {
 				vector<const Method*> methods;
 				methods.reserve(methodDataHolders.size());
 				for(const MethodDataHolder methodData : methodDataHolders) {
-					if(JDecompiler::instance.isFailOnError()) {
+					if(JDecompiler::getInstance().isFailOnError()) {
 						methods.push_back(methodData.createMethod(classinfo));
 					} else {
 						try {
@@ -43,10 +50,10 @@ namespace jdecompiler {
 				return methods;
 			}
 
-			Class(const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
+			Class(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 					const vector<const ClassType*>& interfaces, const Attributes& attributes,
 					const vector<const Field*>& fields, const vector<MethodDataHolder>& methodDataHolders):
-					thisType(thisType), superType(superType), constPool(constPool), modifiers(modifiers),
+					version(version), thisType(thisType), superType(superType), constPool(constPool), modifiers(modifiers),
 					interfaces(interfaces), attributes(attributes),
 					classinfo(*new ClassInfo(*this, thisType, superType, constPool, attributes, modifiers)),
 					fields(fields), methods(createMethodsFromMethodData(methodDataHolders)) {}
@@ -153,7 +160,7 @@ namespace jdecompiler {
 				return str;
 			}
 
-			static string modifiersToString(uint16_t modifiers) {
+			string modifiersToString(uint16_t modifiers) const {
 				FormatString str;
 
 				switch(modifiers & (ACC_VISIBLE | ACC_PUBLIC | ACC_PRIVATE | ACC_PROTECTED)) {
@@ -161,7 +168,7 @@ namespace jdecompiler {
 					case ACC_PUBLIC: str += "public"; break;
 					case ACC_PRIVATE: str += "private"; break;
 					case ACC_PROTECTED: str += "protected"; break;
-					default: throw IllegalModifiersException("in class: 0x" + hex<4>(modifiers));
+					default: throw IllegalModifiersException("in class " + thisType.getName() + ": " + hexWithPrefix<4>(modifiers));
 				}
 
 				if(modifiers & ACC_STRICT) str += "strictfp";
@@ -180,7 +187,7 @@ namespace jdecompiler {
 					case ACC_FINAL | ACC_ENUM: case ACC_ABSTRACT | ACC_ENUM:
 						str += "enum"; break;
 					default:
-						throw IllegalModifiersException("in class: 0x" + hex<4>(modifiers));
+						throw IllegalModifiersException("in class " + thisType.getName() + ": " + hexWithPrefix<4>(modifiers));
 				}
 
 				return (string)str;
@@ -188,9 +195,9 @@ namespace jdecompiler {
 
 
 			virtual string headersToString(const ClassInfo& classinfo) const {
-				string headers;
+				string headers = "/* Java version: " + to_string(version.majorVersion) + '.' + to_string(version.minorVersion) + " */\n";
 
-				if(thisType.packageName.size() != 0)
+				if(!thisType.packageName.empty())
 					headers += (string)classinfo.getIndent() + "package " + thisType.packageName + ";\n\n";
 
 				headers += classinfo.importsToString();
@@ -242,7 +249,7 @@ namespace jdecompiler {
 			}
 
 		public:
-			EnumClass(const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
+			EnumClass(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 					const vector<const ClassType*>& interfaces, const Attributes& attributes,
 					const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders);
 
@@ -258,7 +265,7 @@ namespace jdecompiler {
 				bool anyFieldStringified = false;
 				for(const Field* field : otherFields)
 					if(field->canStringify(classinfo)) {
-						str += (string)"\n" + classinfo.getIndent() + field->toString(classinfo) + ';';
+						str += (string)"\n" + field->toString(classinfo) + ';';
 						anyFieldStringified = true;
 					}
 				if(anyFieldStringified)
@@ -272,10 +279,10 @@ namespace jdecompiler {
 
 	struct AnonymousClass: Class {
 		public:
-			AnonymousClass(const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
+			AnonymousClass(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 					const vector<const ClassType*>& interfaces, const Attributes& attributes,
 					const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders):
-					Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) {}
+					Class(version, thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) {}
 
 
 
@@ -311,7 +318,7 @@ namespace jdecompiler {
 				minorVersion = instream.readUShort(),
 				majorVersion = instream.readUShort();
 
-		cout << "/* Java version: " << majorVersion << '.' << minorVersion << " */" << endl;
+		const Version version(majorVersion, minorVersion);
 
 		const uint16_t constPoolSize = instream.readUShort();
 
@@ -370,8 +377,8 @@ namespace jdecompiler {
 					constPool[i] = new InvokeDynamicConstant(instream.readUShort(), instream.readUShort());
 					break;
 				default:
-					throw ClassFormatError("Illegal constant type 0x" + hex<2>(constType) + " at index #" + to_string(i) +
-							" at pos 0x" + hex((uint32_t)instream.getPos()));
+					throw ClassFormatError("Illegal constant type " + hexWithPrefix<2>(constType) + " at index #" + to_string(i) +
+							" at pos " + hexWithPrefix((uint32_t)instream.getPos()));
 			};
 		}
 
@@ -411,9 +418,9 @@ namespace jdecompiler {
 
 		const Attributes& attributes = *new Attributes(instream, constPool, instream.readUShort());
 
-		return modifiers & ACC_ENUM ? new EnumClass(thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) :
-		       thisType.isAnonymous ? new AnonymousClass(thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) :
-		       new Class(thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders);
+		return modifiers & ACC_ENUM ?      new EnumClass(version, thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) :
+		       thisType.isAnonymous ? new AnonymousClass(version, thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) :
+		                                       new Class(version, thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders);
 	}
 }
 

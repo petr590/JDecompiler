@@ -10,124 +10,13 @@ namespace jdecompiler {
 	}
 
 
-	struct Variable {
-		protected:
-			static string getRawNameByType(const Type* type, bool& unchecked) {
-
-				if(type->isPrimitive()) {
-					if(type->isInstanceof(BOOLEAN)) return "bool";
-					if(type->isInstanceof(BYTE)) return "b";
-					if(type->isInstanceof(CHAR)) return "c";
-					if(type->isInstanceof(SHORT)) return "s";
-					if(type->isInstanceof(INT)) return "n";
-					if(type->isInstanceof(LONG)) return "l";
-					if(type->isInstanceof(FLOAT)) return "f";
-					if(type->isInstanceof(DOUBLE)) return "d";
-				}
-				if(const ClassType* classType = dynamic_cast<const ClassType*>(type)) {
-					if(classType->simpleName == "Boolean") return "bool";
-					if(classType->simpleName == "Byte") return "b";
-					if(classType->simpleName == "Character") return "ch";
-					if(classType->simpleName == "Short") return "sh";
-					if(classType->simpleName == "Integer") return "n";
-					if(classType->simpleName == "Long") return "l";
-					if(classType->simpleName == "Float") return "f";
-					if(classType->simpleName == "Double") return "d";
-					unchecked = true;
-					return toLowerCamelCase(classType->simpleName);
-				}
-				if(const ArrayType* arrayType = dynamic_cast<const ArrayType*>(type)) {
-					if(const ClassType* classMemberType = dynamic_cast<const ClassType*>(arrayType->memberType))
-						return toLowerCamelCase(classMemberType->simpleName) + "Array";
-					return toLowerCamelCase(arrayType->memberType->getName()) + "Array";
-				}
-				return "o";
-			}
-
-			static string getNameByType(const Type* type) {
-				bool unchecked = false;
-
-				const string name = getRawNameByType(type, unchecked);
-				if(unchecked) {
-					static const map<const char*, const char*> keywords {
-						{"boolean", "bool"}, {"byte", "b"}, {"char", "ch"}, {"short", "sh"}, {"int", "n"}, {"long", "l"},
-						{"float", "f"}, {"double", "d"}, {"void", "v"},
-						{"public", "pub"}, {"protected", "prot"}, {"private", "priv"}, {"static", "stat"}, {"final", "f"}, {"abstract", "abs"},
-						{"transient", "trans"}, {"volatile", "vol"}, {"native", "nat"}, {"synchronized", "sync"},
-						{"class", "clazz"}, {"interface", "interf"}, {"enum", "en"}, {"this", "t"}, {"super", "sup"}, {"extends", "ext"}, {"implements", "impl"},
-						{"import", "imp"}, {"package", "pack"}, {"instanceof", "inst"}, {"new", "n"},
-						{"if", "cond"}, {"else", "el"}, {"while", "whl"}, {"do", "d"}, {"for", "f"}, {"switch", "sw"}, {"case", "cs"}, {"default", "def"},
-						{"break", "brk"}, {"continue", "cont"}, {"return", "ret"},
-						{"try", "tr"}, {"catch", "c"}, {"finally", "f"}, {"throw", "thr"}, {"throws", "thrs"}, {"assert", "assrt"},
-						{"true", "tr"}, {"false", "fls"}, {"null", "nll"},
-						{"strictfp", "strict"}, {"const", "cnst"}, {"goto", "gt"}
-					};
-
-					for(const auto& keyword : keywords)
-						if(name == keyword.first)
-							return keyword.second;
-				}
-
-				return name;
-			}
-
-
-		public:
-			mutable const Type* type;
-
-
-			Variable(const Type* type): type(type) {}
-
-			virtual ~Variable() {}
-
-
-			virtual string getName() const = 0;
-
-			virtual void addName(const string&) const = 0;
-
-			inline bool operator==(const Variable& other) const {
-				return this == &other;
-			}
-	};
-
-
-	struct NamedVariable: Variable {
-		protected:
-			const string name;
-
-		public:
-			NamedVariable(const Type* type, const string& name): Variable(type), name(name) {}
-
-			virtual string getName() const override {
-				return name;
-			}
-
-			virtual void addName(const string& name) const override {}
-	};
-
-
-	struct UnnamedVariable: Variable {
-		protected:
-			mutable vector<string> names;
-
-		public:
-			UnnamedVariable(const Type* type): Variable(type) {}
-
-			UnnamedVariable(const Type* type, const string& name): Variable(type), names({name}) {}
-
-			virtual string getName() const override {
-				return names.size() == 1 ? names[0] : getNameByType(type);
-			}
-
-			virtual void addName(const string& name) const override {
-				names.push_back(name);
-			}
-	};
-
-
 	namespace BuiltinTypes {
 		/* Serves as a marker for the struct TypeByBuiltinType */
-		struct MarkerStruct { MarkerStruct() = delete; };
+		struct MarkerStruct {
+			MarkerStruct() = delete;
+			MarkerStruct(const MarkerStruct&) = delete;
+			MarkerStruct& operator= (const MarkerStruct&) = delete;
+		};
 
 		struct Object: MarkerStruct {};
 		struct String: MarkerStruct {};
@@ -167,15 +56,32 @@ namespace jdecompiler {
 	enum class Associativity { LEFT, RIGHT };
 
 
+	enum class Priority {
+		DEFAULT_PRIORITY         = 16,
+		POST_INCREMENT           = 15,
+		UNARY                    = 14, PRE_INCREMENT = UNARY, BIT_NOT = UNARY, LOGICAL_NOT = UNARY, UNARY_PLUS = UNARY, UNARY_MINUS = UNARY,
+		CAST                     = 13,
+		MUL_DIV_REM              = 12, MULTIPLE = MUL_DIV_REM, DIVISION = MUL_DIV_REM, REMAINDER = MUL_DIV_REM,
+		PLUS_MINUS               = 11, PLUS = PLUS_MINUS, MINUS = PLUS_MINUS,
+		SHIFT                    = 10,
+		GREATER_LESS_COMPARASION = 9, INSTANCEOF = GREATER_LESS_COMPARASION,
+		EQUALS_COMPARASION       = 8,
+		BIT_AND                  = 7,
+		BIT_XOR                  = 6,
+		BIT_OR                   = 5,
+		LOGICAL_AND              = 4,
+		LOGICAL_OR               = 3,
+		TERNARY_OPERATOR         = 2,
+		ASSIGNMENT               = 1,
+		LAMBDA                   = 0,
+	};
+
+
 	struct Operation {
-		public:
-			static const uint16_t DEFAULT_PRIORITY = 15;
-
-			const uint16_t priority;
-			const Associativity associativity;
-
 		protected:
-			Operation(uint16_t priority = DEFAULT_PRIORITY): priority(priority), associativity(getAssociativityByPriority(priority)) {}
+			static inline const Operation* getArray(const CodeEnvironment& environment, const Type* elementType);
+
+			Operation() {}
 
 			virtual ~Operation() {}
 
@@ -219,10 +125,17 @@ namespace jdecompiler {
 
 
 		public:
-			string toString(const CodeEnvironment& environment, uint16_t priority, const Associativity associativity) const {
-				if(this->priority < priority || (this->priority == priority && this->associativity != associativity))
-					return '(' + this->toString(environment) + ')';
-				return this->toString(environment);
+			virtual Priority getPriority() const {
+				return Priority::DEFAULT_PRIORITY;
+			}
+
+			inline string toStringPriority(const Operation* operation, const CodeEnvironment& environment, const Associativity associativity) const {
+				const Priority thisPriority = this->getPriority(),
+				               otherPriority = operation->getPriority();
+
+				if(otherPriority < thisPriority || (otherPriority == thisPriority && getAssociativityByPriority(otherPriority) != associativity))
+					return '(' + operation->toString(environment) + ')';
+				return operation->toString(environment);
 			}
 
 			virtual inline string getFrontSeparator(const ClassInfo& classinfo) const {
@@ -239,8 +152,9 @@ namespace jdecompiler {
 			}
 
 		private:
-			static inline constexpr Associativity getAssociativityByPriority(uint16_t priority) {
-				return priority == 1 || priority == 2 || priority == 13 ? Associativity::RIGHT : Associativity::LEFT;
+			static inline constexpr Associativity getAssociativityByPriority(Priority priority) {
+				return priority == Priority::ASSIGNMENT || priority == Priority::TERNARY_OPERATOR || priority == Priority::CAST
+						|| priority == Priority::UNARY ? Associativity::RIGHT : Associativity::LEFT;
 			}
 	};
 
@@ -253,6 +167,143 @@ namespace jdecompiler {
 
 			virtual ~Instruction() {}
 	};
+
+
+
+	struct Variable {
+		protected:
+			static string getRawNameByType(const Type* type, bool* unchecked) {
+				if(const ClassType* classType = dynamic_cast<const ClassType*>(type)) {
+					if(classType->simpleName == "Boolean") return "bool";
+					if(classType->simpleName == "Byte") return "b";
+					if(classType->simpleName == "Character") return "ch";
+					if(classType->simpleName == "Short") return "sh";
+					if(classType->simpleName == "Integer") return "n";
+					if(classType->simpleName == "Long") return "l";
+					if(classType->simpleName == "Float") return "f";
+					if(classType->simpleName == "Double") return "d";
+				}
+				*unchecked = true;
+				return type->getVarName();
+			}
+
+			static string getNameByType(const Type* type) {
+				bool unchecked = false;
+
+				const string name = getRawNameByType(type, &unchecked);
+				if(unchecked) {
+					static const map<const char*, const char*> keywords {
+						{"boolean", "bool"}, {"byte", "b"}, {"char", "ch"}, {"short", "sh"}, {"int", "n"}, {"long", "l"},
+						{"float", "f"}, {"double", "d"}, {"void", "v"},
+						{"public", "pub"}, {"protected", "prot"}, {"private", "priv"}, {"static", "stat"}, {"final", "f"}, {"abstract", "abs"},
+						{"transient", "trans"}, {"volatile", "vol"}, {"native", "nat"}, {"synchronized", "sync"},
+						{"class", "clazz"}, {"interface", "interf"}, {"enum", "en"}, {"this", "t"}, {"super", "sup"}, {"extends", "ext"}, {"implements", "impl"},
+						{"import", "imp"}, {"package", "pack"}, {"instanceof", "inst"}, {"new", "n"},
+						{"if", "cond"}, {"else", "el"}, {"while", "whl"}, {"do", "d"}, {"for", "f"}, {"switch", "sw"}, {"case", "cs"}, {"default", "def"},
+						{"break", "brk"}, {"continue", "cont"}, {"return", "ret"},
+						{"try", "tr"}, {"catch", "c"}, {"finally", "f"}, {"throw", "thr"}, {"throws", "thrs"}, {"assert", "assrt"},
+						{"true", "tr"}, {"false", "fls"}, {"null", "nll"},
+						{"strictfp", "strict"}, {"const", "cnst"}, {"goto", "gt"}
+					};
+
+					for(const auto& keyword : keywords)
+						if(name == keyword.first)
+							return keyword.second;
+				}
+
+				return name;
+			}
+
+
+		protected:
+			mutable const Type* type;
+			mutable bool declared;
+
+			mutable vector<const Operation*> linkedOperations;
+
+			/*friend struct operations::LoadOperation;
+			friend struct operations::StoreOperation;
+			friend struct operations::IIncOperation;*/
+
+
+
+		public:
+			void linkWith(const Operation* operation) const {
+				linkedOperations.push_back(operation);
+				castTypeTo(operation->getReturnType());
+			}
+
+			const Type* setType(const Type* newType) const {
+				for(const Operation* operation : linkedOperations)
+					newType = operation->getReturnTypeAs(newType);
+				return this->type = newType;
+			}
+
+			inline const Type* castTypeTo(const Type* requiredType) const {
+				return setType(type->castTo(requiredType));
+			}
+
+			const Type* getType() const {
+				return type;
+			}
+
+			bool isDeclared() const {
+				return declared;
+			}
+
+			bool setDeclared(bool declared) const {
+				return this->declared = declared;
+			}
+
+			Variable(const Type* type, bool declared): type(type), declared(declared) {}
+
+
+			virtual string getName() const = 0;
+
+			virtual void addName(const string&) const = 0;
+
+			inline bool operator==(const Variable& other) const {
+				return this == &other;
+			}
+
+
+			virtual ~Variable() {}
+	};
+
+
+	struct NamedVariable: Variable {
+		protected:
+			const string name;
+
+		public:
+			NamedVariable(const Type* type, bool declared, const string& name): Variable(type, declared), name(name) {}
+
+			virtual string getName() const override {
+				return name;
+			}
+
+			virtual void addName(const string& name) const override {}
+	};
+
+
+	struct UnnamedVariable: Variable {
+		protected:
+			mutable vector<string> names;
+
+		public:
+			UnnamedVariable(const Type* type, bool declared): Variable(type, declared) {}
+
+			UnnamedVariable(const Type* type, bool declared, const string& name): Variable(type, declared), names({name}) {}
+
+			virtual string getName() const override {
+				return names.size() == 1 ? names[0] : getNameByType(type);
+			}
+
+			virtual void addName(const string& name) const override {
+				names.push_back(name);
+			}
+	};
+
 
 
 	struct Bytecode {
@@ -447,13 +498,9 @@ namespace jdecompiler {
 		const Operation* popAs(const Type* type) {
 			checkEmptyStack();
 
-			const Operation* operation = Stack<const Operation*>::pop();
-			operation->getReturnTypeAs(type);
+			const Operation* operation = this->pop();
+			operation->castReturnTypeTo(type);
 			return operation;
-		}
-
-		inline const Operation* popAs(const Type& type) {
-			return popAs(&type);
 		}
 
 		inline const Operation* pop() {
@@ -529,6 +576,11 @@ namespace jdecompiler {
 	};
 
 
+	const Operation* Operation::getArray(const CodeEnvironment& environment, const Type* elementType) {
+		return environment.stack.popAs(new ArrayType(elementType));
+	}
+
+
 	template<class D, class... Ds>
 	bool Operation::checkDup(const CodeEnvironment& environment, const Operation* operation) {
 		if(instanceof<const D*>(operation)) {
@@ -552,14 +604,21 @@ namespace jdecompiler {
 			Scope *const parentScope;
 
 		protected:
-			vector<Variable*> variables;
+			const uint16_t localsCount;
+
+			mutable vector<Variable*> variables;
+			mutable uint16_t lastAddedVarIndex = 0;
+
 			vector<const Operation*> code;
 			map<const Variable*, string> varNames;
 
 		public:
-			vector<Scope*> innerScopes;
+			//vector<Scope*> innerScopes;
 
-			Scope(uint32_t startPos, uint32_t endPos, Scope* parentScope): startPos(startPos), endPos(endPos), parentScope(parentScope) {}
+			Scope(uint32_t startPos, uint32_t endPos, Scope* parentScope, uint16_t localsCount):
+					startPos(startPos), endPos(endPos), parentScope(parentScope), localsCount(localsCount), variables(localsCount) {}
+
+			Scope(uint32_t startPos, uint32_t endPos, Scope* parentScope): Scope(startPos, endPos, parentScope, parentScope->localsCount) {}
 
 
 			inline uint32_t start() const {
@@ -572,9 +631,18 @@ namespace jdecompiler {
 
 
 			virtual const Variable& getVariable(uint32_t index) const {
-				if(index >= variables.size() && parentScope == nullptr)
-					throw IndexOutOfBoundsException(index, variables.size());
-				return index >= variables.size() ? parentScope->getVariable(index) : *variables[index];
+				if(index >= variables.size()) {
+					if(parentScope == nullptr)
+						throw IndexOutOfBoundsException(index, variables.size());
+					return parentScope->getVariable(index);
+				}
+
+				const Variable* var = variables[index];
+				if(var == nullptr) {
+					var = variables[index] = new UnnamedVariable(AnyType::getInstance(), false);
+					lastAddedVarIndex = localsCount;
+				}
+				return *var;
 			}
 
 			bool hasVariable(const string& name) const {
@@ -585,7 +653,15 @@ namespace jdecompiler {
 			}
 
 			void addVariable(Variable* var) {
-				variables.push_back(var);
+				if(lastAddedVarIndex >= localsCount)
+					throw IllegalStateException("cannot add variable: no free place");
+
+				variables[lastAddedVarIndex] = var;
+				switch(var->getType()->getSize()) {
+					case TypeSize::FOUR_BYTES: lastAddedVarIndex += 1; break;
+					case TypeSize::EIGHT_BYTES: lastAddedVarIndex += 2; break;
+					default: throw IllegalStateException((string)"illegal variable type size " + TypeSize_nameOf(var->getType()->getSize()));
+				}
 			}
 
 			inline string getNameFor(const Variable& var) {
@@ -600,7 +676,7 @@ namespace jdecompiler {
 
 				const string baseName = var->getName();
 				string name = baseName;
-				unsigned int i = 1;
+				uint_fast16_t i = 1;
 
 				while(find_if(varNames.begin(), varNames.end(), [&name] (const auto& it) { return it.second == name; }) != varNames.end()) {
 					name = baseName + to_string(++i);
@@ -676,7 +752,7 @@ namespace jdecompiler {
 
 	struct MethodScope: Scope {
 		public:
-			MethodScope(uint32_t startPos, uint32_t endPos, uint16_t localsCount): Scope(startPos, endPos, nullptr) {
+			MethodScope(uint32_t startPos, uint32_t endPos, uint16_t localsCount): Scope(startPos, endPos, nullptr, localsCount) {
 				variables.reserve(localsCount);
 			}
 	};

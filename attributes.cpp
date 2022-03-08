@@ -275,7 +275,7 @@ namespace jdecompiler {
 			case '@': return *new AnnotationAnnotationValue(instream, constPool);
 			case '[': return *new ArrayAnnotationValue(instream, constPool);
 			default:
-				throw IllegalAttributeException((string)"Illegal annotation element value type: '" + (char)typeTag + "' (0x" + hex(typeTag) + ')');
+				throw IllegalAttributeException((string)"Illegal annotation element value type: '" + (char)typeTag + "' (U+" + hex<4>(typeTag) + ')');
 		}
 	}
 

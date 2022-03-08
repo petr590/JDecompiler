@@ -180,36 +180,37 @@ namespace jdecompiler {
 
 	// operations.cpp
 
+	enum class Priority;
+
 	namespace operations {
-		template<class T>
-		struct ReturnableOperation; // ReturnableOperation is an operation which returns specified type
+		template<class T> struct ReturnableOperation; // ReturnableOperation is an operation which returns specified type
 		struct IntOperation;
 		struct AnyIntOperation;
 		struct BooleanOperation;
 		struct VoidOperation;
 		struct TransientReturnableOperation;
 
-		template<TypeSize size>
-		struct TypeSizeTemplatedOperation;
-		template<TypeSize size>
-		struct AbstractDupOperation;
-		template<TypeSize size>
-		struct DupOperation;
+		template<TypeSize size> struct TypeSizeTemplatedOperation;
+		template<TypeSize size> struct AbstractDupOperation;
+		template<TypeSize size> struct DupOperation;
 		struct DupX1Operation;
 		struct DupX2Operation;
 		struct Dup2X1Operation;
 		struct Dup2X2Operation;
-		template<typename T>
-		struct ConstOperation;
+
+		template<typename T> struct ConstOperation;
 		struct IConstOperation;
+
 		template<TypeSize size, class CT, typename RT>
 		struct LdcOperation;
+
 		struct LoadOperation;
 		struct ILoadOperation;
 		struct LLoadOperation;
 		struct FLoadOperation;
 		struct DLoadOperation;
 		struct ALoadOperation;
+
 		struct ArrayLoadOperation;
 		struct IALoadOperation;
 		struct LALoadOperation;
@@ -219,6 +220,7 @@ namespace jdecompiler {
 		struct BALoadOperation;
 		struct CALoadOperation;
 		struct SALoadOperation;
+
 		struct StoreOperation;
 		struct IStoreOperation;
 		struct LStoreOperation;
@@ -228,45 +230,33 @@ namespace jdecompiler {
 
 		template<TypeSize size>
 		struct PopOperation;
-		//template<TypeSize size>
-		struct SwapOperation;
 
-		struct OperatorOperation;
-		struct BinaryOperatorOperation;
-		struct UnaryOperatorOperation;
+		template<char32_t operation, Priority priority> struct OperatorOperation;
+		template<char32_t operation, Priority priority> struct BinaryOperatorOperation;
+		template<char32_t operation, Priority priority> struct UnaryOperatorOperation;
 
 		struct IIncOperation;
 
-		template<bool required>
-		struct CastOperation;
+		template<bool required> struct CastOperation;
 
-		struct CmpOperation;
-		struct LCmpOperation;
-		struct FCmpOperation;
-		struct DCmpOperation;
-		struct CompareType;
-		struct EqualsCompareType;
-		struct CompareType;
-		struct EqualsCompareType;
-		struct ConditionOperation;
-		struct CompareBinaryOperation;
-		struct CompareWithZeroOperation;
-		struct CompareWithNullOperation;
-		struct TernaryOperatorOperation;
-		struct IfScope;
-		struct ElseScope;
-		struct ContinueOperation;
-		struct EmptyInfiniteLoopScope;
+		struct CheckCastOperation;
+
+		struct InstanceofOperation;
+
+
 		struct SwitchScope;
+
 		struct CatchScopeDataHolder;
 		struct TryScope;
 		struct CatchScope;
+
 		struct ReturnOperation;
 		struct IReturnOperation;
 		struct LReturnOperation;
 		struct FReturnOperation;
 		struct DReturnOperation;
 		struct AReturnOperation;
+
 		struct FieldOperation;
 		struct PutFieldOperation;
 		struct PutStaticFieldOperation;
@@ -274,14 +264,18 @@ namespace jdecompiler {
 		struct GetFieldOperation;
 		struct GetStaticFieldOperation;
 		struct GetInstanceFieldOperation;
+
 		struct NewOperation;
+
 		struct InvokeOperation;
 		struct InvokeNonStaticOperation;
 		struct InvokevirtualOperation;
 		struct InvokespecialOperation;
 		struct InvokestaticOperation;
 		struct InvokeinterfaceOperation;
+
 		struct ConcatStringsOperation;
+
 		struct ArrayStoreOperation;
 		struct NewArrayOperation;
 		struct ANewArrayOperation;
@@ -294,10 +288,31 @@ namespace jdecompiler {
 		struct BAStoreOperation;
 		struct CAStoreOperation;
 		struct SAStoreOperation;
+
 		struct ArrayLengthOperation;
+
 		struct AThrowOperation;
-		struct CheckCastOperation;
-		struct InstanceofOperation;
+
+		// condition-operations.cpp
+		struct CmpOperation;
+		struct LCmpOperation;
+		struct FCmpOperation;
+		struct DCmpOperation;
+
+		struct CompareType;
+		struct EqualsCompareType;
+
+		struct ConditionOperation;
+		struct CompareBinaryOperation;
+		struct CompareWithZeroOperation;
+		struct CompareWithNullOperation;
+
+		struct TernaryOperatorOperation;
+
+		struct IfScope;
+		struct ElseScope;
+		struct ContinueOperation;
+		struct EmptyInfiniteLoopScope;
 	}
 
 
@@ -307,23 +322,24 @@ namespace jdecompiler {
 		struct InstructionWithIndex;
 		struct InstructionAndOperation;
 		struct VoidInstructionAndOperation;
+
 		struct AConstNull;
-		template<typename T>
-		struct NumberConstInstruction;
+		template<typename T> struct NumberConstInstruction;
 		struct IConstInstruction;
 		struct LConstInstruction;
 		struct FConstInstruction;
 		struct DConstInstruction;
-		template<typename T>
-		struct IPushInstruction;
-		template<TypeSize size>
-		struct LdcInstruction;
+
+		template<typename T> struct IPushInstruction;
+		template<TypeSize size> struct LdcInstruction;
+
 		struct LoadInstruction;
 		struct ILoadInstruction;
 		struct LLoadInstruction;
 		struct FLoadInstruction;
 		struct DLoadInstruction;
 		struct ALoadInstruction;
+
 		struct ArrayLoadInstruction;
 		struct IALoadInstruction;
 		struct LALoadInstruction;
@@ -358,13 +374,13 @@ namespace jdecompiler {
 		struct Dup2X1Instruction;
 		struct Dup2X2Instruction;
 		struct SwapInstruction;
-		template<char32_t operation, uint16_t priority, bool canUseBoolean>
+		template<char32_t operation, Priority priority, bool canUseBoolean>
 		struct OperatorInstruction;
-		template<char32_t operation, uint16_t priority, bool canUseBoolean>
+		template<char32_t operation, Priority priority, bool canUseBoolean>
 		struct BinaryOperatorInstruction;
-		template<char32_t operation, uint16_t priority>
+		template<char32_t operation, Priority priority>
 		struct ShiftOperatorInstruction;
-		template<char32_t operation, uint16_t priority>
+		template<char32_t operation, Priority priority>
 		struct UnaryOperatorInstruction;
 		struct IIncInstruction;
 		template<bool required>

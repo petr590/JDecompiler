@@ -256,7 +256,7 @@ namespace jdecompiler {
 			static const ArrayType STRING_ARRAY(STRING);
 
 			if(descriptor.name == "main" && descriptor.returnType == VOID && modifiers == (ACC_PUBLIC | ACC_STATIC) &&
-					argumentsCount == 1 && *descriptor.arguments[0] == STRING_ARRAY) {
+					argumentsCount == 1 && *descriptor.arguments[0] == STRING_ARRAY) { // public static void main(String[] args)
 				methodScope->addVariable(new NamedVariable(&STRING_ARRAY, true, "args"));
 			} else {
 				for(uint32_t i = 0; i < argumentsCount; i++)
@@ -333,8 +333,8 @@ namespace jdecompiler {
 					exprIndex++;
 				}
 
-				if(Scope* scope = const_cast<Scope*>(dynamic_cast<const Scope*>(operation)))
-					environment.addScope(scope);
+				if(instanceof<const Scope*>(operation))
+					environment.addScope(static_cast<const Scope*>(operation));
 			}
 
 			environment.checkCurrentScope();

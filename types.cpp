@@ -26,9 +26,10 @@ namespace jdecompiler {
 		}
 	}
 
+
 	struct Type: Stringified {
 		protected:
-			constexpr Type() {}
+			constexpr Type() noexcept {}
 
 		public:
 			virtual string toString() const = 0;
@@ -231,7 +232,7 @@ namespace jdecompiler {
 							encodedName = string(encodedName, 0, i);
 							goto ForEnd;
 						default:
-							throw InvalidClassNameException(encodedName + ' ' + to_string(i));
+							throw InvalidClassNameException(encodedName);
 					}
 				}
 				ForEnd:
@@ -241,14 +242,16 @@ namespace jdecompiler {
 
 				simpleName = nameStartPos == 0 ? name : string(name, nameStartPos + 1);
 
-				packageName = string(name, 0, packageEndPos);
+				packageName = name.substr(0, packageEndPos);
 
 				if(enclosingClassNameEndPos == 0) {
 					enclosingClass = nullptr;
 					fullSimpleName = simpleName;
 				} else {
 					isAnonymous = all_of(simpleName.begin(), simpleName.end(), [] (unsigned char c) { return isdigit(c); });
-					enclosingClass = new ClassType(string(encodedName, 0, enclosingClassNameEndPos));
+					enclosingClass = new ClassType(encodedName.substr(0, enclosingClassNameEndPos));
+					if(isAnonymous)
+						this->name[enclosingClassNameEndPos] = '$';
 					fullSimpleName = enclosingClass->fullSimpleName + (isAnonymous ? '$' : '.') + simpleName;
 				}
 			}
@@ -393,19 +396,19 @@ namespace jdecompiler {
 
 
 	static const PrimitiveType<TypeSize::ZERO_BYTES>
-			*const VOID = new PrimitiveType<TypeSize::ZERO_BYTES>("V", "void", "v");
+			*const VOID(new PrimitiveType<TypeSize::ZERO_BYTES>("V", "void", "v"));
 
 	static const PrimitiveType<TypeSize::FOUR_BYTES>
-			*const BYTE = new PrimitiveType<TypeSize::FOUR_BYTES>("B", "byte", "b"),
-			*const CHAR = new PrimitiveType<TypeSize::FOUR_BYTES>("C", "char", "c"),
-			*const SHORT = new PrimitiveType<TypeSize::FOUR_BYTES>("S", "short", "s"),
-			*const INT = new PrimitiveType<TypeSize::FOUR_BYTES>("I", "int", "n"),
-			*const FLOAT = new PrimitiveType<TypeSize::FOUR_BYTES>("F", "float", "f"),
-			*const BOOLEAN = new PrimitiveType<TypeSize::FOUR_BYTES>("Z", "boolean", "bool");
+			*const BYTE(new PrimitiveType<TypeSize::FOUR_BYTES>("B", "byte", "b")),
+			*const CHAR(new PrimitiveType<TypeSize::FOUR_BYTES>("C", "char", "c")),
+			*const SHORT(new PrimitiveType<TypeSize::FOUR_BYTES>("S", "short", "s")),
+			*const INT(new PrimitiveType<TypeSize::FOUR_BYTES>("I", "int", "n")),
+			*const FLOAT(new PrimitiveType<TypeSize::FOUR_BYTES>("F", "float", "f")),
+			*const BOOLEAN(new PrimitiveType<TypeSize::FOUR_BYTES>("Z", "boolean", "bool"));
 
 	static const PrimitiveType<TypeSize::EIGHT_BYTES>
-			*const LONG = new PrimitiveType<TypeSize::EIGHT_BYTES>("J", "long", "l"),
-			*const DOUBLE = new PrimitiveType<TypeSize::EIGHT_BYTES>("D", "double", "d");
+			*const LONG(new PrimitiveType<TypeSize::EIGHT_BYTES>("J", "long", "l")),
+			*const DOUBLE(new PrimitiveType<TypeSize::EIGHT_BYTES>("D", "double", "d"));
 
 
 	template<>
@@ -416,12 +419,12 @@ namespace jdecompiler {
 
 
 	static const ClassType
-			*const OBJECT = new ClassType("java/lang/Object"),
-			*const STRING = new ClassType("java/lang/String"),
-			*const CLASS = new ClassType("java/lang/Class"),
-			*const METHOD_TYPE = new ClassType("java/lang/invoke/MethodType"),
-			*const METHOD_HANDLE = new ClassType("java/lang/invoke/MethodHandle"),
-			*const THROWABLE = new ClassType("java/lang/Throwable");
+			*const OBJECT(new ClassType("java/lang/Object")),
+			*const STRING(new ClassType("java/lang/String")),
+			*const CLASS(new ClassType("java/lang/Class")),
+			*const METHOD_TYPE(new ClassType("java/lang/invoke/MethodType")),
+			*const METHOD_HANDLE(new ClassType("java/lang/invoke/MethodHandle")),
+			*const THROWABLE(new ClassType("java/lang/Throwable"));
 
 
 
@@ -633,9 +636,9 @@ namespace jdecompiler {
 
 
 	static const AmbigousType
-			*const ANY_INT_OR_BOOLEAN = new AmbigousType({BOOLEAN, INT, SHORT, CHAR, BYTE}),
-			*const ANY_INT = new AmbigousType({INT, SHORT, CHAR, BYTE}),
-			*const BYTE_OR_BOOLEAN = new AmbigousType({BOOLEAN, BYTE});
+			*const ANY_INT_OR_BOOLEAN(new AmbigousType({BOOLEAN, INT, SHORT, CHAR, BYTE})),
+			*const ANY_INT(new AmbigousType({INT, SHORT, CHAR, BYTE})),
+			*const BYTE_OR_BOOLEAN(new AmbigousType({BOOLEAN, BYTE}));
 
 
 	struct ExcludingType final: SpecialType {
@@ -682,34 +685,46 @@ namespace jdecompiler {
 				if(*this == *other)
 					return true;
 
-				if(!other->isBasic())
-					return false;
+				if(other->isBasic()) {
+					for(const BasicType* type : this->types) {
+						if(type == other) {
+							return false;
+						}
+					}
 
-				if(const AmbigousType* ambigousType = dynamic_cast<const AmbigousType*>(other)) {
+					return true;
+				}
+
+				if(instanceof<const AmbigousType*>(other)) {
 					for(const BasicType* t1 : this->types) {
-						for(const Type* t2 : ambigousType->types) {
+						for(const Type* t2 : static_cast<const AmbigousType*>(other)->types) {
 							if(!t2->isInstanceof(t1)) {
 								return true;
 							}
 						}
 					}
-
-					return false;
 				}
 
-				for(const BasicType* type : this->types) {
-					if(type->isInstanceof(other)) {
-						return false;
-					}
-				}
-
-				return true;
+				return false;
 			}
 
 		protected:
 			virtual const Type* castToImpl(const Type* other) const override {
-				if(const AmbigousType* ambigousType = dynamic_cast<const AmbigousType*>(other)) {
-					vector<const BasicType*> newTypes = ambigousType->types;
+				if(*this == *other)
+					return this;
+
+				if(other->isBasic()) {
+					for(const BasicType* type : this->types) {
+						if(type == other) {
+							return nullptr;
+						}
+					}
+
+					return other;
+				}
+
+				if(instanceof<const AmbigousType*>(other)) {
+					vector<const BasicType*> newTypes = static_cast<const AmbigousType*>(other)->types;
 					newTypes.erase(remove_if(newTypes.begin(), newTypes.end(), [this] (const BasicType* t1) {
 							for(const BasicType* t2 : types)
 								if(*t1 == *t2)
@@ -717,8 +732,10 @@ namespace jdecompiler {
 							return false;
 						}), newTypes.end());
 
-					return newTypes.empty() ? nullptr : new AmbigousType(newTypes);
+					if(!newTypes.empty())
+						return new AmbigousType(newTypes);
 				}
+
 				return nullptr;
 			}
 	};

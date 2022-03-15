@@ -33,16 +33,16 @@ namespace jdecompiler {
 	static const uint32_t
 			ACC_VISIBLE      = 0x0000, // class, field, method
 			ACC_PUBLIC       = 0x0001, // class, field, method
-			ACC_PRIVATE      = 0x0002, // class, field, method
-			ACC_PROTECTED    = 0x0004, // class, field, method
+			ACC_PRIVATE      = 0x0002, // nested class, field, method
+			ACC_PROTECTED    = 0x0004, // nested class, field, method
 			ACC_STATIC       = 0x0008, // nested class, field, method
 			ACC_FINAL        = 0x0010, // class, field, method
 			ACC_SYNCHRONIZED = 0x0020, // method, block
 			ACC_SUPER        = 0x0020, // class (deprecated)
 			ACC_VOLATILE     = 0x0040, // field
-			ACC_BRIDGE       = 0x0040, // method
 			ACC_TRANSIENT    = 0x0080, // field
-			ACC_VARARGS      = 0x0080, // args
+			ACC_BRIDGE       = 0x0040, // method
+			ACC_VARARGS      = 0x0080, // method
 			ACC_NATIVE       = 0x0100, // method
 			ACC_INTERFACE    = 0x0200, // class
 			ACC_ABSTRACT     = 0x0400, // class, method
@@ -61,49 +61,38 @@ namespace jdecompiler {
 
 	struct FormatString;
 
-	// jdecompiler-const-pool
+	template<typename T>
+	struct const_ptr;
 
-	struct Constant;
+	// jdecompiler-const-pool
 
 	struct ConstantPool;
 
+	struct Constant;
 	struct Utf8Constant;
-
 	struct ClassConstant;
-
 	struct StringConstant;
-
 	struct NameAndTypeConstant;
 
 	struct FieldrefConstant;
-
 	struct MethodrefConstant;
-
 	struct InterfaceMethodrefConstant;
 
 	struct MethodHandleConstant;
-
 	struct MethodTypeConstant;
-
 	struct InvokeDynamicConstant;
 
 
 	// jdecompiler-attributes
 
-	struct Attribute;
-
 	struct Attributes;
 
+	struct Attribute;
 	struct UnknownAttribute;
-
 	struct ConstantValueAttribute;
-
 	struct CodeAttribute;
-
 	struct ExceptionsAttribute;
-
 	struct DeprecatedAttribute;
-
 	struct AnnotationsAttribute;
 
 
@@ -121,6 +110,8 @@ namespace jdecompiler {
 
 	struct MethodScope;
 
+	struct StaticInitializerScope;
+
 	struct ClassInfo;
 
 
@@ -131,8 +122,8 @@ namespace jdecompiler {
 	struct Type;
 
 	struct BasicType;
-
 	struct SpecialType;
+
 
 	template<TypeSize>
 	struct PrimitiveType;
@@ -142,6 +133,16 @@ namespace jdecompiler {
 	struct ClassType;
 
 	struct ArrayType;
+
+
+	struct AmbigousType;
+
+	struct AnyType;
+
+	struct AnyObjectType;
+
+	struct ExcludingType;
+
 
 	static const BasicType* parseType(const char* encodedName);
 
@@ -231,8 +232,9 @@ namespace jdecompiler {
 		template<TypeSize size>
 		struct PopOperation;
 
-		template<char32_t operation, Priority priority> struct OperatorOperation;
-		template<char32_t operation, Priority priority> struct BinaryOperatorOperation;
+		struct OperatorOperation;
+		struct BinaryOperatorOperation;
+		template<char32_t operation, Priority priority> struct BinaryOperatorOperationImpl;
 		template<char32_t operation, Priority priority> struct UnaryOperatorOperation;
 
 		struct IIncOperation;
@@ -310,7 +312,6 @@ namespace jdecompiler {
 		struct TernaryOperatorOperation;
 
 		struct IfScope;
-		struct ElseScope;
 		struct ContinueOperation;
 		struct EmptyInfiniteLoopScope;
 	}

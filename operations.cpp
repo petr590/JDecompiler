@@ -197,6 +197,20 @@ O Operation::castOperationTo(const Operation* operation) {
 namespace operations {
 
 
+		template<TypeSize size>
+		struct PopOperation: VoidOperation, TypeSizeTemplatedOperation<size> {
+			const Operation* const operation;
+
+			PopOperation(const CodeEnvironment& environment): operation(environment.stack.pop()) {
+				TypeSizeTemplatedOperation<size>::checkTypeSize(operation->getReturnType());
+			}
+
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return operation->toString(environment);
+			}
+		};
+
+
 		template<typename T>
 		struct ConstOperation: Operation {
 			protected:
@@ -317,7 +331,7 @@ namespace operations {
 
 			public:
 				LoadOperation(const Type* requiredType, const CodeEnvironment& environment, uint16_t index):
-						LoadOperation(requiredType, index, environment.getCurrentScope()->getVariable(index)) {}
+						LoadOperation(requiredType, index, environment.getCurrentScope()->getVariable(index, true)) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return environment.getCurrentScope()->getNameFor(variable);
@@ -397,6 +411,88 @@ namespace operations {
 		};
 
 
+
+		struct OperatorOperation: ReturnableOperation<> {
+			public:
+				const char* const stringOperator;
+				const Priority priority;
+
+				OperatorOperation(char32_t operation, Priority priority, const Type* type):
+						stringOperator(char32ToString(operation)), priority(priority), ReturnableOperation(type) {}
+
+				virtual Priority getPriority() const override {
+					return priority;
+				}
+		};
+
+
+		struct BinaryOperatorOperation: OperatorOperation {
+			const Operation *const operand2, *const operand1;
+
+			BinaryOperatorOperation(char32_t operation, Priority priority, const Type* type1, const Type* type2, const CodeEnvironment& environment):
+						OperatorOperation(operation, priority, type1),
+						operand2(environment.stack.popAs(type2)), operand1(environment.stack.popAs(type1)) {}
+
+				BinaryOperatorOperation(char32_t operation, Priority priority, const Type* type, const CodeEnvironment& environment):
+						OperatorOperation(operation, priority, type), operand2(environment.stack.pop()),
+							operand1(environment.stack.pop()) {
+					const Type* requiredType = operand1->getReturnType()->castTo(operand2->getReturnType())->castTo(type);
+					operand1->castReturnTypeTo(requiredType);
+					operand2->castReturnTypeTo(requiredType);
+				}
+
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return toStringPriority(operand1, environment, Associativity::LEFT) + ' ' + stringOperator + ' ' +
+						toStringPriority(operand2, environment, Associativity::RIGHT);
+			}
+		};
+
+
+		template<char32_t operation, Priority priority>
+		struct BinaryOperatorOperationImpl: BinaryOperatorOperation {
+			BinaryOperatorOperationImpl(const Type* type1, const Type* type2, const CodeEnvironment& environment):
+					BinaryOperatorOperation(operation, priority, type1, type2, environment) {}
+
+			BinaryOperatorOperationImpl(const Type* type, const CodeEnvironment& environment):
+					BinaryOperatorOperation(operation, priority, type, environment) {}
+		};
+
+
+		/* Operator bit not realized in java through operator xor with value -1 */
+		template<Priority priority>
+		struct BinaryOperatorOperationImpl<'^', priority>: BinaryOperatorOperation {
+			const bool isBitNot;
+
+			BinaryOperatorOperationImpl(const Type* type, const CodeEnvironment& environment):
+						BinaryOperatorOperation('^', priority, type, environment),
+						isBitNot(instanceof<const IConstOperation*>(operand2) && static_cast<const IConstOperation*>(operand2)->value == -1) {}
+
+			virtual string toString(const CodeEnvironment& environment) const override {
+				return isBitNot ? '~' + this->toStringPriority(operand1, environment, Associativity::RIGHT):
+						this->toStringPriority(operand1, environment, Associativity::LEFT) + ' ' + this->stringOperator + ' ' +
+						this->toStringPriority(operand2, environment, Associativity::RIGHT);
+			}
+
+			virtual Priority getPriority() const override {
+				return isBitNot ? Priority::BIT_NOT : priority;
+			}
+		};
+
+		template<char32_t operation, Priority priority>
+		struct UnaryOperatorOperation: OperatorOperation {
+			public:
+				const Operation* const operand;
+
+				UnaryOperatorOperation(const Type* type, const CodeEnvironment& environment):
+						OperatorOperation(operation, priority, type), operand(environment.stack.popAs(type)) {}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return this->stringOperator + this->toStringPriority(operand, environment, Associativity::RIGHT);
+				}
+		};
+
+
+
 		struct StoreOperation: TransientReturnableOperation {
 			public:
 				const Operation* const value;
@@ -404,23 +500,34 @@ namespace operations {
 				const Variable& variable;
 
 			protected:
+				bool isShortForm = false;
+				const BinaryOperatorOperation* shortFormOperator = nullptr;
 				bool canDeclare = false;
 
 			public:
 				StoreOperation(const Type* requiredType, const CodeEnvironment& environment, uint16_t index):
-						value(environment.stack.popAs(requiredType)), index(index), variable(environment.getCurrentScope()->getVariable(index)) {
+						value(environment.stack.popAs(requiredType)), index(index), variable(environment.getCurrentScope()->getVariable(index, false)) {
 
 					initReturnType<Dup1Operation>(environment, value);
 					value->castReturnTypeTo(requiredType);
 					variable.linkWith(value);
 					if(!variable.isDeclared() && returnType == VOID) {
 						canDeclare = variable.setDeclared(true);
+					} else if(const BinaryOperatorOperation* binaryOperator = castOperationTo<const BinaryOperatorOperation*>(value)) {
+						if(const LoadOperation* loadOperation = castOperationTo<const LoadOperation*>(binaryOperator->operand1)) {
+							if(loadOperation->index == index) {
+								isShortForm = true;
+								shortFormOperator = binaryOperator;
+							}
+						}
 					}
 				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return (canDeclare ? variable.getType()->toString(environment.classinfo) + ' ' : EMPTY_STRING) +
-							environment.getCurrentScope()->getNameFor(variable) + " = " + value->toString(environment);
+							environment.getCurrentScope()->getNameFor(variable) + ' ' + (isShortForm ?
+								(string)shortFormOperator->stringOperator + "= " + shortFormOperator->operand2->toString(environment) :
+								"= " + value->toString(environment));
 				}
 
 				virtual Priority getPriority() const override {
@@ -446,89 +553,6 @@ namespace operations {
 
 		struct AStoreOperation: StoreOperation {
 			AStoreOperation(const CodeEnvironment& environment, uint16_t index): StoreOperation(AnyObjectType::getInstance(), environment, index) {}
-		};
-
-
-		template<TypeSize size>
-		struct PopOperation: VoidOperation, TypeSizeTemplatedOperation<size> {
-			const Operation* const operation;
-
-			PopOperation(const CodeEnvironment& environment): operation(environment.stack.pop()) {
-				TypeSizeTemplatedOperation<size>::checkTypeSize(operation->getReturnType());
-			}
-
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return operation->toString(environment);
-			}
-		};
-
-
-
-		template<char32_t operation, Priority priority>
-		struct OperatorOperation: ReturnableOperation<> {
-			public:
-				const char* const stringOperator = char32ToString(operation);
-
-				OperatorOperation(const Type* type):
-						ReturnableOperation(type) {}
-
-				virtual Priority getPriority() const override {
-					return priority;
-				}
-		};
-
-
-		template<char32_t operation, Priority priority>
-		struct BinaryOperatorOperation: OperatorOperation<operation, priority> {
-			public:
-				const Operation *const operand2, *const operand1;
-
-				BinaryOperatorOperation(const Type* type1, const Type* type2, const CodeEnvironment& environment):
-						OperatorOperation<operation, priority>(type1), operand2(environment.stack.popAs(type2)), operand1(environment.stack.popAs(type1)) {}
-
-				BinaryOperatorOperation(const Type* type, const CodeEnvironment& environment):
-						BinaryOperatorOperation(type, type, environment) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return this->toStringPriority(operand1, environment, Associativity::LEFT) + ' ' + this->stringOperator + ' ' +
-							this->toStringPriority(operand2, environment, Associativity::RIGHT);
-				}
-		};
-
-		template<char32_t operation, Priority priority>
-		struct UnaryOperatorOperation: OperatorOperation<operation, priority> {
-			public:
-				const Operation* const operand;
-
-				UnaryOperatorOperation(const Type* type, const CodeEnvironment& environment):
-						OperatorOperation<operation, priority>(type), operand(environment.stack.popAs(type)) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return this->stringOperator + this->toStringPriority(operand, environment, Associativity::RIGHT);
-				}
-		};
-
-
-		/* Operator bit not realized in java through operator xor with value -1 */
-		template<Priority priority>
-		struct BinaryOperatorOperation<'^', priority>: OperatorOperation<'^', priority> {
-			const Operation *const operand2, *const operand1;
-
-			const bool isBitNot;
-
-			BinaryOperatorOperation(const Type* type, const CodeEnvironment& environment):
-						OperatorOperation<'^', priority>(type), operand2(environment.stack.popAs(type)), operand1(environment.stack.popAs(type)),
-						isBitNot(instanceof<const IConstOperation*>(operand2) && static_cast<const IConstOperation*>(operand2)->value == -1) {}
-
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return isBitNot ? '~' + this->toStringPriority(operand1, environment, Associativity::RIGHT):
-						this->toStringPriority(operand1, environment, Associativity::LEFT) + ' ' + this->stringOperator + ' ' +
-						this->toStringPriority(operand2, environment, Associativity::RIGHT);
-			}
-
-			virtual Priority getPriority() const override {
-				return isBitNot ? Priority::BIT_NOT : priority;
-			}
 		};
 
 
@@ -688,7 +712,7 @@ namespace operations {
 
 		struct TryScope: Scope {
 			protected:
-				vector<CatchScopeDataHolder> handlersData;
+				mutable vector<CatchScopeDataHolder> handlersData;
 				friend const CodeEnvironment& Method::decompileCode(const ClassInfo&);
 
 			public:
@@ -703,7 +727,7 @@ namespace operations {
 					return EMPTY_STRING;
 				}
 
-				virtual void finalize(const CodeEnvironment& environment) override;
+				virtual void finalize(const CodeEnvironment& environment) const override;
 		};
 
 
@@ -713,9 +737,9 @@ namespace operations {
 				const ClassType* const catchType;
 
 			protected:
-				vector<const Operation*> tmpStack;
-				Variable* exceptionVariable = nullptr;
-				uint16_t exceptionVariableIndex;
+				mutable vector<const Operation*> tmpStack;
+				mutable Variable* exceptionVariable = nullptr;
+				mutable uint16_t exceptionVariableIndex;
 				CatchScope* const nextHandler;
 
 			public:
@@ -728,7 +752,7 @@ namespace operations {
 						CatchScope(environment, dataHolder.startPos, endPos, dataHolder.catchTypes, nextHandler) {}
 
 
-				virtual void add(const Operation* operation, const CodeEnvironment& environment) override {
+				virtual void add(const Operation* operation, const CodeEnvironment& environment) const override {
 					if(exceptionVariable == nullptr) {
 						if(instanceof<const StoreOperation*>(operation)) {
 							exceptionVariableIndex = static_cast<const StoreOperation*>(operation)->index;
@@ -741,10 +765,10 @@ namespace operations {
 					Scope::add(operation, environment);
 				}
 
-				virtual const Variable& getVariable(uint32_t index) const override {
+				virtual const Variable& getVariable(uint32_t index, bool isDeclared) const override {
 					if(exceptionVariable != nullptr && index == exceptionVariableIndex)
 						return *exceptionVariable;
-					return Scope::getVariable(index);
+					return Scope::getVariable(index, isDeclared);
 				}
 
 
@@ -787,7 +811,7 @@ namespace operations {
 				};
 
 			public:
-				virtual void finalize(const CodeEnvironment& environment) override {
+				virtual void finalize(const CodeEnvironment& environment) const override {
 					reverse(tmpStack.begin(), tmpStack.end());
 					for(const Operation* operation : tmpStack)
 						environment.stack.push(operation);
@@ -800,7 +824,7 @@ namespace operations {
 		};
 
 
-		void TryScope::finalize(const CodeEnvironment& environment) {
+		void TryScope::finalize(const CodeEnvironment& environment) const {
 			assert(handlersData.size() > 0);
 			sort(handlersData.begin(), handlersData.end(), [] (auto& handler1, auto& handler2) { return handler1.startPos > handler2.startPos; });
 
@@ -826,27 +850,6 @@ namespace operations {
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return "return " + value->toString(environment);
 				}
-		};
-
-
-		struct IReturnOperation: ReturnOperation {
-			IReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, ANY_INT_OR_BOOLEAN) {}
-		};
-
-		struct LReturnOperation: ReturnOperation {
-			LReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, LONG) {}
-		};
-
-		struct FReturnOperation: ReturnOperation {
-			FReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, FLOAT) {}
-		};
-
-		struct DReturnOperation: ReturnOperation {
-			DReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, DOUBLE) {}
-		};
-
-		struct AReturnOperation: ReturnOperation {
-			AReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, AnyObjectType::getInstance()) {}
 		};
 
 
@@ -1090,6 +1093,8 @@ namespace operations {
 									clazz->classinfo.resetFormatting();
 
 									return result;
+								} else {
+									environment.warning("cannot load inner class " + classType.getName());
 								}
 							}
 						}
@@ -1333,10 +1338,31 @@ namespace operations {
 					return "throw " + exceptionOperation->toString(environment);
 				}
 		};
+
+
+		struct IReturnOperation: ReturnOperation {
+			IReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, ANY_INT_OR_BOOLEAN) {}
+		};
+
+		struct LReturnOperation: ReturnOperation {
+			LReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, LONG) {}
+		};
+
+		struct FReturnOperation: ReturnOperation {
+			FReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, FLOAT) {}
+		};
+
+		struct DReturnOperation: ReturnOperation {
+			DReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, DOUBLE) {}
+		};
+
+		struct AReturnOperation: ReturnOperation {
+			AReturnOperation(const CodeEnvironment& environment): ReturnOperation(environment, AnyObjectType::getInstance()) {}
+		};
 	}
 
 
-	void StaticInitializerScope::add(const Operation* operation, const CodeEnvironment& environment) {
+	void StaticInitializerScope::add(const Operation* operation, const CodeEnvironment& environment) const {
 		using namespace operations;
 
 		if(!fieldsInitialized) {

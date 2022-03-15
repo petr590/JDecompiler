@@ -26,7 +26,10 @@ namespace jdecompiler {
 			#define checkTemplate() static_assert(is_base_of<Constant, T>::value, "template type T of method ConstantPool::get is not subclass of class Constant")
 
 		public:
-			ConstantPool(const uint16_t size): size(size), pool(new Constant*[size]) {}
+			ConstantPool(const uint16_t size): size(size), pool(new Constant*[size]) {
+				for(uint16_t i = 0; i < size; i++)
+					pool[i] = nullptr;
+			}
 
 		private:
 			inline void checkIndex(uint16_t index) const {

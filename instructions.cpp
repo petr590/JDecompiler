@@ -322,7 +322,7 @@ namespace jdecompiler {
 			BinaryOperatorInstruction(uint16_t typeCode): OperatorInstruction<operation, priority, canUseBoolean>(typeCode) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				return new BinaryOperatorOperation<operation, priority>(this->type, environment);
+				return new BinaryOperatorOperationImpl<operation, priority>(this->type, environment);
 			}
 		};
 
@@ -332,7 +332,7 @@ namespace jdecompiler {
 			ShiftOperatorInstruction(uint16_t typeCode): BinaryOperatorInstruction<operation, priority>(typeCode) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				return new BinaryOperatorOperation<operation, priority>(this->type, INT, environment);
+				return new BinaryOperatorOperationImpl<operation, priority>(this->type, INT, environment);
 			}
 		};
 
@@ -410,7 +410,7 @@ namespace jdecompiler {
 
 	namespace operations {
 		IIncOperation::IIncOperation(const CodeEnvironment& environment, uint16_t index, int16_t value):
-				variable(environment.getCurrentScope()->getVariable(index)), value(value),
+				variable(environment.getCurrentScope()->getVariable(index, true)), value(value),
 				isShortInc(value == 1 || value == -1) /* isShortInc true when we can write ++ or -- */ {
 
 			using namespace instructions;
@@ -468,11 +468,11 @@ namespace jdecompiler {
 			IfInstruction(const int32_t offset): offset(offset) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override final {
-				Scope* currentScope = environment.getCurrentScope();
+				const Scope* currentScope = environment.getCurrentScope();
 
 				const uint32_t index = environment.bytecode.posToIndex(environment.pos + offset);
 
-				if(IfScope* ifScope = dynamic_cast<IfScope*>(currentScope)) {
+				if(const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope)) {
 					if(offset > 0) {
 						//LOG(environment.index << ' ' << index << ' ' << ifScope->end());
 
@@ -616,26 +616,30 @@ namespace jdecompiler {
 
 				const Scope* const currentScope = environment.getCurrentScope();
 
-				LOG(typeid(*currentScope).name());
 
 				if(const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope)) {
 					// Here goto instruction creates else scope
-					if(offset > 0 && !ifScope->isLoop && environment.index == ifScope->end() /* check if goto instruction in the end of ifScope */) {
+					if(offset > 0 && !ifScope->isLoop() && environment.index == ifScope->end() /* check if goto instruction in the end of ifScope */) {
 						const Scope* parentScope = ifScope->parentScope;
 
 						/* I don't remember why there is index minus 1 instead of index,
 						   but since I wrote that, then it should be so :) */
-						if(index - 1 <= parentScope->end())
-							return new ElseScope(environment, index - 1, ifScope);
+						if(index - 1 <= parentScope->end()) {
+							ifScope->addElseScope(environment, index - 1);
+							return nullptr;
+						}
 
 						const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(environment.bytecode.getInstructions()[parentScope->end()]);
-						if(gotoInstruction && environment.bytecode.posToIndex(environment.bytecode.indexToPos(parentScope->end()) + gotoInstruction->offset) == index)
-							return new ElseScope(environment, parentScope->end() - 1, ifScope);
+						if(gotoInstruction && environment.bytecode.posToIndex(environment.bytecode.indexToPos(parentScope->end()) + gotoInstruction->offset) == index) {
+							ifScope->addElseScope(environment, parentScope->end() - 1);
+							return nullptr;
+						}
 					} else {
 						// Here goto creates operator continue
 						do {
+							LOG(index << ' ' << ifScope->start());
 							if(index == ifScope->start()) {
-								ifScope->isLoop = true;
+								ifScope->setLoopType(environment);
 								return new ContinueOperation(environment, ifScope);
 							}
 							ifScope = dynamic_cast<const IfScope*>(ifScope->parentScope);
@@ -897,10 +901,15 @@ namespace jdecompiler {
 
 
 		struct NewArrayInstruction: Instruction {
-			protected: const Type *const memberType;
-			public: NewArrayInstruction(uint8_t code): memberType(getArrayTypeByCode(code)) {}
+			protected:
+				const Type *const memberType;
 
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new NewArrayOperation(environment, memberType); }
+			public:
+				NewArrayInstruction(uint8_t code): memberType(getArrayTypeByCode(code)) {}
+
+				virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+					return new NewArrayOperation(environment, memberType);
+				}
 		};
 
 		struct ANewArrayInstruction: InstructionWithIndex {

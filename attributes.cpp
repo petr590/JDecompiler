@@ -165,8 +165,8 @@ namespace jdecompiler {
 		private:
 			static inline const ClassType* getAnnotationType(const string& descriptor) {
 				const Type* type = parseType(descriptor);
-				if(const ClassType* classType = dynamic_cast<const ClassType*>(type))
-					return classType;
+				if(instanceof<const ClassType*>(type))
+					return static_cast<const ClassType*>(type);
 				throw DecompilationException("Illegal annotation type descriptor :" + descriptor);
 			}
 	};

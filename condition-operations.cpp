@@ -277,124 +277,165 @@ namespace jdecompiler {
 
 		struct IfScope;
 
-		struct ElseScope;
-
 
 		struct ContinueOperation: VoidOperation {
 			const IfScope* const ifScope;
 
 			ContinueOperation(const CodeEnvironment& environment, const IfScope* ifScope);
 
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return //ifScope->hasLabel ? "continue " + ifScope->getLabel() : "continue";
-					"continue";
-			}
+			virtual string toString(const CodeEnvironment& environment) const override;
 		};
 
 
 		struct IfScope: Scope {
 			private:
+				enum ScopeType {
+					IF, TERNARY, WHILE, FOR
+				};
+
+				static string to_string(const ScopeType type) {
+					switch(type) {
+						case IF:      return "if";
+						case TERNARY: return "ternary operator";
+						case WHILE:   return "while";
+						case FOR:     return "for";
+						default: return "(ScopeType)" + std::to_string((uint32_t)type);
+					}
+				}
+
+				struct ElseScope: Scope {
+					public:
+						const IfScope* const ifScope;
+
+					protected:
+						mutable const Operation* ternaryFalseOperation = nullptr;
+
+					public:
+						ElseScope(const CodeEnvironment& environment, const uint32_t endPos, const IfScope* ifScope):
+								Scope(environment.index, endPos, ifScope), ifScope(ifScope) {
+						}
+
+						virtual string getHeader(const CodeEnvironment& environment) const override {
+							return " else ";
+						}
+
+						virtual inline string getFrontSeparator(const ClassInfo& classinfo) const override {
+							return EMPTY_STRING;
+						}
+
+						virtual void finalize(const CodeEnvironment& environment) const override {
+							if(ifScope->isTernary()) {
+								ternaryFalseOperation = environment.stack.pop();
+								environment.stack.push(new TernaryOperatorOperation(ifScope->condition,
+										ifScope->ternaryTrueOperation, ternaryFalseOperation));
+							}
+						}
+
+						virtual const Type* getReturnType() const override {
+							return ifScope->isTernary() ? ternaryFalseOperation->getReturnType() : this->Scope::getReturnType();
+						}
+				};
+
+
 				mutable const ConditionOperation* condition;
 
 				friend struct instructions::IfInstruction;
-				inline void setEnd(uint32_t endPos) {
+				inline void setEnd(uint32_t endPos) const {
 					this->endPos = endPos;
 				}
 
+				mutable ScopeType type = IF;
+
 				friend struct ElseScope;
 				mutable const ElseScope* elseScope = nullptr;
-				//friend ElseScope::ElseScope(const CodeEnvironment&, const uint32_t, const IfScope*);
 
-				bool isTernary = false;
-				const Operation* ternaryTrueOperation = nullptr;
-				//friend void ElseScope::finalize(const CodeEnvironment&);
+				mutable const Operation* ternaryTrueOperation = nullptr;
 
 				friend struct ContinueOperation;
 				mutable bool hasLabel = false;
-				//friend ContinueOperation::ContinueOperation(const CodeEnvironment&, const IfScope*);
-
-			public: mutable bool isLoop = false;
-
-
-			protected:
-				/*static inline const ConditionOperation* getCondition(const CodeEnvironment& environment, const CompareType& compareType) {
-					const Operation* operation = environment.stack.pop();
-					if(const CmpOperation* cmpOperation = castOperationTo<const CmpOperation*>(operation))
-						return new CompareBinaryOperation(cmpOperation, compareType);
-					return new CompareWithZeroOperation(operation, compareType);
-				}*/
 
 			public:
 				IfScope(const CodeEnvironment& environment, const int32_t offset, const ConditionOperation* condition):
 						Scope(environment.exprStartIndex, environment.bytecode.posToIndex(environment.pos + offset) - 1, environment.getCurrentScope()),
 						condition(condition) {}
 
-				/*IfScope(const CodeEnvironment& environment, const int32_t offset, const CompareType& compareType):
-						IfScope(environment, offset, getCondition(environment, compareType)) {}
+				inline bool isLoop() const {
+					return type == WHILE || type == FOR;
+				}
 
-				IfScope(const CodeEnvironment& environment, const int32_t offset, const CompareType& compareType, const CmpOperation* cmpOperation):
-						IfScope(environment, offset, new CompareBinaryOperation(cmpOperation, compareType)) {}*/
+				inline bool isFor() const {
+					return type == FOR;
+				}
+
+				inline bool isTernary() const {
+					return type == TERNARY;
+				}
 
 
 			protected:
+				friend struct instructions::GotoInstruction;
+
+				void addElseScope(const CodeEnvironment& environment, const uint32_t endPos) const {
+					if(elseScope != nullptr)
+						throw IllegalStateException("Else scope already added");
+
+					if(type != IF)
+						throw IllegalStateException("Cannot add else scope to " + to_string(type));
+
+					this->endPos = endPos;
+
+					elseScope = new ElseScope(environment, endPos, this);
+					environment.addScope(elseScope);
+				}
+
+				void setLoopType(const CodeEnvironment& environment) const {
+					if(type != IF && !isLoop())
+						throw IllegalStateException("Cannot make loop from " + to_string(type));
+					const Operation* inital = startPos == 0 ? nullptr : environment.getCurrentScope()->code[startPos - 1];
+					LOG("startPos = " << startPos);
+					type = WHILE;
+				}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					return elseScope == nullptr ? this->Scope::toString(environment) :
+							this->Scope::toString(environment) + elseScope->toString(environment);
+				}
+
 				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return (string)(isLoop ? (hasLabel ? getLabel(environment) + ": while" : "while") : "if") +
+					return (string)(isLoop() ? ((hasLabel ? getLabel() + ": " : EMPTY_STRING) +
+								(isFor() ? "for" : "while")) :
+								"if") +
 							'(' + condition->toString(environment) + ") ";
 				}
 
-				virtual bool printNextOperation(const vector<const Operation*>::const_iterator i) const override {
+				virtual bool canPrintNextOperation(const vector<const Operation*>::const_iterator& i) const override {
 					if(next(i) != code.end())
 						return true;
 					const ContinueOperation* continueOperation = dynamic_cast<const ContinueOperation*>(*i);
 					return continueOperation == nullptr || continueOperation->ifScope != this;
 				}
 
-				virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
-					return isLoop || elseScope == nullptr ? this->Scope::getBackSeparator(classinfo) : EMPTY_STRING;
-				}
-
-				string getLabel(const CodeEnvironment& environment) const {
-					if(isLoop)
+				string getLabel() const {
+					if(isLoop())
 						return "Loop";
-					throw DecompilationException("Cannot get label for if scope");
+					throw DecompilationException("Cannot get label for " + to_string(type));
 				}
 
 			public:
-				virtual void finalize(const CodeEnvironment& environment) override {
-					isTernary = elseScope != nullptr && !environment.stack.empty() && code.empty();
-					if(isTernary)
+				virtual void finalize(const CodeEnvironment& environment) const override {
+					if(elseScope != nullptr && !environment.stack.empty() && code.empty()) {
+						type = TERNARY;
 						ternaryTrueOperation = environment.stack.pop();
+					}
 				}
 
 				virtual const Type* getReturnType() const override {
-					return isTernary ? ternaryTrueOperation->getReturnType() : this->Scope::getReturnType();
-				}
-		};
-
-
-		struct ElseScope: Scope {
-			public:
-				const IfScope* const ifScope;
-
-			protected:
-				bool isTernary = false;
-				const Operation* ternaryFalseOperation = nullptr;
-
-			public:
-				ElseScope(const CodeEnvironment& environment, const uint32_t endPos, const IfScope* ifScope);
-
-				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return " else ";
+					return isTernary() ? ternaryTrueOperation->getReturnType() : this->Scope::getReturnType();
 				}
 
-				virtual inline string getFrontSeparator(const ClassInfo& classinfo) const override {
-					return EMPTY_STRING;
-				}
-
-				virtual void finalize(const CodeEnvironment& environment) override;
-
-				virtual const Type* getReturnType() const override {
-					return isTernary ? ternaryFalseOperation->getReturnType() : this->Scope::getReturnType();
+				virtual void add(const Operation* operation, const CodeEnvironment& environment) const {
+					if(operation != elseScope)
+						this->Scope::add(operation, environment);
 				}
 		};
 
@@ -406,20 +447,9 @@ namespace jdecompiler {
 		}
 
 
-		ElseScope::ElseScope(const CodeEnvironment& environment, const uint32_t endPos, const IfScope* ifScope):
-				Scope(environment.index, endPos, ifScope->parentScope), ifScope(ifScope) {
-			ifScope->elseScope = this;
+		string ContinueOperation::toString(const CodeEnvironment& environment) const {
+			return ifScope->hasLabel ? "continue " + ifScope->getLabel() : "continue";
 		}
-
-		void ElseScope::finalize(const CodeEnvironment& environment) {
-			isTernary = ifScope->isTernary;
-			if(isTernary) {
-				ternaryFalseOperation = environment.stack.pop();
-				environment.stack.push(new TernaryOperatorOperation(ifScope->condition,
-						ifScope->ternaryTrueOperation, ternaryFalseOperation));
-			}
-		}
-
 
 
 		struct EmptyInfiniteLoopScope: Scope {

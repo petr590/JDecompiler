@@ -6,7 +6,7 @@
 namespace jdecompiler {
 
 	string ClassConstant::toString(const ClassInfo& classinfo) const {
-		return ClassType(*name).toString(classinfo) + ".class";
+		return (new ClassType(*name))->toString(classinfo) + ".class";
 	}
 
 
@@ -81,7 +81,7 @@ namespace jdecompiler {
 		protected:
 			static inline const Operation* getArray(const CodeEnvironment& environment, const Type* elementType);
 
-			Operation() {}
+			Operation() noexcept {}
 
 			virtual ~Operation() {}
 
@@ -526,7 +526,11 @@ namespace jdecompiler {
 			const ConstantPool& constPool;
 			CodeStack& stack;
 			MethodScope& methodScope;
-			Stack<Scope*> currentScopes;
+
+		private:
+			Stack<const Scope*> currentScopes;
+
+		public:
 			const uint16_t modifiers;
 			const MethodDescriptor& descriptor;
 			const Attributes& attributes;
@@ -534,7 +538,7 @@ namespace jdecompiler {
 			map<uint32_t, uint32_t> exprIndexTable;
 
 		private:
-			mutable vector<Scope*> scopes;
+			mutable vector<const Scope*> scopes;
 
 		public:
 			CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers,
@@ -547,11 +551,11 @@ namespace jdecompiler {
 
 			void checkCurrentScope();
 
-			inline Scope* getCurrentScope() const {
+			inline const Scope* getCurrentScope() const {
 				return currentScopes.top();
 			}
 
-			inline void addScope(Scope* scope) const {
+			inline void addScope(const Scope* scope) const {
 				scopes.push_back(scope);
 			}
 
@@ -571,7 +575,7 @@ namespace jdecompiler {
 		public:
 			template<typename... Args>
 			inline void warning(Args... args) const {
-				print(cerr << "Warning while decompiling method " << descriptor.toString() << " at pos " << pos << ": ", args...);
+				print(cerr << descriptor.toString() << ':' << pos << ": warning: ", args...);
 			}
 	};
 
@@ -598,10 +602,10 @@ namespace jdecompiler {
 
 	struct Scope: Operation {
 		protected:
-			uint32_t startPos, endPos;
+			mutable uint32_t startPos, endPos;
 
 		public:
-			Scope *const parentScope;
+			const Scope *const parentScope;
 
 		protected:
 			const uint16_t localsCount;
@@ -609,16 +613,18 @@ namespace jdecompiler {
 			mutable vector<Variable*> variables;
 			mutable uint16_t lastAddedVarIndex = 0;
 
-			vector<const Operation*> code;
-			map<const Variable*, string> varNames;
+			friend struct operations::IfScope;
+
+			mutable vector<const Operation*> code;
+			mutable map<const Variable*, string> varNames;
+			mutable vector<const Scope*> innerScopes;
 
 		public:
-			//vector<Scope*> innerScopes;
 
-			Scope(uint32_t startPos, uint32_t endPos, Scope* parentScope, uint16_t localsCount):
+			Scope(uint32_t startPos, uint32_t endPos, const Scope* parentScope, uint16_t localsCount):
 					startPos(startPos), endPos(endPos), parentScope(parentScope), localsCount(localsCount), variables(localsCount) {}
 
-			Scope(uint32_t startPos, uint32_t endPos, Scope* parentScope): Scope(startPos, endPos, parentScope, parentScope->localsCount) {}
+			Scope(uint32_t startPos, uint32_t endPos, const Scope* parentScope): Scope(startPos, endPos, parentScope, parentScope->localsCount) {}
 
 
 			inline uint32_t start() const {
@@ -629,18 +635,44 @@ namespace jdecompiler {
 				return endPos;
 			}
 
+		protected:
+			const Variable* findVariable(uint32_t index) const {
+				const Variable* var = variables[index];
+				return var == nullptr && parentScope != nullptr ? parentScope->findVariable(index) : var;
+			}
 
-			virtual const Variable& getVariable(uint32_t index) const {
+			const Variable* findDeclaredVariable(uint32_t index) const {
+				const Variable* var = findVariable(index);
+				if(var == nullptr) {
+					for(const Scope* scope : innerScopes) {
+						var = scope->findDeclaredVariable(index);
+						if(var != nullptr)
+							return var;
+						LOG(typeid(*scope).name() << ' ' << scope->start() << ".." << scope->end() << ' ' << var);
+						LOG(join<Variable*>(scope->variables, [] (Variable* v) { return to_string((uint64_t)v); }));
+					}
+				}
+				return var;
+			}
+
+		public:
+			virtual const Variable& getVariable(uint32_t index, bool isDeclared) const {
 				if(index >= variables.size()) {
 					if(parentScope == nullptr)
 						throw IndexOutOfBoundsException(index, variables.size());
-					return parentScope->getVariable(index);
+					return parentScope->getVariable(index, isDeclared);
 				}
 
-				const Variable* var = variables[index];
+				const Variable* var = findVariable(index);
 				if(var == nullptr) {
-					var = variables[index] = new UnnamedVariable(AnyType::getInstance(), false);
-					lastAddedVarIndex = localsCount;
+					if(isDeclared) {
+						var = findDeclaredVariable(index);
+						if(var == nullptr)
+							throw DecompilationException("Variable #" + to_string(index) + " not found");
+					} else {
+						var = variables[index] = new UnnamedVariable(AnyType::getInstance(), false);
+						lastAddedVarIndex = localsCount;
+					}
 				}
 				return *var;
 			}
@@ -664,11 +696,11 @@ namespace jdecompiler {
 				}
 			}
 
-			inline string getNameFor(const Variable& var) {
+			inline string getNameFor(const Variable& var) const {
 				return getNameFor(&var);
 			}
 
-			string getNameFor(const Variable* var) {
+			string getNameFor(const Variable* var) const {
 				const auto varName = varNames.find(var);
 				if(varName != varNames.end()) {
 					return varName->second;
@@ -689,7 +721,7 @@ namespace jdecompiler {
 
 			//virtual void initiate(const CodeEnvironment&) {}
 
-			virtual void finalize(const CodeEnvironment&) {}
+			virtual void finalize(const CodeEnvironment&) const {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
 				environment.classinfo.increaseIndent();
@@ -698,7 +730,7 @@ namespace jdecompiler {
 				const size_t baseSize = str.size();
 
 				for(auto i = code.begin(); i != code.end(); ++i) {
-					if(printNextOperation(i)) {
+					if(canPrintNextOperation(i)) {
 						const Operation* operation = *i;
 						if(operation->getReturnType() == VOID)
 							str += operation->getFrontSeparator(environment.classinfo) + operation->toString(environment) +
@@ -717,14 +749,14 @@ namespace jdecompiler {
 			}
 
 		protected:
-			virtual inline bool printNextOperation(const vector<const Operation*>::const_iterator i) const { return true; }
-
-			virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
-				return "\n";
-			}
+			virtual inline bool canPrintNextOperation(const vector<const Operation*>::const_iterator& i) const { return true; }
 
 			virtual string getHeader(const CodeEnvironment& environment) const {
 				return EMPTY_STRING;
+			}
+
+			virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
+				return "\n";
 			}
 
 		public:
@@ -732,8 +764,10 @@ namespace jdecompiler {
 				return variables.size();
 			}
 
-			virtual void add(const Operation* operation, const CodeEnvironment& environment) {
+			virtual void add(const Operation* operation, const CodeEnvironment& environment) const {
 				code.push_back(operation);
+				if(instanceof<const Scope*>(operation))
+					innerScopes.push_back(static_cast<const Scope*>(operation));
 			}
 
 			inline bool isEmpty() const {
@@ -760,13 +794,13 @@ namespace jdecompiler {
 
 	struct StaticInitializerScope: MethodScope {
 		private:
-			bool fieldsInitialized = false;
+			mutable bool fieldsInitialized = false;
 
 		public:
 			StaticInitializerScope(uint32_t startPos, uint32_t endPos, uint16_t localsCount):
 					MethodScope(startPos, endPos, localsCount) {}
 
-			virtual void add(const Operation* operation, const CodeEnvironment& environment) override;
+			virtual void add(const Operation* operation, const CodeEnvironment& environment) const override;
 
 			inline bool isFieldsInitialized() const {
 				return fieldsInitialized;

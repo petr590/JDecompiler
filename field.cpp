@@ -25,7 +25,7 @@ namespace jdecompiler {
 			const ConstantValueAttribute* constantValueAttribute;
 			mutable const Operation* initializer = nullptr;
 			mutable const CodeEnvironment* environment = nullptr;
-			friend void StaticInitializerScope::add(const Operation*, const CodeEnvironment&);
+			friend void StaticInitializerScope::add(const Operation*, const CodeEnvironment&) const;
 
 		public:
 			Field(const ConstantPool& constPool, BinaryInputStream& instream): modifiers(instream.readUShort()),

@@ -250,7 +250,6 @@ namespace jdecompiler {
 
 		for(const char* i = str; *i != '\0'; i++) {
 			if(*i == '\\') {
-				LOG((*(i + 1) == 't'));
 				switch(*(++i)) {
 					case 'b': result += '\b'; break;
 					case 't': result += '\t'; break;
@@ -361,7 +360,9 @@ namespace jdecompiler {
 			return new char[4] { (char)(ch >> 16), (char)(ch >>  8), (char)ch, '\0' };
 		if(ch >> 8)
 			return new char[3] { (char)(ch >>  8), (char)ch, '\0' };
-		return new char[2] { (char)ch, '\0' };
+		if(ch)
+			return new char[2] { (char)ch, '\0' };
+		return "";
 	}
 
 

@@ -48,7 +48,7 @@ namespace jdecompiler {
 
 
 	void CodeEnvironment::checkCurrentScope() {
-		for(Scope* currentScope = currentScopes.top(); index >= currentScope->end(); currentScope = currentScopes.top()) {
+		for(const Scope* currentScope = currentScopes.top(); index >= currentScope->end(); currentScope = currentScopes.top()) {
 			if(currentScope->parentScope == nullptr)
 				throw DecompilationException("Unexpected end of global function scope {" +
 						to_string(currentScope->start()) + ".." + to_string(currentScope->end()) + '}');
@@ -56,10 +56,10 @@ namespace jdecompiler {
 			currentScope->finalize(*this);
 		}
 
-		Scope* currentScope = getCurrentScope();
+		const Scope* currentScope = getCurrentScope();
 
 		for(auto i = scopes.begin(); i != scopes.end(); ) {
-			Scope* scope = *i;
+			const Scope* scope = *i;
 			if(scope->start() <= index) {
 				if(scope->end() > currentScope->end())
 					throw DecompilationException((string)"Scope " +
@@ -93,7 +93,11 @@ namespace jdecompiler {
 
 	/* Returns true if we can write simple class name */
 	bool ClassInfo::addImport(const ClassType* clazz) const {
-		if(imports.find(clazz) != imports.end()) {
+		if(clazz->simpleName == thisType.simpleName && clazz->packageName != thisType.packageName) {
+			return false;
+		}
+
+		if(any_of(imports.begin(), imports.end(), [clazz] (const ClassType* imp) { return *clazz == *imp; })) { // find class
 			return true;
 		} else {
 			if(all_of(imports.begin(), imports.end(), [clazz] (const ClassType* imp)
@@ -106,7 +110,7 @@ namespace jdecompiler {
 	}
 
 	string ClassType::toString(const ClassInfo& classinfo) const {
-		return classinfo.addImport(this) ? simpleName : fullSimpleName;
+		return this->isAnonymous ? fullSimpleName : (classinfo.addImport(this) ? simpleName : name);
 	}
 
 	void JDecompiler::readClassFiles() const {
@@ -115,7 +119,9 @@ namespace jdecompiler {
 				const Class* clazz = Class::readClass(*file);
 				classes[clazz->thisType.getEncodedName()] = clazz;
 			} catch(const EOFException& ex) {
-				cerr << JDecompiler::getInstance().progName << ": error: Unexpected end of file while reading " << file->path << endl;
+				JDecompiler::getInstance().error("unexpected end of file while reading ", file->path);
+			} catch(const IOException& ex) {
+				JDecompiler::getInstance().error(ex.what());
 			}
 		}
 	}

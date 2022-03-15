@@ -91,7 +91,7 @@ namespace jdecompiler {
 
 				function<string(const Type*, uint32_t)> concater = [&environment, isNonStatic] (const Type* type, uint32_t i) {
 					return type->toString(environment.classinfo) + ' ' +
-							environment.getCurrentScope()->getNameFor(environment.methodScope.getVariable(i + (uint32_t)isNonStatic));
+							environment.getCurrentScope()->getNameFor(environment.methodScope.getVariable(i + (uint32_t)isNonStatic, false));
 				};
 
 				if(environment.modifiers & ACC_VARARGS) {
@@ -106,7 +106,7 @@ namespace jdecompiler {
 					concater = [&environment, isNonStatic, varargsIndex] (const Type* type, uint32_t i) {
 						return (i == varargsIndex ? safe_cast<const ArrayType*>(type)->elementType->toString(environment.classinfo) + "..." :
 										type->toString(environment.classinfo)) +
-										' ' + environment.methodScope.getVariable(i + isNonStatic).getName();
+										' ' + environment.methodScope.getVariable(i + isNonStatic, false).getName();
 					};
 				}
 
@@ -185,7 +185,7 @@ namespace jdecompiler {
 
 					if(const ExceptionsAttribute* exceptionsAttr = attributes.get<ExceptionsAttribute>())
 						str += " throws " + join<const ClassConstant*>(exceptionsAttr->exceptions,
-								[&classinfo] (auto clazz) { return ClassType(*clazz->name).toString(classinfo); });
+								[&classinfo] (auto clazz) { return (new ClassType(*clazz->name))->toString(classinfo); });
 
 					if(const AnnotationDefaultAttribute* annotationDefaultAttr = attributes.get<AnnotationDefaultAttribute>())
 						str += " default " + annotationDefaultAttr->toString(environment.classinfo);

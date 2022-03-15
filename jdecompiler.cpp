@@ -63,12 +63,13 @@ namespace jdecompiler {
 					return false;
 				}
 
+				#define printError(...) cerr << progName << ": error: " << __VA_ARGS__ << endl
+				#define printErrorAndExit(...) { printError(__VA_ARGS__); return false; }
+
 				#define requireValue() if(!hasValue) {\
-					cerr << progName << ": Option " << option << " required value" << endl;\
+					printErrorAndExit("Option " << option << " required value");\
 					return false;\
 				}
-
-				#define parseError(...) { cerr << __VA_ARGS__ << endl; return false; }
 
 				bool isIndentWidthSpecified = false;
 
@@ -110,15 +111,15 @@ namespace jdecompiler {
 							try {
 								indentWidth = stoi(value);
 								if(indentWidth < 0)
-									parseError("Argument value '" << value << "' cannot be negative");
+									printErrorAndExit("Argument value '" << value << "' cannot be negative");
 								if(indentWidth < 0 || indentWidth > 16)
-									parseError("Argument value '" << value << "' is out of range");
+									printErrorAndExit("Argument value '" << value << "' is out of range");
 
 								indent = repeatString(indent, indentWidth);
 							} catch(const invalid_argument&) {
-								parseError("Invalid argument value: '" << value << '\'');
+								printErrorAndExit("Invalid argument value: '" << value << '\'');
 							} catch(const out_of_range&) {
-								parseError("Argument value '" << value << "' is out of range");
+								printErrorAndExit("Argument value '" << value << "' is out of range");
 							}
 
 							isIndentWidthSpecified = true;
@@ -129,16 +130,20 @@ namespace jdecompiler {
 							indent = repeatString(value, isIndentWidthSpecified || value != "\t" ? indentWidth : (indentWidth = 1));
 
 						} else {
-							parseError(progName << ": Unknown argument " << arg << "\n"
+							printErrorAndExit("Unknown argument " << arg << "\n"
 								"Use " << progName << " --help for more information");
 						}
 					} else {
-						files.push_back(new BinaryInputStream(arg));
+						try {
+							files.push_back(new BinaryInputStream(arg));
+						} catch(const IOException& ex) {
+							printError(ex.what());
+						}
 					}
 				}
 
 				#undef requireValue
-				#undef parseError
+				#undef printErrorAndExit
 
 				instance = new JDecompiler(progName, files, indentWidth, indent, failOnError, classes);
 
@@ -167,6 +172,21 @@ namespace jdecompiler {
 			inline const Class* getClass(const string& name) const {
 				const auto& classIterator = classes.find(name);
 				return classIterator != classes.end() ? classIterator->second : nullptr;
+			}
+
+		protected:
+			template<typename Arg, typename... Args>
+			static inline void print(ostream& out, Arg arg, Args... args) {
+				if constexpr(sizeof...(Args) != 0)
+					print(out << arg, args...);
+				else
+					out << arg << endl;
+			}
+
+		private:
+			template<typename... Args>
+			inline void error(Args... args) const {
+				print(cerr << progName << ": error: ", args...);
 			}
 	};
 

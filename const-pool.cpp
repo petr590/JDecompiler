@@ -6,12 +6,17 @@
 #define inline FORCE_INLINE
 #include "util.cpp"
 
+#define DEFINE_CONSTANT_NAME(name)\
+	static constexpr const char* CONSTANT_NAME = #name;\
+	virtual const char* getConstantName() const override {\
+		return CONSTANT_NAME;\
+	}
+
 namespace jdecompiler {
 
-	using namespace std;
-
-
 	struct Constant {
+		virtual const char* getConstantName() const = 0;
+
 		virtual void init(const ConstantPool& constPool) {};
 
 		virtual ~Constant() {}
@@ -23,7 +28,8 @@ namespace jdecompiler {
 			const uint16_t size;
 			Constant** const pool;
 
-			#define checkTemplate() static_assert(is_base_of<Constant, T>::value, "template type T of method ConstantPool::get is not subclass of class Constant")
+			#define checkTemplate() static_assert(is_base_of<Constant, T>::value,\
+					"template type T of method ConstantPool::get is not subclass of class Constant")
 
 		public:
 			ConstantPool(const uint16_t size): size(size), pool(new Constant*[size]) {
@@ -39,9 +45,12 @@ namespace jdecompiler {
 
 			template<class T>
 			inline const T* get0(uint16_t index) const {
-				if(const T* constant = dynamic_cast<const T*>(pool[index]))
-					return constant;
-				throw DynamicCastException("Invalid constant pool referenceConstant " + hexWithPrefix<4>(index) + " at " + typeid(T).name());
+				const Constant* const constant = pool[index];
+				if(instanceof<const T*>(constant))
+					return static_cast<const T*>(constant);
+				throw InvalidConstantPoolReferenceException("Invalid constant pool reference " + hexWithPrefix<4>(index) +
+						": expected " + T::CONSTANT_NAME + ", got " + (constant == nullptr ? "null" : constant->getConstantName()));
+						//": expected " + typeid(T).name() + ", got " + (constant == nullptr ? "null" : typeid(*constant).name()));
 			}
 
 		public:
@@ -83,6 +92,8 @@ namespace jdecompiler {
 
 
 	struct Utf8Constant: Constant, string {
+		DEFINE_CONSTANT_NAME(Utf8);
+
 		Utf8Constant(const char* str, size_t length): string(str, length) {}
 
 		Utf8Constant(const char* str): string(str) {}
@@ -90,6 +101,8 @@ namespace jdecompiler {
 
 
 	struct ConstValueConstant: Constant {
+		DEFINE_CONSTANT_NAME(ConstantValue);
+
 		virtual string toString(const ClassInfo& classinfo) const = 0;
 	};
 
@@ -105,13 +118,15 @@ namespace jdecompiler {
 	};
 
 
-	using IntegerConstant = NumberConstant<int32_t>;
-	using FloatConstant = NumberConstant<float>;
-	using LongConstant = NumberConstant<int64_t>;
-	using DoubleConstant = NumberConstant<double>;
+	struct IntegerConstant: NumberConstant<int32_t> { IntegerConstant(const int32_t value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Integer); };
+	struct FloatConstant:   NumberConstant<float>   {   FloatConstant(const   float value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Float); };
+	struct LongConstant:    NumberConstant<int64_t> {    LongConstant(const int64_t value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Long); };
+	struct DoubleConstant:  NumberConstant<double>  {  DoubleConstant(const  double value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Double); };
 
 
 	struct ClassConstant: ConstValueConstant {
+		DEFINE_CONSTANT_NAME(Class);
+
 		const uint16_t nameRef;
 		const Utf8Constant* name;
 
@@ -128,6 +143,8 @@ namespace jdecompiler {
 
 
 	struct StringConstant: ConstValueConstant {
+		DEFINE_CONSTANT_NAME(String);
+
 		const uint16_t valueRef;
 		const Utf8Constant* value;
 
@@ -147,6 +164,8 @@ namespace jdecompiler {
 
 
 	struct NameAndTypeConstant: Constant {
+		DEFINE_CONSTANT_NAME(NameAndType);
+
 		const uint16_t nameRef;
 		const uint16_t descriptorRef;
 		const Utf8Constant* name;
@@ -161,6 +180,8 @@ namespace jdecompiler {
 	};
 
 	struct ReferenceConstant: Constant {
+		DEFINE_CONSTANT_NAME(Reference);
+
 		const uint16_t classRef;
 		const uint16_t nameAndTypeRef;
 		const ClassConstant* clazz;
@@ -175,19 +196,27 @@ namespace jdecompiler {
 	};
 
 	struct FieldrefConstant: ReferenceConstant {
+		DEFINE_CONSTANT_NAME(Fieldref);
+
 		FieldrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(classRef, nameAndTypeRef) {}
 	};
 
 	struct MethodrefConstant: ReferenceConstant {
+		DEFINE_CONSTANT_NAME(Methodref);
+
 		MethodrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(classRef, nameAndTypeRef) {}
 	};
 
 	struct InterfaceMethodrefConstant: MethodrefConstant {
+		DEFINE_CONSTANT_NAME(InterfaceMethodref);
+
 		InterfaceMethodrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): MethodrefConstant(classRef, nameAndTypeRef) {}
 	};
 
 
 	struct MethodHandleConstant: ConstValueConstant {
+		DEFINE_CONSTANT_NAME(MethodHandle);
+
 		public:
 			enum class ReferenceKind {
 				GETFIELD = 1, GETSTATIC, PUTFIELD, PUTSTATIC, INVOKEVIRTUAL, INVOKESTATIC, INVOKESPECIAL, NEWINVOKESPECIAL, INVOKEINTERFACE
@@ -228,6 +257,8 @@ namespace jdecompiler {
 
 
 	struct MethodTypeConstant: ConstValueConstant {
+		DEFINE_CONSTANT_NAME(MethodType);
+
 		const uint16_t descriptorRef;
 
 		const Utf8Constant* descriptor;
@@ -242,6 +273,8 @@ namespace jdecompiler {
 	};
 
 	struct InvokeDynamicConstant: Constant {
+		DEFINE_CONSTANT_NAME(InvokeDynamic);
+
 		const uint16_t bootstrapMethodAttrIndex;
 		const uint16_t nameAndTypeRef;
 
@@ -256,4 +289,5 @@ namespace jdecompiler {
 	};
 }
 
+#undef DEFINE_CONSTANT_NAME
 #endif

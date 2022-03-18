@@ -339,7 +339,7 @@ namespace jdecompiler {
 
 				mutable const ConditionOperation* condition;
 
-				friend struct instructions::IfInstruction;
+				friend struct instructions::IfBlock;
 				inline void setEnd(uint32_t endPos) const {
 					this->endPos = endPos;
 				}

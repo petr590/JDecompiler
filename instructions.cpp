@@ -6,7 +6,6 @@
 namespace jdecompiler {
 	namespace instructions {
 
-		using namespace std;
 		using namespace operations;
 
 
@@ -441,11 +440,14 @@ namespace jdecompiler {
 		template<bool required>
 		struct CastInstruction: Instruction {
 			protected:
-				const Type *const type;
+				const Type *const requiredType, *const type;
 
-			public: CastInstruction(const Type* type): type(type) {}
+			public:
+				CastInstruction(const Type* requiredType, const Type* type): requiredType(requiredType), type(type) {}
 
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new CastOperation<required>(environment, type); }
+				virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+					return new CastOperation<required>(environment, requiredType, type);
+				}
 		};
 
 
@@ -462,10 +464,10 @@ namespace jdecompiler {
 		};
 
 
-		struct IfInstruction: Instruction {
+		struct IfBlock: Instruction {
 			const int32_t offset;
 
-			IfInstruction(const int32_t offset): offset(offset) {}
+			IfBlock(/*const Bytecode& bytecode, */const int32_t offset): /*Block(bytecode.getPos(), bytecode.getPos() + offset),*/ offset(offset) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override final {
 				const Scope* currentScope = environment.getCurrentScope();
@@ -495,10 +497,10 @@ namespace jdecompiler {
 			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const = 0;
 		};
 
-		struct IfCmpInstruction: IfInstruction {
+		struct IfCmpBlock: IfBlock {
 			const CompareType& compareType;
 
-			IfCmpInstruction(const int32_t offset, const CompareType& compareType): IfInstruction(offset), compareType(compareType) {}
+			IfCmpBlock(const int32_t offset, const CompareType& compareType): IfBlock(offset), compareType(compareType) {}
 
 			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
 				const Operation* operation = environment.stack.pop();
@@ -509,33 +511,33 @@ namespace jdecompiler {
 		};
 
 
-		struct IfEqInstruction: IfCmpInstruction {
-			IfEqInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::EQUALS) {};
+		struct IfEqBlock: IfCmpBlock {
+			IfEqBlock(const int32_t offset): IfCmpBlock(offset, CompareType::EQUALS) {};
 		};
 
-		struct IfNotEqInstruction: IfCmpInstruction {
-			IfNotEqInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::NOT_EQUALS) {}
+		struct IfNotEqBlock: IfCmpBlock {
+			IfNotEqBlock(const int32_t offset): IfCmpBlock(offset, CompareType::NOT_EQUALS) {}
 		};
 
-		struct IfGtInstruction: IfCmpInstruction {
-			IfGtInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::GREATER) {}
+		struct IfGtBlock: IfCmpBlock {
+			IfGtBlock(const int32_t offset): IfCmpBlock(offset, CompareType::GREATER) {}
 		};
 
-		struct IfGeInstruction: IfCmpInstruction {
-			IfGeInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::GREATER_OR_EQUALS) {}
+		struct IfGeBlock: IfCmpBlock {
+			IfGeBlock(const int32_t offset): IfCmpBlock(offset, CompareType::GREATER_OR_EQUALS) {}
 		};
 
-		struct IfLtInstruction: IfCmpInstruction {
-			IfLtInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::LESS) {}
+		struct IfLtBlock: IfCmpBlock {
+			IfLtBlock(const int32_t offset): IfCmpBlock(offset, CompareType::LESS) {}
 		};
 
-		struct IfLeInstruction: IfCmpInstruction {
-			IfLeInstruction(const int32_t offset): IfCmpInstruction(offset, CompareType::LESS_OR_EQUALS) {}
+		struct IfLeBlock: IfCmpBlock {
+			IfLeBlock(const int32_t offset): IfCmpBlock(offset, CompareType::LESS_OR_EQUALS) {}
 		};
 
 
-		struct IfICmpInstruction: IfCmpInstruction {
-			IfICmpInstruction(int32_t offset, const CompareType& compareType): IfCmpInstruction(offset, compareType) {}
+		struct IfICmpBlock: IfCmpBlock {
+			IfICmpBlock(int32_t offset, const CompareType& compareType): IfCmpBlock(offset, compareType) {}
 
 			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
 				return new CompareBinaryOperation(environment, INT, compareType);
@@ -543,33 +545,33 @@ namespace jdecompiler {
 		};
 
 
-		struct IfIEqInstruction: IfICmpInstruction {
-			IfIEqInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::EQUALS) {}
+		struct IfIEqBlock: IfICmpBlock {
+			IfIEqBlock(int32_t offset): IfICmpBlock(offset, CompareType::EQUALS) {}
 		};
 
-		struct IfINotEqInstruction: IfICmpInstruction {
-			IfINotEqInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::NOT_EQUALS) {}
+		struct IfINotEqBlock: IfICmpBlock {
+			IfINotEqBlock(int32_t offset): IfICmpBlock(offset, CompareType::NOT_EQUALS) {}
 		};
 
-		struct IfIGtInstruction: IfICmpInstruction {
-			IfIGtInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::GREATER) {}
+		struct IfIGtBlock: IfICmpBlock {
+			IfIGtBlock(int32_t offset): IfICmpBlock(offset, CompareType::GREATER) {}
 		};
 
-		struct IfIGeInstruction: IfICmpInstruction {
-			IfIGeInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::GREATER_OR_EQUALS) {}
+		struct IfIGeBlock: IfICmpBlock {
+			IfIGeBlock(int32_t offset): IfICmpBlock(offset, CompareType::GREATER_OR_EQUALS) {}
 		};
 
-		struct IfILtInstruction: IfICmpInstruction {
-			IfILtInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::LESS) {}
+		struct IfILtBlock: IfICmpBlock {
+			IfILtBlock(int32_t offset): IfICmpBlock(offset, CompareType::LESS) {}
 		};
 
-		struct IfILeInstruction: IfICmpInstruction {
-			IfILeInstruction(int32_t offset): IfICmpInstruction(offset, CompareType::LESS_OR_EQUALS) {}
+		struct IfILeBlock: IfICmpBlock {
+			IfILeBlock(int32_t offset): IfICmpBlock(offset, CompareType::LESS_OR_EQUALS) {}
 		};
 
 
-		struct IfACmpInstruction: IfCmpInstruction {
-			IfACmpInstruction(int32_t offset, const EqualsCompareType& compareType): IfCmpInstruction(offset, compareType) {}
+		struct IfACmpBlock: IfCmpBlock {
+			IfACmpBlock(int32_t offset, const EqualsCompareType& compareType): IfCmpBlock(offset, compareType) {}
 
 			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
 				return new CompareBinaryOperation(environment, AnyObjectType::getInstance(), compareType);
@@ -577,25 +579,25 @@ namespace jdecompiler {
 		};
 
 
-		struct IfAEqInstruction: IfACmpInstruction {
-			IfAEqInstruction(int32_t offset): IfACmpInstruction(offset, CompareType::EQUALS) {}
+		struct IfAEqBlock: IfACmpBlock {
+			IfAEqBlock(int32_t offset): IfACmpBlock(offset, CompareType::EQUALS) {}
 		};
 
-		struct IfANotEqInstruction: IfACmpInstruction {
-			IfANotEqInstruction(int32_t offset): IfACmpInstruction(offset, CompareType::NOT_EQUALS) {}
+		struct IfANotEqBlock: IfACmpBlock {
+			IfANotEqBlock(int32_t offset): IfACmpBlock(offset, CompareType::NOT_EQUALS) {}
 		};
 
 
-		struct IfNullInstruction: IfInstruction {
-			IfNullInstruction(const int32_t offset): IfInstruction(offset) {}
+		struct IfNullBlock: IfBlock {
+			IfNullBlock(const int32_t offset): IfBlock(offset) {}
 
 			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
 				return new CompareWithNullOperation(environment, CompareType::EQUALS);
 			}
 		};
 
-		struct IfNonNullInstruction: IfInstruction {
-			IfNonNullInstruction(const int32_t offset): IfInstruction(offset) {}
+		struct IfNonNullBlock: IfBlock {
+			IfNonNullBlock(const int32_t offset): IfBlock(offset) {}
 
 			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
 				return new CompareWithNullOperation(environment, CompareType::NOT_EQUALS);
@@ -629,7 +631,7 @@ namespace jdecompiler {
 							return nullptr;
 						}
 
-						const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(environment.bytecode.getInstructions()[parentScope->end()]);
+						const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(environment.bytecode.getInstruction(parentScope->end()));
 						if(gotoInstruction && environment.bytecode.posToIndex(environment.bytecode.indexToPos(parentScope->end()) + gotoInstruction->offset) == index) {
 							ifScope->addElseScope(environment, parentScope->end() - 1);
 							return nullptr;
@@ -637,7 +639,7 @@ namespace jdecompiler {
 					} else {
 						// Here goto creates operator continue
 						do {
-							LOG(index << ' ' << ifScope->start());
+							//LOG(index << ' ' << ifScope->start());
 							if(index == ifScope->start()) {
 								ifScope->setLoopType(environment);
 								return new ContinueOperation(environment, ifScope);

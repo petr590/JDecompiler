@@ -2,16 +2,11 @@
 #define JDECOMPILER_JDECOMPILER_CPP
 
 #undef inline
-#include <map>
-#include <set>
 #include <filesystem>
 #define inline FORCE_INLINE
 #include "util.cpp"
 
 namespace jdecompiler {
-
-	using namespace std;
-
 
 	struct JDecompiler {
 
@@ -46,14 +41,14 @@ namespace jdecompiler {
 					throw IllegalStateException("JDecompiler already initialized");
 
 				const string progPath = args[0];
-				const string progName = progPath.substr(progPath.find_last_of(filesystem::path::preferred_separator) + 1);
+				const string progName = progPath.substr(progPath.find_last_of(std::filesystem::path::preferred_separator) + 1);
 
 				vector<BinaryInputStream*> files;
 
 				uint16_t indentWidth = 4;
 				const char* indent = "    ";
 
-				bool failOnError;
+				bool failOnError = false;
 
 				map<string, const Class*> classes;
 

@@ -11,10 +11,15 @@
 #define inline FORCE_INLINE
 #include "jdecompiler-fwd.h"
 
+
+#define DECLARE_EXCEPTION(thisClass, superClass, ...) struct thisClass: superClass {\
+	virtual const char* getName() const override {\
+		return #thisClass;\
+	}\
+	__VA_ARGS__\
+};
+
 namespace jdecompiler {
-
-	using namespace std;
-
 
 	static const string EMPTY_STRING = string();
 
@@ -66,7 +71,6 @@ namespace jdecompiler {
 		return "0x" + hex(n);
 	}
 
-
 	struct Exception: exception {
 		protected:
 			const string message;
@@ -79,128 +83,135 @@ namespace jdecompiler {
 			virtual const char* what() const noexcept override {
 				return message.c_str();
 			}
+
+			virtual const char* getName() const {
+				return "Exception";
+			}
 	};
 
 
-	struct IndexOutOfBoundsException: Exception {
-		IndexOutOfBoundsException(const string& message): Exception(message) {}
-		IndexOutOfBoundsException(uint32_t index, uint32_t length): Exception("Index " + to_string(index) + " out of bounds for length " + to_string(length)) {}
-	};
-
-	struct BytecodeIndexOutOfBoundsException: IndexOutOfBoundsException {
-		BytecodeIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length) {}
-	};
-
-	struct StackIndexOutOfBoundsException: IndexOutOfBoundsException {
-		StackIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length) {}
-	};
-
-	struct ConstantPoolIndexOutOfBoundsException: IndexOutOfBoundsException {
-		ConstantPoolIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length) {}
-	};
-
-
-	struct IllegalArgumentException: Exception {
+	DECLARE_EXCEPTION(IllegalArgumentException, Exception,
 		IllegalArgumentException(const string& message): Exception(message) {}
-	};
+	);
 
-	struct IllegalStateException: Exception {
+	DECLARE_EXCEPTION(IllegalStateException, Exception,
 		IllegalStateException(const string& message): Exception(message) {}
-	};
+	);
 
-	struct DynamicCastException: Exception {
-		DynamicCastException(const string& message): Exception(message) {}
-	};
-
-	struct AssertionException: Exception {
+	DECLARE_EXCEPTION(AssertionException, Exception,
 		AssertionException(const string& message): Exception(message) {}
-	};
+	);
 
 
-	struct DecompilationException: Exception {
+	DECLARE_EXCEPTION(DecompilationException, Exception,
 		DecompilationException(): Exception() {}
 		DecompilationException(const string& message): Exception(message) {}
-	};
+	);
 
 
-	struct InvalidTypeNameException: DecompilationException {
+	DECLARE_EXCEPTION(IndexOutOfBoundsException, DecompilationException,
+		IndexOutOfBoundsException(const string& message): DecompilationException(message) {}
+		IndexOutOfBoundsException(uint32_t index, uint32_t length, const string& name):
+				DecompilationException(name + " index " + to_string(index) + " is out of bounds for length " + to_string(length)) {}
+
+		IndexOutOfBoundsException(uint32_t index, uint32_t length):
+				DecompilationException("Index " + to_string(index) + " is out of bounds for length " + to_string(length)) {}
+	);
+
+	DECLARE_EXCEPTION(BytecodeIndexOutOfBoundsException, IndexOutOfBoundsException,
+		BytecodeIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length, "Bytecode") {}
+	);
+
+	DECLARE_EXCEPTION(StackIndexOutOfBoundsException, IndexOutOfBoundsException,
+		StackIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length, "Stack") {}
+	);
+
+	DECLARE_EXCEPTION(ConstantPoolIndexOutOfBoundsException, IndexOutOfBoundsException,
+		ConstantPoolIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length, "Constant pool") {}
+	);
+
+
+	DECLARE_EXCEPTION(InvalidConstantPoolReferenceException, DecompilationException,
+		InvalidConstantPoolReferenceException(const string& message): DecompilationException(message) {}
+	);
+
+
+	DECLARE_EXCEPTION(InvalidTypeNameException, DecompilationException,
 		InvalidTypeNameException(const string& message): DecompilationException(message) {}
-	};
+	);
 
-	struct InvalidClassNameException: InvalidTypeNameException {
+	DECLARE_EXCEPTION(InvalidClassNameException, InvalidTypeNameException,
 		InvalidClassNameException(const string& message): InvalidTypeNameException(message) {}
-	};
+	);
 
-	struct InvalidSignatureException: InvalidTypeNameException {
+	DECLARE_EXCEPTION(InvalidSignatureException, InvalidTypeNameException,
 		InvalidSignatureException(const string& message): InvalidTypeNameException(message) {}
-	};
+	);
 
-	struct IllegalModifiersException: DecompilationException {
+	DECLARE_EXCEPTION(IllegalModifiersException, DecompilationException,
 		IllegalModifiersException(uint16_t modifiers): DecompilationException(hexWithPrefix<4>(modifiers)) {}
 			IllegalModifiersException(const string& message): DecompilationException(message) {}
-	};
+	);
 
-	struct IllegalMethodDescriptorException: DecompilationException {
+	DECLARE_EXCEPTION(IllegalMethodDescriptorException, DecompilationException,
 		IllegalMethodDescriptorException(const string& descriptor): DecompilationException(descriptor) {}
-	};
+	);
 
-	struct IllegalConstantPointerException: DecompilationException {
-		IllegalConstantPointerException(const string& message): DecompilationException(message) {}
-	};
 
-	struct IllegalStackStateException: DecompilationException {
+	DECLARE_EXCEPTION(IllegalStackStateException, DecompilationException,
 		IllegalStackStateException() {}
 		IllegalStackStateException(const string& message): DecompilationException(message) {}
-	};
+	);
 
-	struct EmptyStackException: IllegalStackStateException {
+	DECLARE_EXCEPTION(EmptyStackException, IllegalStackStateException,
 		EmptyStackException() {}
 		EmptyStackException(const string& message): IllegalStackStateException(message) {}
-	};
+	);
 
-	struct TypeSizeMismatchException: DecompilationException {
+
+	DECLARE_EXCEPTION(TypeSizeMismatchException, DecompilationException,
 		TypeSizeMismatchException(const string& message): DecompilationException(message) {}
 		TypeSizeMismatchException(const string& requiredSizeName, const string& sizeName, const string& typeName):
 				DecompilationException("Required " + requiredSizeName + ", got " + sizeName + " of type " + typeName) {}
-	};
+	);
 
 
-	struct ClassFormatError: Exception {
+	DECLARE_EXCEPTION(ClassFormatError, Exception,
 		ClassFormatError(const string& message): Exception(message) {}
-	};
+	);
 
-	struct IllegalOpcodeException: ClassFormatError {
+	DECLARE_EXCEPTION(IllegalOpcodeException, ClassFormatError,
 		IllegalOpcodeException(const string& message): ClassFormatError(message) {}
-	};
+	);
 
-	struct InstructionFormatError: ClassFormatError {
+	DECLARE_EXCEPTION(InstructionFormatError, ClassFormatError,
 		InstructionFormatError(const string& message): ClassFormatError(message) {}
-	};
+	);
 
-	struct IllegalAttributeException: ClassFormatError {
+	DECLARE_EXCEPTION(IllegalAttributeException, ClassFormatError,
 		IllegalAttributeException(const string& message): ClassFormatError(message) {}
-	};
+	);
 
-	struct AttributeNotFoundException: ClassFormatError {
+	DECLARE_EXCEPTION(AttributeNotFoundException, ClassFormatError,
 		AttributeNotFoundException(const string& message): ClassFormatError(message) {}
-	};
+	);
 
 
-	struct IOException: Exception {
+	DECLARE_EXCEPTION(IOException, Exception,
 		IOException(): Exception() {}
 		IOException(const string& message): Exception(message) {}
-	};
+	);
 
-	struct EOFException: IOException {
+	DECLARE_EXCEPTION(EOFException, IOException,
 		EOFException(): IOException() {}
-	};
+	);
 
 
 
-	struct CastException: Exception {
+	DECLARE_EXCEPTION(CastException, Exception,
 		CastException(): Exception() {}
 		CastException(const string& message): Exception(message) {}
-	};
+	);
 
 	template<class T, class B>
 	static T safe_cast(B o) {
@@ -332,11 +343,11 @@ namespace jdecompiler {
 	}
 
 
-	struct IllegalLiteralException: Exception {
+	DECLARE_EXCEPTION(IllegalLiteralException, Exception,
 		IllegalLiteralException(): Exception() {}
 		IllegalLiteralException(const char* message): Exception(message) {}
 		IllegalLiteralException(const string& message): Exception(message) {}
-	};
+	);
 
 
 	static constexpr char32_t operator"" _c32(const char* const str, size_t length) {
@@ -615,4 +626,5 @@ namespace jdecompiler {
 	};
 }
 
+#undef DECLARE_EXCEPTION
 #endif

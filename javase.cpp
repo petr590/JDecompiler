@@ -3,9 +3,6 @@
 
 namespace jdecompiler {
 
-	using namespace std;
-
-
 	namespace JavaSE {
 		namespace java {
 			namespace lang {

@@ -5,9 +5,6 @@
 
 namespace jdecompiler {
 
-	using namespace std;
-
-
 	namespace operations {
 
 		template<class T = Type>
@@ -415,10 +412,13 @@ namespace operations {
 		struct OperatorOperation: ReturnableOperation<> {
 			public:
 				const char* const stringOperator;
+
+			private:
 				const Priority priority;
 
+			public:
 				OperatorOperation(char32_t operation, Priority priority, const Type* type):
-						stringOperator(char32ToString(operation)), priority(priority), ReturnableOperation(type) {}
+						ReturnableOperation(type), stringOperator(char32ToString(operation)), priority(priority) {}
 
 				virtual Priority getPriority() const override {
 					return priority;
@@ -448,23 +448,25 @@ namespace operations {
 		};
 
 
-		template<char32_t operation, Priority priority>
+		/* The template parameter named priority_parameter is named to avoid
+		   naming conflicts with field OperatorOperation::priority */
+		template<char32_t operation, Priority priority_parameter>
 		struct BinaryOperatorOperationImpl: BinaryOperatorOperation {
 			BinaryOperatorOperationImpl(const Type* type1, const Type* type2, const CodeEnvironment& environment):
-					BinaryOperatorOperation(operation, priority, type1, type2, environment) {}
+					BinaryOperatorOperation(operation, priority_parameter, type1, type2, environment) {}
 
 			BinaryOperatorOperationImpl(const Type* type, const CodeEnvironment& environment):
-					BinaryOperatorOperation(operation, priority, type, environment) {}
+					BinaryOperatorOperation(operation, priority_parameter, type, environment) {}
 		};
 
 
 		/* Operator bit not realized in java through operator xor with value -1 */
-		template<Priority priority>
-		struct BinaryOperatorOperationImpl<'^', priority>: BinaryOperatorOperation {
+		template<Priority priority_parameter>
+		struct BinaryOperatorOperationImpl<'^', priority_parameter>: BinaryOperatorOperation {
 			const bool isBitNot;
 
 			BinaryOperatorOperationImpl(const Type* type, const CodeEnvironment& environment):
-						BinaryOperatorOperation('^', priority, type, environment),
+						BinaryOperatorOperation('^', priority_parameter, type, environment),
 						isBitNot(instanceof<const IConstOperation*>(operand2) && static_cast<const IConstOperation*>(operand2)->value == -1) {}
 
 			virtual string toString(const CodeEnvironment& environment) const override {
@@ -474,17 +476,17 @@ namespace operations {
 			}
 
 			virtual Priority getPriority() const override {
-				return isBitNot ? Priority::BIT_NOT : priority;
+				return isBitNot ? Priority::BIT_NOT : priority_parameter;
 			}
 		};
 
-		template<char32_t operation, Priority priority>
+		template<char32_t operation, Priority priority_parameter>
 		struct UnaryOperatorOperation: OperatorOperation {
 			public:
 				const Operation* const operand;
 
 				UnaryOperatorOperation(const Type* type, const CodeEnvironment& environment):
-						OperatorOperation(operation, priority, type), operand(environment.stack.popAs(type)) {}
+						OperatorOperation(operation, priority_parameter, type), operand(environment.stack.popAs(type)) {}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return this->stringOperator + this->toStringPriority(operand, environment, Associativity::RIGHT);
@@ -589,13 +591,17 @@ namespace operations {
 
 
 		template<bool required>
-		struct CastOperation: ReturnableOperation<> {
+		struct CastOperation: Operation {
 			public:
 				const Operation* const value;
 				const Type* const type;
 
-				CastOperation(const CodeEnvironment& environment, const Type* type):
-						ReturnableOperation(type), value(environment.stack.pop()), type(type) {}
+				CastOperation(const CodeEnvironment& environment, const Type* requiredType, const Type* type):
+						value(environment.stack.popAs(requiredType)), type(type) {}
+
+				virtual const Type* getReturnType() const override {
+					return type;
+				}
 
 				virtual string toString(const CodeEnvironment& environment) const override {
 					return required ? '(' + type->toString(environment.classinfo) + ')' + toStringPriority(value, environment, Associativity::LEFT) :
@@ -610,7 +616,7 @@ namespace operations {
 
 		struct CheckCastOperation: CastOperation<true> {
 			CheckCastOperation(const CodeEnvironment& environment, uint16_t index):
-					CastOperation(environment, parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name)) {}
+					CastOperation(environment, AnyObjectType::getInstance(), parseReferenceType(*environment.constPool.get<ClassConstant>(index)->name)) {}
 		};
 
 

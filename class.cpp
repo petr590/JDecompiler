@@ -35,16 +35,14 @@ namespace jdecompiler {
 				vector<const Method*> methods;
 				methods.reserve(methodDataHolders.size());
 				for(const MethodDataHolder methodData : methodDataHolders) {
-					if(JDecompiler::getInstance().isFailOnError()) {
+					try {
 						methods.push_back(methodData.createMethod(classinfo));
-					} else {
-						try {
-							methods.push_back(methodData.createMethod(classinfo));
-						} catch(DecompilationException& ex) {
-							const char* message = ex.what();
-							cerr << "Exception while decompiling method " + methodData.descriptor.toString() << ": "
-									<< typeid(ex).name() << (*message == '\0' ? EMPTY_STRING : (string)": " + message) << endl;
-						}
+					} catch(DecompilationException& ex) {
+						const char* message = ex.what();
+						cerr << "Exception while decompiling method " + methodData.descriptor.toString() << ": "
+								<< typeid(ex).name() << (*message == '\0' ? EMPTY_STRING : (string)": " + message) << endl;
+						if(JDecompiler::getInstance().isFailOnError())
+							throw;
 					}
 				}
 				return methods;

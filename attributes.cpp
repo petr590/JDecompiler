@@ -5,9 +5,6 @@
 
 namespace jdecompiler {
 
-	using namespace std;
-
-
 	struct Attribute {
 		const string name;
 		const uint32_t length;

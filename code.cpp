@@ -158,16 +158,6 @@ namespace jdecompiler {
 			}
 	};
 
-	struct Instruction {
-		public:
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const = 0;
-
-		protected:
-			Instruction() {}
-
-			virtual ~Instruction() {}
-	};
-
 
 
 	struct Variable {
@@ -319,22 +309,36 @@ namespace jdecompiler {
 		public:
 			Bytecode(const uint32_t length, const uint8_t* bytes): length(length), bytes(bytes) {
 				instructions.reserve(length);
+
+				while(available()) {
+					posMap.push_back(pos);
+
+					Instruction* instruction = nextInstruction();
+					if(instruction != nullptr) {
+						instructions.push_back(instruction);
+					}
+
+					nextUByte();
+				}
 			}
 
 			inline const vector<Instruction*>& getInstructions() const {
 				return instructions;
 			}
 
-			const Instruction* getInstructionNoexcept(uint32_t index) const {
+			const Instruction* getInstruction(uint32_t index) const {
+				if(index >= instructions.size())
+					throw IndexOutOfBoundsException(index, instructions.size());
+				return instructions[index];
+			}
+
+			const Instruction* getInstructionNoexcept(uint32_t index) const noexcept {
 				if(index >= instructions.size())
 					return nullptr;
 				return instructions[index];
 			}
 
-			inline const vector<uint32_t>& getPosMap() const {
-				return posMap;
-			}
-
+		protected:
 			inline int8_t nextByte() {
 				return (int8_t)bytes[++pos];
 			}
@@ -363,22 +367,19 @@ namespace jdecompiler {
 				return bytes[pos];
 			}
 
-			inline uint32_t getPos() const {
-				return pos;
-			}
-
 			inline bool available() const {
 				return length - pos > 0;
 			}
 
-			inline void skip(int32_t count) {
-				pos += (uint32_t)count;
+			Instruction* nextInstruction();
+
+		public:
+			inline uint32_t getPos() const {
+				return pos;
 			}
 
-			const Instruction* getInstruction(uint32_t index) const {
-				if(index >= instructions.size())
-					throw IndexOutOfBoundsException(index, instructions.size());
-				return instructions[index];
+			inline void skip(int32_t count) {
+				pos += (uint32_t)count;
 			}
 
 			uint32_t posToIndex(uint32_t pos) const {
@@ -394,18 +395,6 @@ namespace jdecompiler {
 			inline uint32_t indexToPos(uint32_t index) const {
 				return posMap[index];
 			}
-
-			inline Instruction* nextInstruction() {
-				posMap.push_back(pos);
-
-				Instruction* instruction = nextInstruction0();
-				if(instruction != nullptr) {
-					instructions.push_back(instruction);
-				}
-				return instruction;
-			}
-
-			private: Instruction* nextInstruction0();
 	};
 
 	template<typename T>
@@ -807,6 +796,27 @@ namespace jdecompiler {
 			}
 	};
 
+
+	struct Instruction {
+		public:
+			virtual const Operation* toOperation(const CodeEnvironment&) const = 0;
+
+		protected:
+			Instruction() {}
+
+			virtual ~Instruction() {}
+	};
+
+
+	struct Block: Instruction {
+		protected:
+			mutable uint32_t startIndex, endIndex;
+
+		public:
+			Block(uint32_t startIndex, uint32_t endIndex) noexcept: startIndex(startIndex), endIndex(endIndex) {}
+
+			virtual const Scope* toOperation(const CodeEnvironment&) const override = 0;
+	};
 }
 
 #endif

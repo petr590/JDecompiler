@@ -9,9 +9,6 @@
 
 namespace jdecompiler {
 
-	using namespace std;
-
-
 	enum class TypeSize {
 		ZERO_BYTES, FOUR_BYTES, EIGHT_BYTES
 	};
@@ -164,7 +161,7 @@ namespace jdecompiler {
 			}
 
 			virtual const Type* castToImpl(const Type* other) const override {
-				return this->isInstanceofImpl(other) ? other : nullptr;
+				return this->isInstanceofImpl(other) ? this : nullptr;
 			}
 	};
 
@@ -414,7 +411,7 @@ namespace jdecompiler {
 	template<>
 	bool PrimitiveType<TypeSize::FOUR_BYTES>::isInstanceofImpl(const Type* other) const {
 		return this == other || (other == INT && (this == BYTE || this == CHAR || this == SHORT)) || // allow cast byte, char and short to int
-				((other == SHORT || other == CHAR) && this == BYTE); // allow cast byte to char and short
+				                ((other == SHORT || other == CHAR) && this == BYTE); // allow cast byte to char and short
 	}
 
 

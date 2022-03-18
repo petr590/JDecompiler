@@ -121,7 +121,9 @@ namespace jdecompiler {
 			} catch(const EOFException& ex) {
 				JDecompiler::getInstance().error("unexpected end of file while reading ", file->path);
 			} catch(const IOException& ex) {
-				JDecompiler::getInstance().error(ex.what());
+				JDecompiler::getInstance().error(ex.getName(), ": ", ex.what());
+			} catch(const DecompilationException& ex) {
+				JDecompiler::getInstance().error(ex.getName(), ": ", ex.what());
 			}
 		}
 	}
@@ -129,11 +131,12 @@ namespace jdecompiler {
 
 
 int main(int argc, const char* args[]) {
-	using namespace std;
 	using namespace jdecompiler;
 
 	if(!JDecompiler::init(argc, args))
 		return 0;
+
+	//LOG("isFailOnError = " << JDecompiler::getInstance().isFailOnError());
 
 	JDecompiler::getInstance().readClassFiles();
 

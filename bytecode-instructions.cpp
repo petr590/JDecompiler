@@ -5,10 +5,7 @@
 
 namespace jdecompiler {
 
-	using namespace std;
-
-
-	Instruction* Bytecode::nextInstruction0() {
+	Instruction* Bytecode::nextInstruction() {
 		using namespace instructions;
 
 		switch(current()) {
@@ -121,40 +118,40 @@ namespace jdecompiler {
 			case 0x80: case 0x81: return new OrOperatorInstruction(current() & 1);
 			case 0x82: case 0x83: return new XorOperatorInstruction(current() & 1);
 			case 0x84: return new IIncInstruction(nextUByte(), nextByte());
-			case 0x85: return new CastInstruction<false>(LONG); // int -> long
-			case 0x86: return new CastInstruction<false>(FLOAT); // int -> float
-			case 0x87: return new CastInstruction<false>(DOUBLE); // int -> double
-			case 0x88: return new CastInstruction<true>(INT); // long -> int
-			case 0x89: return new CastInstruction<false>(FLOAT); // long -> float
-			case 0x8A: return new CastInstruction<false>(DOUBLE); // long -> double
-			case 0x8B: return new CastInstruction<true>(INT); // float -> int
-			case 0x8C: return new CastInstruction<true>(LONG); // float -> long
-			case 0x8D: return new CastInstruction<false>(DOUBLE); // float -> double
-			case 0x8E: return new CastInstruction<true>(INT); // double -> int
-			case 0x8F: return new CastInstruction<true>(LONG); // double -> long
-			case 0x90: return new CastInstruction<true>(FLOAT); // double -> float
-			case 0x91: return new CastInstruction<true>(BYTE); // int -> byte
-			case 0x92: return new CastInstruction<true>(CHAR); // int -> char
-			case 0x93: return new CastInstruction<true>(SHORT); // int -> short
+			case 0x85: return new CastInstruction<false>(INT, LONG); // int -> long
+			case 0x86: return new CastInstruction<false>(INT, FLOAT); // int -> float
+			case 0x87: return new CastInstruction<false>(INT, DOUBLE); // int -> double
+			case 0x88: return new CastInstruction<true>(LONG, INT); // long -> int
+			case 0x89: return new CastInstruction<false>(LONG, FLOAT); // long -> float
+			case 0x8A: return new CastInstruction<false>(LONG, DOUBLE); // long -> double
+			case 0x8B: return new CastInstruction<true>(FLOAT, INT); // float -> int
+			case 0x8C: return new CastInstruction<true>(FLOAT, LONG); // float -> long
+			case 0x8D: return new CastInstruction<false>(FLOAT, DOUBLE); // float -> double
+			case 0x8E: return new CastInstruction<true>(DOUBLE, INT); // double -> int
+			case 0x8F: return new CastInstruction<true>(DOUBLE, LONG); // double -> long
+			case 0x90: return new CastInstruction<true>(DOUBLE, FLOAT); // double -> float
+			case 0x91: return new CastInstruction<true>(INT, BYTE); // int -> byte
+			case 0x92: return new CastInstruction<true>(INT, CHAR); // int -> char
+			case 0x93: return new CastInstruction<true>(INT, SHORT); // int -> short
 			case 0x94: return new LCmpInstruction();
 			case 0x95: return new FCmpInstruction();
 			case 0x96: return new FCmpInstruction();
 			case 0x97: return new DCmpInstruction();
 			case 0x98: return new DCmpInstruction();
-			case 0x99: return new IfEqInstruction(nextShort());
-			case 0x9A: return new IfNotEqInstruction(nextShort());
-			case 0x9B: return new IfLtInstruction(nextShort());
-			case 0x9C: return new IfGeInstruction(nextShort());
-			case 0x9D: return new IfGtInstruction(nextShort());
-			case 0x9E: return new IfLeInstruction(nextShort());
-			case 0x9F: return new IfIEqInstruction(nextShort());
-			case 0xA0: return new IfINotEqInstruction(nextShort());
-			case 0xA1: return new IfILtInstruction(nextShort());
-			case 0xA2: return new IfIGeInstruction(nextShort());
-			case 0xA3: return new IfIGtInstruction(nextShort());
-			case 0xA4: return new IfILeInstruction(nextShort());
-			case 0xA5: return new IfAEqInstruction(nextShort());
-			case 0xA6: return new IfANotEqInstruction(nextShort());
+			case 0x99: return new IfEqBlock(nextShort());
+			case 0x9A: return new IfNotEqBlock(nextShort());
+			case 0x9B: return new IfLtBlock(nextShort());
+			case 0x9C: return new IfGeBlock(nextShort());
+			case 0x9D: return new IfGtBlock(nextShort());
+			case 0x9E: return new IfLeBlock(nextShort());
+			case 0x9F: return new IfIEqBlock(nextShort());
+			case 0xA0: return new IfINotEqBlock(nextShort());
+			case 0xA1: return new IfILtBlock(nextShort());
+			case 0xA2: return new IfIGeBlock(nextShort());
+			case 0xA3: return new IfIGtBlock(nextShort());
+			case 0xA4: return new IfILeBlock(nextShort());
+			case 0xA5: return new IfAEqBlock(nextShort());
+			case 0xA6: return new IfANotEqBlock(nextShort());
 			case 0xA7: return new GotoInstruction(nextShort());
 			/*case 0xA8: i+=2; return "JSR";
 			case 0xA9: i++ ; return "RET";*/
@@ -221,8 +218,8 @@ namespace jdecompiler {
 				default: throw IllegalOpcodeException("Illegal wide opcode: " + hexWithPrefix(current()));
 			}
 			case 0xC5: return new MultiANewArrayInstruction(nextUShort(), nextUByte());
-			case 0xC6: return new IfNullInstruction(nextShort());
-			case 0xC7: return new IfNonNullInstruction(nextShort());
+			case 0xC6: return new IfNullBlock(nextShort());
+			case 0xC7: return new IfNonNullBlock(nextShort());
 			case 0xC8: return new GotoInstruction(nextInt());
 			/*case 0xC9: i+=4; return "JSR_W";
 			case 0xCA: return "BREAKPOINT";
@@ -272,11 +269,6 @@ namespace jdecompiler {
 		CodeEnvironment& environment =
 				*new CodeEnvironment(bytecode, classinfo, methodScope, modifiers, descriptor, attributes, codeAttribute->maxLocals);
 
-		while(bytecode.available()) {
-			bytecode.nextInstruction();
-			bytecode.nextUByte();
-		}
-
 		vector<TryScope*> tryScopes;
 
 		for(const CodeAttribute::ExceptionHandler* exceptionAttribute : codeAttribute->exceptionTable) {
@@ -317,7 +309,7 @@ namespace jdecompiler {
 		for(uint32_t i = 0, exprIndex = 0, instructionsSize = instructions.size(); i < instructionsSize; i++) {
 
 			environment.index = i;
-			environment.pos = bytecode.getPosMap()[i];
+			environment.pos = bytecode.indexToPos(i);
 
 			environment.exprIndexTable[i] = exprIndex;
 

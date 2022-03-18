@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_H
 #define JDECOMPILER_H
 
-#define LOG(s) cout << "[ jdecompiler/" __FILE__ " ]: " << s << endl
+#define LOG(...) cout << "[ jdecompiler/" __FILE__ " ]: " << __VA_ARGS__ << endl
 
 #ifdef NO_INLINE
 #	define FORCE_INLINE
@@ -20,12 +20,45 @@
 #include <stdint.h>
 #include <string>
 #include <vector>
+#include <map>
+#include <set>
 
 #define inline FORCE_INLINE
 
 namespace jdecompiler {
 
-	using namespace std;
+	using std::cout;
+	using std::cerr;
+	using std::endl;
+
+	using std::string;
+	using std::vector;
+	using std::map;
+	using std::set;
+
+	using std::min;
+	using std::max;
+
+	using std::exception;
+	using std::invalid_argument;
+	using std::out_of_range;
+
+	using std::function;
+
+	using std::ios;
+	using std::ifstream;
+	using std::ostream;
+	using std::ostringstream;
+	using std::streampos;
+
+	using std::to_string;
+	using std::memcpy;
+
+	using std::is_same;
+	using std::is_base_of;
+	using std::is_fundamental;
+
+	using std::initializer_list;
 
 
 	static const uint32_t CLASS_SIGNATURE = 0xCAFEBABE;
@@ -389,26 +422,26 @@ namespace jdecompiler {
 		struct LCmpInstruction;
 		struct FCmpInstruction;
 		struct DCmpInstruction;
-		struct IfInstruction;
-		struct IfCmpInstruction;
-		struct IfEqInstruction;
-		struct IfNotEqInstruction;
-		struct IfGtInstruction;
-		struct IfGeInstruction;
-		struct IfLtInstruction;
-		struct IfLeInstruction;
-		struct IfICmpInstruction;
-		struct IfIEqInstruction;
-		struct IfINotEqInstruction;
-		struct IfIGtInstruction;
-		struct IfIGeInstruction;
-		struct IfILtInstruction;
-		struct IfILeInstruction;
-		struct IfACmpInstruction;
-		struct IfAEqInstruction;
-		struct IfANotEqInstruction;
-		struct IfNullInstruction;
-		struct IfNonNullInstruction;
+		struct IfBlock;
+		struct IfCmpBlock;
+		struct IfEqBlock;
+		struct IfNotEqBlock;
+		struct IfGtBlock;
+		struct IfGeBlock;
+		struct IfLtBlock;
+		struct IfLeBlock;
+		struct IfICmpBlock;
+		struct IfIEqBlock;
+		struct IfINotEqBlock;
+		struct IfIGtBlock;
+		struct IfIGeBlock;
+		struct IfILtBlock;
+		struct IfILeBlock;
+		struct IfACmpBlock;
+		struct IfAEqBlock;
+		struct IfANotEqBlock;
+		struct IfNullBlock;
+		struct IfNonNullBlock;
 		struct GotoInstruction;
 		struct SwitchInstruction;
 		template<class ReturnOperation>

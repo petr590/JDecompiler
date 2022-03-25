@@ -86,8 +86,12 @@ namespace jdecompiler {
 			virtual const Type* castToImpl(const Type* type) const = 0;
 
 		public:
-			bool operator==(const Type& type) const {
+			bool operator== (const Type& type) const {
 				return this == &type || (typeid(*this) == typeid(type) && this->getEncodedName() == type.getEncodedName());
+			}
+
+			inline friend bool operator!= (const Type& type1, const Type& type2) {
+				return !(type1 == type2);
 			}
 	};
 

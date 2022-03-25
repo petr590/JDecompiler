@@ -640,90 +640,18 @@ namespace operations {
 
 
 
-
-		struct SwitchScope: Scope {
-			public:
-				const Operation* const value;
-				const uint32_t defaultIndex;
-				const map<int32_t, uint32_t> indexTable;
-
-			protected:
-				static const map<int32_t, uint32_t> offsetTableToIndexTable(const CodeEnvironment& environment, const map<int32_t, int32_t>& offsetTable) {
-					map<int32_t, uint32_t> indexTable;
-
-					for(auto& entry : offsetTable)
-						indexTable[entry.first] = environment.bytecode.posToIndex(environment.pos + entry.second);
-
-					return indexTable;
-				}
-
-			public:
-				SwitchScope(const CodeEnvironment& environment, int32_t defaultOffset, map<int32_t, int32_t> offsetTable):
-						Scope(environment.index,
-							environment.bytecode.posToIndex(environment.pos + max(defaultOffset, max_element(offsetTable.begin(), offsetTable.end(),
-								[] (auto& e1, auto& e2) { return e1.second < e2.second; })->second)),
-							environment.getCurrentScope()),
-						value(environment.stack.pop()), defaultIndex(environment.bytecode.posToIndex(environment.pos + defaultOffset)),
-						indexTable(offsetTableToIndexTable(environment, offsetTable)) {}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					environment.classinfo.increaseIndent(2);
-
-					string str = "switch(" + value->toString(environment) + ") {\n";
-					const size_t baseSize = str.size();
-
-					const map<uint32_t, uint32_t>& exprIndexTable = environment.exprIndexTable;
-
-					const uint32_t defaultExprIndex = exprIndexTable.at(defaultIndex);
-
-					uint32_t i = exprIndexTable.at(this->startPos);
-					for(const Operation* operation : code) {
-						if(i == defaultExprIndex) {
-							environment.classinfo.reduceIndent();
-							str += environment.classinfo.getIndent() + (string)"default:\n";
-							environment.classinfo.increaseIndent();
-						} else {
-							for(auto& entry : indexTable) {
-								if(i == exprIndexTable.at(entry.second)) {
-									environment.classinfo.reduceIndent();
-									str += environment.classinfo.getIndent() + (string)"case " + to_string(entry.first) + ":\n";
-									environment.classinfo.increaseIndent();
-									break;
-								}
-							}
-						}
-						str += environment.classinfo.getIndent() + operation->toString(environment) + (instanceof<const Scope*>(operation) ? "\n" : ";\n");
-						i++;
-					}
-
-					environment.classinfo.reduceIndent(2);
-
-					if(str.size() == baseSize) {
-						str[baseSize - 1] = '}';
-						return str;
-					}
-
-					return str + environment.classinfo.getIndent() + '}';
-				}
-		};
-
-
-		struct CatchScopeDataHolder {
-			uint32_t startPos;
+		struct CatchBlockDataHolder {
+			index_t startIndex;
 			vector<const ClassType*> catchTypes;
 
-			CatchScopeDataHolder(uint32_t startPos, const ClassType* catchType): startPos(startPos), catchTypes{catchType} {}
+			CatchBlockDataHolder(index_t startIndex, const ClassType* catchType): startIndex(startIndex), catchTypes{catchType} {}
 		};
 
 
 		struct TryScope: Scope {
-			protected:
-				mutable vector<CatchScopeDataHolder> handlersData;
-				friend const CodeEnvironment& Method::decompileCode(const ClassInfo&);
-
 			public:
-				TryScope(uint32_t startPos, uint32_t endPos, Scope* parentScope):
-						Scope(startPos, endPos, parentScope) {}
+				TryScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex):
+						Scope(startIndex, endIndex, environment) {}
 
 				virtual string getHeader(const CodeEnvironment& environment) const override {
 					return "try ";
@@ -732,8 +660,6 @@ namespace operations {
 				virtual string getBackSeparator(const ClassInfo& classinfo) const override {
 					return EMPTY_STRING;
 				}
-
-				virtual void finalize(const CodeEnvironment& environment) const override;
 		};
 
 
@@ -746,19 +672,19 @@ namespace operations {
 				mutable vector<const Operation*> tmpStack;
 				mutable Variable* exceptionVariable = nullptr;
 				mutable uint16_t exceptionVariableIndex;
-				CatchScope* const nextHandler;
+				const bool hasNext;
 
 			public:
-				CatchScope(const CodeEnvironment& environment, uint32_t startPos, uint32_t endPos,
-						const vector<const ClassType*>& catchTypes, CatchScope* nextHandler):
-						Scope(startPos, endPos, environment.getCurrentScope()), catchTypes(catchTypes), catchType(catchTypes[0]), nextHandler(nextHandler) {
-				}
+				CatchScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex,
+						const vector<const ClassType*>& catchTypes, bool hasNext):
+						Scope(startIndex, endIndex, environment), catchTypes(catchTypes), catchType(catchTypes[0]), hasNext(hasNext) {}
 
-				CatchScope(const CodeEnvironment& environment, const CatchScopeDataHolder& dataHolder, uint32_t endPos, CatchScope* nextHandler):
-						CatchScope(environment, dataHolder.startPos, endPos, dataHolder.catchTypes, nextHandler) {}
+				CatchScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex,
+						const initializer_list<const ClassType*>& catchTypes, bool hasNext):
+						CatchScope(environment, startIndex, endIndex, vector<const ClassType*>(catchTypes), hasNext) {}
 
 
-				virtual void add(const Operation* operation, const CodeEnvironment& environment) const override {
+				virtual void addOperation(const Operation* operation, const CodeEnvironment& environment) const override {
 					if(exceptionVariable == nullptr) {
 						if(instanceof<const StoreOperation*>(operation)) {
 							exceptionVariableIndex = static_cast<const StoreOperation*>(operation)->index;
@@ -768,10 +694,10 @@ namespace operations {
 							environment.warning("first instruction in the catch or finally block should be `astore`");
 						}
 					}
-					Scope::add(operation, environment);
+					Scope::addOperation(operation, environment);
 				}
 
-				virtual const Variable& getVariable(uint32_t index, bool isDeclared) const override {
+				virtual const Variable& getVariable(index_t index, bool isDeclared) const override {
 					if(exceptionVariable != nullptr && index == exceptionVariableIndex)
 						return *exceptionVariable;
 					return Scope::getVariable(index, isDeclared);
@@ -790,7 +716,7 @@ namespace operations {
 				}
 
 				virtual string getBackSeparator(const ClassInfo& classinfo) const override {
-					return nextHandler == nullptr ? "\n" : EMPTY_STRING;
+					return hasNext ? EMPTY_STRING : "\n";
 				}
 
 				void initiate(const CodeEnvironment& environment) {
@@ -821,28 +747,8 @@ namespace operations {
 					reverse(tmpStack.begin(), tmpStack.end());
 					for(const Operation* operation : tmpStack)
 						environment.stack.push(operation);
-
-					if(nextHandler != nullptr) {
-						environment.addScope(nextHandler);
-						nextHandler->initiate(environment);
-					}
 				}
 		};
-
-
-		void TryScope::finalize(const CodeEnvironment& environment) const {
-			assert(handlersData.size() > 0);
-			sort(handlersData.begin(), handlersData.end(), [] (auto& handler1, auto& handler2) { return handler1.startPos > handler2.startPos; });
-
-			CatchScope* lastHandler = nullptr;
-
-			for(const CatchScopeDataHolder& handlerData : handlersData)
-				lastHandler = new CatchScope(environment, handlerData,
-						lastHandler == nullptr ? environment.getCurrentScope()->end() : lastHandler->start(), lastHandler);
-
-			environment.addScope(lastHandler);
-			lastHandler->initiate(environment);
-		}
 
 
 
@@ -1368,7 +1274,7 @@ namespace operations {
 	}
 
 
-	void StaticInitializerScope::add(const Operation* operation, const CodeEnvironment& environment) const {
+	void StaticInitializerScope::addOperation(const Operation* operation, const CodeEnvironment& environment) const {
 		using namespace operations;
 
 		if(!fieldsInitialized) {

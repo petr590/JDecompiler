@@ -296,29 +296,116 @@ namespace jdecompiler {
 
 
 
+
+
+	struct Instruction {
+		public:
+			virtual const Operation* toOperation(const CodeEnvironment&) const = 0;
+
+		protected:
+			Instruction() {}
+
+			virtual ~Instruction() {}
+
+		public:
+			virtual const Block* toBlock(const Bytecode&) const {
+				return nullptr;
+			}
+	};
+
+
+
+	struct Block {
+		public:
+			mutable index_t startIndex, endIndex;
+			const Block* parentBlock;
+
+		protected:
+			mutable vector<const Block*> innerBlocks;
+
+		public:
+			Block(index_t startIndex, index_t endIndex, const Bytecode& bytecode) noexcept;
+
+			Block(index_t startIndex, index_t endIndex) noexcept:
+					startIndex(startIndex), endIndex(endIndex), parentBlock(nullptr) {}
+
+			virtual const Operation* toOperation(const CodeEnvironment& environment) const = 0;
+
+			inline index_t start() const {
+				return startIndex;
+			}
+
+			inline index_t end() const {
+				return endIndex;
+			}
+
+			inline void addInnerBlock(const Block* block) const {
+				innerBlocks.push_back(block);
+			}
+
+			string toDebugString() const {
+				return typeNameOf(*this) + " {" + to_string(startIndex) + ".." + to_string(endIndex) + '}';
+			}
+	};
+
+	struct RootBlock: Block {
+		RootBlock(index_t endIndex) noexcept: Block(0, endIndex) {}
+
+		virtual const Operation* toOperation(const CodeEnvironment&) const override {
+			return nullptr;
+		}
+	};
+
+
+
 	struct Bytecode {
 		public:
 			const uint32_t length;
 			const uint8_t* const bytes;
 
 		private:
-			uint32_t pos = 0;
+			pos_t pos = 0;
+			index_t index = 0;
 			vector<Instruction*> instructions;
-			vector<uint32_t> posMap;
+			mutable vector<const Block*> blocks, inactiveBlocks;
+			const Block* currentBlock = nullptr;
+			map<pos_t, index_t> indexMap;
+			map<index_t, pos_t> posMap;
 
 		public:
+			inline const Block* getCurrentBlock() const {
+				return currentBlock;
+			}
+
 			Bytecode(const uint32_t length, const uint8_t* bytes): length(length), bytes(bytes) {
-				instructions.reserve(length);
 
 				while(available()) {
-					posMap.push_back(pos);
+					indexMap[pos] = index;
+					posMap[index] = pos;
+					index++;
 
-					Instruction* instruction = nextInstruction();
+					instructions.push_back(nextInstruction());
+
+					next();
+				}
+
+				index_t lastIndex = index;
+				assert(lastIndex == instructions.size());
+
+				currentBlock = new RootBlock(lastIndex);
+
+				index = 0;
+
+				for(const Instruction* instruction = instructions[0]; index < lastIndex; instruction = instructions[++index]) {
+					pos = posMap[index];
+
 					if(instruction != nullptr) {
-						instructions.push_back(instruction);
+						const Block* block = instruction->toBlock(*this);
+						if(block != nullptr)
+							addBlock(block);
 					}
 
-					nextUByte();
+					updateBlocks();
 				}
 			}
 
@@ -326,41 +413,82 @@ namespace jdecompiler {
 				return instructions;
 			}
 
-			const Instruction* getInstruction(uint32_t index) const {
+			inline const vector<const Block*>& getBlocks() const {
+				return blocks;
+			}
+
+			const Instruction* getInstruction(index_t index) const {
 				if(index >= instructions.size())
 					throw IndexOutOfBoundsException(index, instructions.size());
 				return instructions[index];
 			}
 
-			const Instruction* getInstructionNoexcept(uint32_t index) const noexcept {
+			const Instruction* getInstructionNoexcept(index_t index) const noexcept {
 				if(index >= instructions.size())
 					return nullptr;
 				return instructions[index];
 			}
 
-		protected:
-			inline int8_t nextByte() {
-				return (int8_t)bytes[++pos];
+			inline void addBlock(const Block* block) const {
+				blocks.push_back(block);
+				inactiveBlocks.push_back(block);
 			}
 
-			inline uint8_t nextUByte() {
+		protected:
+			void updateBlocks() {
+
+				while(index >= currentBlock->end()) {
+					if(currentBlock->parentBlock == nullptr)
+						throw DecompilationException("Unexpected end of global function block " + currentBlock->toDebugString());
+					LOG("End of " << currentBlock->toDebugString());
+					currentBlock = currentBlock->parentBlock;
+				}
+
+				for(auto i = inactiveBlocks.begin(); i != inactiveBlocks.end(); ) {
+					const Block* block = *i;
+					if(block->start() <= index) {
+						if(block->end() > currentBlock->end()) {
+							throw DecompilationException("Block " + block->toDebugString() +
+									" is out of bounds of the parent block " + currentBlock->toDebugString());
+						}
+
+						LOG("Start of " << block->toDebugString());
+
+						currentBlock->addInnerBlock(block);
+						currentBlock = block;
+						inactiveBlocks.erase(i);
+					} else
+						++i;
+				}
+			}
+
+			inline uint8_t next() {
 				return (uint8_t)bytes[++pos];
 			}
 
+
+			inline int8_t nextByte() {
+				return (int8_t)next();
+			}
+
+			inline uint8_t nextUByte() {
+				return (uint8_t)next();
+			}
+
 			inline int16_t nextShort() {
-				return (int16_t)(nextUByte() << 8 | nextUByte());
+				return (int16_t)(next() << 8 | next());
 			}
 
 			inline uint16_t nextUShort() {
-				return (uint16_t)(nextUByte() << 8 | nextUByte());
+				return (uint16_t)(next() << 8 | next());
 			}
 
 			inline int32_t nextInt() {
-				return (int32_t)(nextUByte() << 24 | nextUByte() << 16 | nextUByte() << 8 | nextUByte());
+				return (int32_t)(next() << 24 | next() << 16 | next() << 8 | next());
 			}
 
 			inline uint32_t nextUInt() {
-				return (uint32_t)(nextUByte() << 24 | nextUByte() << 16 | nextUByte() << 8 | nextUByte());
+				return (uint32_t)(next() << 24 | next() << 16 | next() << 8 | next());
 			}
 
 			inline uint8_t current() const {
@@ -374,113 +502,37 @@ namespace jdecompiler {
 			Instruction* nextInstruction();
 
 		public:
-			inline uint32_t getPos() const {
+			inline pos_t getPos() const {
 				return pos;
+			}
+
+			inline index_t getIndex() const {
+				return index;
 			}
 
 			inline void skip(int32_t count) {
 				pos += (uint32_t)count;
 			}
 
-			uint32_t posToIndex(uint32_t pos) const {
-				uint32_t i = 0, index = 0;
-				const uint32_t max = posMap.size();
-				while(index != pos && i < max)
-					index = posMap[++i];
-				if(index != pos)
-					throw BytecodeIndexOutOfBoundsException(pos, length);
-				return i;
+			index_t posToIndex(pos_t pos) const {
+				const auto foundPos = indexMap.find(pos);
+				if(foundPos != indexMap.end())
+					return foundPos->second;
+
+				throw BytecodePosOutOfBoundsException(pos, length);
 			}
 
-			inline uint32_t indexToPos(uint32_t index) const {
-				return posMap[index];
-			}
-	};
+			pos_t indexToPos(index_t index) const {
+				const auto foundIndex = posMap.find(index);
+				if(foundIndex != posMap.end())
+					return foundIndex->second;
 
-	template<typename T>
-	struct Stack {
-		private:
-			class Entry {
-				public:
-					const T value;
-					const Entry* const next;
-
-					Entry(T value, const Entry* next): value(value), next(next) {}
-
-					void deleteNext() const {
-						if(next != nullptr) {
-							next->deleteNext();
-							delete next;
-						}
-					}
-			};
-
-			const Entry* firstEntry;
-			uint16_t length;
-
-		protected:
-			inline void checkEmptyStack() const {
-				if(firstEntry == nullptr)
-					throw EmptyStackException();
-			}
-
-		public:
-			Stack(): firstEntry(nullptr), length(0) {}
-
-			Stack(T value): firstEntry(new Entry(value, nullptr)), length(1) {}
-
-			void push(T value) {
-				firstEntry = new Entry(value, firstEntry);
-				length++;
-			}
-
-			inline void push(T value, T operations...) {
-				push(value);
-				push(operations);
-			}
-
-			T pop() {
-				checkEmptyStack();
-
-				const Entry copiedEntry = *firstEntry;
-				delete firstEntry;
-				firstEntry = copiedEntry.next;
-				length--;
-				return copiedEntry.value;
-			}
-
-			T top() const {
-				checkEmptyStack();
-				return firstEntry->value;
-			}
-
-			T lookup(uint16_t index) const {
-				checkEmptyStack();
-
-				if(index >= length)
-					throw StackIndexOutOfBoundsException(index, length);
-
-				const Entry* currentEntry = firstEntry;
-				for(uint16_t i = 0; i < index; i++)
-					currentEntry = currentEntry->next;
-				return currentEntry->value;
-			}
-
-			inline uint16_t size() const {
-				return length;
-			}
-
-			inline bool empty() const {
-				return length == 0;
-			}
-
-			~Stack() {
-				if(firstEntry != nullptr) {
-					firstEntry->deleteNext();
-					delete firstEntry;
-				}
+				throw BytecodeIndexOutOfBoundsException(index, length);
 			}
 	};
+
+	Block::Block(index_t startIndex, index_t endIndex, const Bytecode& bytecode) noexcept:
+			startIndex(startIndex), endIndex(endIndex), parentBlock(bytecode.getCurrentBlock()) {}
 
 
 	struct CodeStack: Stack<const Operation*> {
@@ -503,7 +555,7 @@ namespace jdecompiler {
 			O operation = Stack<const Operation*>::pop();
 			if(const O* t = dynamic_cast<const O*>(operation))
 				return t;
-			throw DecompilationException((string)"Illegal operation type " + typeid(O).name() + " for operation " + typeid(*operation).name());
+			throw DecompilationException("Illegal operation type " + typeNameOf<O>() + " for operation " + typeNameOf(*operation));
 		}
 	};
 
@@ -517,17 +569,18 @@ namespace jdecompiler {
 			MethodScope& methodScope;
 
 		private:
-			Stack<const Scope*> currentScopes;
+			const Scope* currentScope;
 
 		public:
 			const uint16_t modifiers;
 			const MethodDescriptor& descriptor;
 			const Attributes& attributes;
-			uint32_t pos = 0, index = 0, exprStartIndex = 0;
-			map<uint32_t, uint32_t> exprIndexTable;
+			pos_t pos = 0;
+			index_t index = 0, exprStartIndex = 0;
+			map<uint32_t, index_t> exprIndexTable;
 
 		private:
-			mutable vector<const Scope*> scopes;
+			mutable vector<const Scope*> inactiveScopes;
 
 		public:
 			CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers,
@@ -537,15 +590,36 @@ namespace jdecompiler {
 
 			CodeEnvironment& operator=(const CodeEnvironment&) = delete;
 
+			/*bool addOperation(const Operation* operation) {
+				if(operation == nullptr)
+					return false;
 
-			void checkCurrentScope();
+				//LOG(typeNameOf(operation));
+
+				bool status = false;
+
+				if(operation->getReturnType() != VOID) {
+					stack.push(operation);
+				} else if(operation->canAddToCode() && !(index == instructions.size() - 1 && operation == &VReturn::getInstance())) {
+					currentScope->addOperation(operation, *this);
+					status = true;
+				}
+
+				if(instanceof<const Scope*>(operation))
+					addScope(static_cast<const Scope*>(operation));
+
+				return status;
+			}*/
+
+
+			void updateScopes();
 
 			inline const Scope* getCurrentScope() const {
-				return currentScopes.top();
+				return currentScope;
 			}
 
 			inline void addScope(const Scope* scope) const {
-				scopes.push_back(scope);
+				inactiveScopes.push_back(scope);
 			}
 
 			~CodeEnvironment() {
@@ -590,10 +664,9 @@ namespace jdecompiler {
 
 
 	struct Scope: Operation {
-		protected:
-			mutable uint32_t startPos, endPos;
-
 		public:
+			const index_t startIndex, endIndex;
+
 			const Scope *const parentScope;
 
 		protected:
@@ -608,36 +681,44 @@ namespace jdecompiler {
 			mutable map<const Variable*, string> varNames;
 			mutable vector<const Scope*> innerScopes;
 
+		private:
+			Scope(index_t startIndex, index_t endIndex, const Scope* parentScope, uint16_t localsCount):
+					startIndex(startIndex), endIndex(endIndex), parentScope(parentScope), localsCount(localsCount), variables(localsCount) {}
+
 		public:
 
-			Scope(uint32_t startPos, uint32_t endPos, const Scope* parentScope, uint16_t localsCount):
-					startPos(startPos), endPos(endPos), parentScope(parentScope), localsCount(localsCount), variables(localsCount) {}
+			Scope(index_t startIndex, index_t endIndex, uint16_t localsCount):
+					Scope(startIndex, endIndex, nullptr, localsCount) {}
 
-			Scope(uint32_t startPos, uint32_t endPos, const Scope* parentScope): Scope(startPos, endPos, parentScope, parentScope->localsCount) {}
+			Scope(index_t startIndex, index_t endIndex, const Scope* parentScope):
+					Scope(startIndex, endIndex, parentScope, parentScope->localsCount) {}
+
+			Scope(index_t startIndex, index_t endIndex, const CodeEnvironment& environment):
+					Scope(startIndex, endIndex, environment.getCurrentScope(), environment.getCurrentScope()->localsCount) {}
 
 
-			inline uint32_t start() const {
-				return startPos;
+			inline index_t start() const {
+				return startIndex;
 			}
 
-			inline uint32_t end() const {
-				return endPos;
+			inline index_t end() const {
+				return endIndex;
 			}
 
 		protected:
-			const Variable* findVariable(uint32_t index) const {
+			const Variable* findVariable(index_t index) const {
 				const Variable* var = variables[index];
 				return var == nullptr && parentScope != nullptr ? parentScope->findVariable(index) : var;
 			}
 
-			const Variable* findDeclaredVariable(uint32_t index) const {
+			const Variable* findDeclaredVariable(index_t index) const {
 				const Variable* var = findVariable(index);
 				if(var == nullptr) {
 					for(const Scope* scope : innerScopes) {
 						var = scope->findDeclaredVariable(index);
 						if(var != nullptr)
 							return var;
-						LOG(typeid(*scope).name() << ' ' << scope->start() << ".." << scope->end() << ' ' << var);
+						LOG(scope->toDebugString() << ' ' << var);
 						LOG(join<Variable*>(scope->variables, [] (Variable* v) { return to_string((uint64_t)v); }));
 					}
 				}
@@ -645,7 +726,7 @@ namespace jdecompiler {
 			}
 
 		public:
-			virtual const Variable& getVariable(uint32_t index, bool isDeclared) const {
+			virtual const Variable& getVariable(index_t index, bool isDeclared) const {
 				if(index >= variables.size()) {
 					if(parentScope == nullptr)
 						throw IndexOutOfBoundsException(index, variables.size());
@@ -668,7 +749,7 @@ namespace jdecompiler {
 
 			bool hasVariable(const string& name) const {
 				for(Variable* var : variables)
-					if(name == var->getName())
+					if(var != nullptr && name == var->getName())
 						return true;
 				return parentScope == nullptr ? false : parentScope->hasVariable(name);
 			}
@@ -749,11 +830,11 @@ namespace jdecompiler {
 			}
 
 		public:
-			uint32_t getVariablesCount() const {
+			inline uint32_t getVariablesCount() const {
 				return variables.size();
 			}
 
-			virtual void add(const Operation* operation, const CodeEnvironment& environment) const {
+			virtual void addOperation(const Operation* operation, const CodeEnvironment& environment) const {
 				code.push_back(operation);
 				if(instanceof<const Scope*>(operation))
 					innerScopes.push_back(static_cast<const Scope*>(operation));
@@ -770,12 +851,24 @@ namespace jdecompiler {
 			virtual bool canAddToCode() const override {
 				return false;
 			}
+
+			virtual bool isBreakable() const {
+				return false;
+			}
+
+			virtual bool isContinuable() const {
+				return false;
+			}
+
+			string toDebugString() const {
+				return typeNameOf(*this) + " {" + to_string(startIndex) + ".." + to_string(endIndex) + '}';
+			}
 	};
 
 
 	struct MethodScope: Scope {
 		public:
-			MethodScope(uint32_t startPos, uint32_t endPos, uint16_t localsCount): Scope(startPos, endPos, nullptr, localsCount) {
+			MethodScope(index_t startIndex, index_t endIndex, uint16_t localsCount): Scope(startIndex, endIndex, localsCount) {
 				variables.reserve(localsCount);
 			}
 	};
@@ -786,36 +879,14 @@ namespace jdecompiler {
 			mutable bool fieldsInitialized = false;
 
 		public:
-			StaticInitializerScope(uint32_t startPos, uint32_t endPos, uint16_t localsCount):
-					MethodScope(startPos, endPos, localsCount) {}
+			StaticInitializerScope(index_t startIndex, index_t endIndex, uint16_t localsCount):
+					MethodScope(startIndex, endIndex, localsCount) {}
 
-			virtual void add(const Operation* operation, const CodeEnvironment& environment) const override;
+			virtual void addOperation(const Operation* operation, const CodeEnvironment& environment) const override;
 
 			inline bool isFieldsInitialized() const {
 				return fieldsInitialized;
 			}
-	};
-
-
-	struct Instruction {
-		public:
-			virtual const Operation* toOperation(const CodeEnvironment&) const = 0;
-
-		protected:
-			Instruction() {}
-
-			virtual ~Instruction() {}
-	};
-
-
-	struct Block: Instruction {
-		protected:
-			mutable uint32_t startIndex, endIndex;
-
-		public:
-			Block(uint32_t startIndex, uint32_t endIndex) noexcept: startIndex(startIndex), endIndex(endIndex) {}
-
-			virtual const Scope* toOperation(const CodeEnvironment&) const override = 0;
 	};
 }
 

@@ -1,5 +1,5 @@
-#ifndef JDECOMPILER_BYTECODE_INSTRUCTIONS_CPP
-#define JDECOMPILER_BYTECODE_INSTRUCTIONS_CPP
+#ifndef JDECOMPILER_DECOMPILE_CPP
+#define JDECOMPILER_DECOMPILE_CPP
 
 #include "instructions.cpp"
 
@@ -10,7 +10,7 @@ namespace jdecompiler {
 
 		switch(current()) {
 			case 0x00: return nullptr;
-			case 0x01: return &AConstNull::getInstance();
+			case 0x01: return AConstNull::getInstance();
 			case 0x02: return ICONST_M1;
 			case 0x03: return ICONST_0;
 			case 0x04: return ICONST_1;
@@ -138,40 +138,40 @@ namespace jdecompiler {
 			case 0x96: return new FCmpInstruction();
 			case 0x97: return new DCmpInstruction();
 			case 0x98: return new DCmpInstruction();
-			case 0x99: return new IfEqBlock(nextShort());
-			case 0x9A: return new IfNotEqBlock(nextShort());
-			case 0x9B: return new IfLtBlock(nextShort());
-			case 0x9C: return new IfGeBlock(nextShort());
-			case 0x9D: return new IfGtBlock(nextShort());
-			case 0x9E: return new IfLeBlock(nextShort());
-			case 0x9F: return new IfIEqBlock(nextShort());
-			case 0xA0: return new IfINotEqBlock(nextShort());
-			case 0xA1: return new IfILtBlock(nextShort());
-			case 0xA2: return new IfIGeBlock(nextShort());
-			case 0xA3: return new IfIGtBlock(nextShort());
-			case 0xA4: return new IfILeBlock(nextShort());
-			case 0xA5: return new IfAEqBlock(nextShort());
-			case 0xA6: return new IfANotEqBlock(nextShort());
+			case 0x99: return new IfEqInstruction(nextShort());
+			case 0x9A: return new IfNotEqInstruction(nextShort());
+			case 0x9B: return new IfLtInstruction(nextShort());
+			case 0x9C: return new IfGeInstruction(nextShort());
+			case 0x9D: return new IfGtInstruction(nextShort());
+			case 0x9E: return new IfLeInstruction(nextShort());
+			case 0x9F: return new IfIEqInstruction(nextShort());
+			case 0xA0: return new IfINotEqInstruction(nextShort());
+			case 0xA1: return new IfILtInstruction(nextShort());
+			case 0xA2: return new IfIGeInstruction(nextShort());
+			case 0xA3: return new IfIGtInstruction(nextShort());
+			case 0xA4: return new IfILeInstruction(nextShort());
+			case 0xA5: return new IfAEqInstruction(nextShort());
+			case 0xA6: return new IfANotEqInstruction(nextShort());
 			case 0xA7: return new GotoInstruction(nextShort());
 			/*case 0xA8: i+=2; return "JSR";
 			case 0xA9: i++ ; return "RET";*/
 			case 0xAA: {
-				skip(3 - pos % 4); // alignment by 4 bytes
-				int32_t defaultOffset = nextInt();
-				int32_t low = nextInt(), high = nextInt();
+				skip(3 - (pos & 0x3)); // alignment by 4 bytes
+				offset_t defaultOffset = nextInt();
+				pos_t low = nextInt(), high = nextInt();
 				if(high < low)
 					throw InstructionFormatError("Instruction tableswitch: low is less than high (low = " + to_string(low) +
 							", high = " + to_string(high) + ")");
 
-				map<int32_t, int32_t> offsetTable;
+				map<int32_t, offset_t> offsetTable;
 				for(int32_t i = 0, size = high - low + 1; i < size; i++)
 					offsetTable[i + low] = nextInt();
 				return new SwitchInstruction(defaultOffset, offsetTable);
 			}
 			case 0xAB: {
-				skip(3 - pos % 4); // alignment by 4 bytes
-				int32_t defaultOffset = nextInt();
-				map<int32_t, int32_t> offsetTable;
+				skip(3 - (pos & 0x3)); // alignment by 4 bytes
+				offset_t defaultOffset = nextInt();
+				map<int32_t, offset_t> offsetTable;
 				for(uint32_t i = nextUInt(); i > 0; i--) {
 					int32_t value = nextInt(), offset = nextInt();
 					offsetTable[value] = offset;
@@ -183,7 +183,7 @@ namespace jdecompiler {
 			case 0xAE: return new FReturnInstruction();
 			case 0xAF: return new DReturnInstruction();
 			case 0xB0: return new AReturnInstruction();
-			case 0xB1: return &VReturn::getInstance();
+			case 0xB1: return VReturn::getInstance();
 			case 0xB2: return new GetStaticFieldInstruction(nextUShort());
 			case 0xB3: return new PutStaticFieldInstruction(nextUShort());
 			case 0xB4: return new GetInstanceFieldInstruction(nextUShort());
@@ -218,8 +218,8 @@ namespace jdecompiler {
 				default: throw IllegalOpcodeException("Illegal wide opcode: " + hexWithPrefix(current()));
 			}
 			case 0xC5: return new MultiANewArrayInstruction(nextUShort(), nextUByte());
-			case 0xC6: return new IfNullBlock(nextShort());
-			case 0xC7: return new IfNonNullBlock(nextShort());
+			case 0xC6: return new IfNullInstruction(nextShort());
+			case 0xC7: return new IfNonNullInstruction(nextShort());
 			case 0xC8: return new GotoInstruction(nextInt());
 			/*case 0xC9: i+=4; return "JSR_W";
 			case 0xCA: return "BREAKPOINT";
@@ -247,7 +247,8 @@ namespace jdecompiler {
 		if(!(modifiers & ACC_STATIC))
 			methodScope->addVariable(new NamedVariable(&classinfo.thisType, true, "this"));
 
-		{ // add arguments
+		// -------------------------------------------------- Add arguments --------------------------------------------------
+		{
 			const uint32_t argumentsCount = descriptor.arguments.size();
 
 			static const ArrayType STRING_ARRAY(STRING);
@@ -269,42 +270,45 @@ namespace jdecompiler {
 		CodeEnvironment& environment =
 				*new CodeEnvironment(bytecode, classinfo, methodScope, modifiers, descriptor, attributes, codeAttribute->maxLocals);
 
-		vector<TryScope*> tryScopes;
+		// -------------------------------------------------- Add try-catch blocks --------------------------------------------------
+		// TODO
+		/*vector<TryBlock*> tryBlocks;
 
 		for(const CodeAttribute::ExceptionHandler* exceptionAttribute : codeAttribute->exceptionTable) {
 
-			const uint32_t
-					tryStartPos = environment.bytecode.posToIndex(exceptionAttribute->startPos),
-					tryEndPos = environment.bytecode.posToIndex(exceptionAttribute->endPos);
+			const index_t
+					tryStartIndex = environment.bytecode.posToIndex(exceptionAttribute->startPos),
+					tryEndIndex = environment.bytecode.posToIndex(exceptionAttribute->endPos);
 
-			const auto tryScopesFindResult = find_if(tryScopes.begin(), tryScopes.end(),
-					[tryStartPos, tryEndPos] (TryScope* tryScope) { return tryScope->startPos == tryStartPos && tryScope->endPos == tryEndPos; });
+			const auto tryBlocksFindResult = find_if(tryBlocks.begin(), tryBlocks.end(),
+					[tryStartIndex, tryEndIndex] (TryBlock* tryBlock) { return tryBlock->startIndex == tryStartIndex && tryBlock->endIndex == tryEndIndex; });
 
 
-			TryScope* tryScope;
+			TryBlock* tryBlock;
 
-			if(tryScopesFindResult == tryScopes.end()) {
-				tryScope = new TryScope(tryStartPos, tryEndPos, methodScope);
-				tryScopes.push_back(tryScope);
-				environment.addScope(tryScope);
+			if(tryBlocksFindResult != tryBlocks.end()) {
+				tryBlock = *tryBlocksFindResult;
 			} else {
-				tryScope = *tryScopesFindResult;
+				tryBlock = new TryBlock(tryStartIndex, tryEndIndex);
+				tryBlocks.push_back(tryBlock);
+				bytecode.addBlock(tryBlock);
 			}
 
-			const uint32_t catchStartPos = bytecode.posToIndex(exceptionAttribute->handlerPos) - 1;
+			const index_t catchStartIndex = bytecode.posToIndex(exceptionAttribute->handlerPos) - 1;
 
-			const auto handlersFindResult = find_if(tryScope->handlersData.begin(), tryScope->handlersData.end(),
-					[catchStartPos] (CatchScopeDataHolder& handlerData) { return handlerData.startPos == catchStartPos; });
+			const auto handlersFindResult = find_if(tryBlock->handlers.begin(), tryBlock->handlers.end(),
+					[catchStartIndex] (CatchBlockDataHolder& handlerData) { return handlerData.startIndex == catchStartIndex; });
 
-			if(handlersFindResult == tryScope->handlersData.end()) {
-				tryScope->handlersData.push_back(CatchScopeDataHolder(catchStartPos, exceptionAttribute->catchType));
+			if(handlersFindResult != tryBlock->handlers.end()) {
+				handlersFindResult->catchTypes.push_back();
 			} else {
-				handlersFindResult->catchTypes.push_back(exceptionAttribute->catchType);
+				tryBlock->handlers.push_back(new CatchBlock(catchStartIndex, exceptionAttribute->catchType, exceptionAttribute->catchType));
 			}
-		}
+		}*/
 
 
 		const vector<Instruction*>& instructions = bytecode.getInstructions();
+		vector<const Block*> blocks = bytecode.getBlocks();
 
 		for(uint32_t i = 0, exprIndex = 0, instructionsSize = instructions.size(); i < instructionsSize; i++) {
 
@@ -316,20 +320,52 @@ namespace jdecompiler {
 			if(environment.stack.empty())
 				environment.exprStartIndex = i;
 
-			if(const Operation* operation = instructions[i]->toOperation(environment)) {
+			/*if(instructions[i] != nullptr && environment.addOperation(instructions[i]->toOperation(environment))) {
+				exprIndex++;
+			}*/
 
-				if(operation->getReturnType() != VOID) {
-					environment.stack.push(operation);
-				} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == &VReturn::getInstance())) {
-					environment.getCurrentScope()->add(operation, environment);
-					exprIndex++;
+			if(instructions[i] != nullptr) {
+				const Operation* operation = instructions[i]->toOperation(environment);
+				if(operation != nullptr) {
+
+					if(operation->getReturnType() != VOID) {
+						environment.stack.push(operation);
+					} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == VReturn::getInstance())) {
+						environment.getCurrentScope()->addOperation(operation, environment);
+						exprIndex++;
+					}
+
+					if(instanceof<const Scope*>(operation))
+						environment.addScope(static_cast<const Scope*>(operation));
 				}
-
-				if(instanceof<const Scope*>(operation))
-					environment.addScope(static_cast<const Scope*>(operation));
 			}
 
-			environment.checkCurrentScope();
+			for(auto iter = blocks.begin(); iter != blocks.end(); ) {
+				const Block* block = *iter;
+
+				assert(!(block->start() < i));
+
+				if(block->start() == i) { // Do not increment iterator when erase element
+
+					const Operation* operation = block->toOperation(environment);
+					if(operation != nullptr) {
+						if(operation->getReturnType() != VOID) {
+							environment.stack.push(operation);
+						} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == VReturn::getInstance())) {
+							environment.getCurrentScope()->addOperation(operation, environment);
+							exprIndex++;
+						}
+
+						if(instanceof<const Scope*>(operation))
+							environment.addScope(static_cast<const Scope*>(operation));
+					}
+					blocks.erase(iter);
+				} else {
+					++iter;
+				}
+			}
+
+			environment.updateScopes();
 		}
 
 		return environment;

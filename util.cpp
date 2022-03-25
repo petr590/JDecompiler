@@ -9,15 +9,11 @@
 #include <math.h>
 #include <algorithm>
 #define inline FORCE_INLINE
+
 #include "jdecompiler-fwd.h"
-
-
-#define DECLARE_EXCEPTION(thisClass, superClass, ...) struct thisClass: superClass {\
-	virtual const char* getName() const override {\
-		return #thisClass;\
-	}\
-	__VA_ARGS__\
-};
+#include "typename-of.cpp"
+#include "index-types.cpp"
+#include "exceptions.cpp"
 
 namespace jdecompiler {
 
@@ -30,194 +26,11 @@ namespace jdecompiler {
 	}
 
 
-	template<uint16_t length>
-	static string hex(uint64_t n) {
-		static_assert(length > 0, "length cannot be zero");
-
-		static constexpr const char* const digits = "0123456789ABCDEF";
-
-		char str[length + 1];
-		str[length] = '\0';
-
-		for(uint16_t i = length; i-- > 0; ) {
-			str[i] = digits[n & 0xF];
-			n >>= 4;
-		}
-
-		return str;
-	}
-
-	template<uint16_t length>
-	static inline string hexWithPrefix(uint64_t n) {
-		return "0x" + hex<length>(n);
-	}
-
-
-	static string hex(uint64_t n) {
-		static constexpr const char* digits = "0123456789ABCDEF";
-		string str;
-
-		do {
-			str += digits[n & 0xF];
-			n >>= 4;
-		} while(n != 0);
-
-		reverse(str.begin(), str.end());
-
-		return str;
-	}
-
-	static inline string hexWithPrefix(uint64_t n) {
-		return "0x" + hex(n);
-	}
-
-	struct Exception: exception {
-		protected:
-			const string message;
-
-		public:
-			Exception() {}
-			Exception(const char* message): message(message) {}
-			Exception(const string& message): message(message) {}
-
-			virtual const char* what() const noexcept override {
-				return message.c_str();
-			}
-
-			virtual const char* getName() const {
-				return "Exception";
-			}
-	};
-
-
-	DECLARE_EXCEPTION(IllegalArgumentException, Exception,
-		IllegalArgumentException(const string& message): Exception(message) {}
-	);
-
-	DECLARE_EXCEPTION(IllegalStateException, Exception,
-		IllegalStateException(const string& message): Exception(message) {}
-	);
-
-	DECLARE_EXCEPTION(AssertionException, Exception,
-		AssertionException(const string& message): Exception(message) {}
-	);
-
-
-	DECLARE_EXCEPTION(DecompilationException, Exception,
-		DecompilationException(): Exception() {}
-		DecompilationException(const string& message): Exception(message) {}
-	);
-
-
-	DECLARE_EXCEPTION(IndexOutOfBoundsException, DecompilationException,
-		IndexOutOfBoundsException(const string& message): DecompilationException(message) {}
-		IndexOutOfBoundsException(uint32_t index, uint32_t length, const string& name):
-				DecompilationException(name + " index " + to_string(index) + " is out of bounds for length " + to_string(length)) {}
-
-		IndexOutOfBoundsException(uint32_t index, uint32_t length):
-				DecompilationException("Index " + to_string(index) + " is out of bounds for length " + to_string(length)) {}
-	);
-
-	DECLARE_EXCEPTION(BytecodeIndexOutOfBoundsException, IndexOutOfBoundsException,
-		BytecodeIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length, "Bytecode") {}
-	);
-
-	DECLARE_EXCEPTION(StackIndexOutOfBoundsException, IndexOutOfBoundsException,
-		StackIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length, "Stack") {}
-	);
-
-	DECLARE_EXCEPTION(ConstantPoolIndexOutOfBoundsException, IndexOutOfBoundsException,
-		ConstantPoolIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length, "Constant pool") {}
-	);
-
-
-	DECLARE_EXCEPTION(InvalidConstantPoolReferenceException, DecompilationException,
-		InvalidConstantPoolReferenceException(const string& message): DecompilationException(message) {}
-	);
-
-
-	DECLARE_EXCEPTION(InvalidTypeNameException, DecompilationException,
-		InvalidTypeNameException(const string& message): DecompilationException(message) {}
-	);
-
-	DECLARE_EXCEPTION(InvalidClassNameException, InvalidTypeNameException,
-		InvalidClassNameException(const string& message): InvalidTypeNameException(message) {}
-	);
-
-	DECLARE_EXCEPTION(InvalidSignatureException, InvalidTypeNameException,
-		InvalidSignatureException(const string& message): InvalidTypeNameException(message) {}
-	);
-
-	DECLARE_EXCEPTION(IllegalModifiersException, DecompilationException,
-		IllegalModifiersException(uint16_t modifiers): DecompilationException(hexWithPrefix<4>(modifiers)) {}
-			IllegalModifiersException(const string& message): DecompilationException(message) {}
-	);
-
-	DECLARE_EXCEPTION(IllegalMethodDescriptorException, DecompilationException,
-		IllegalMethodDescriptorException(const string& descriptor): DecompilationException(descriptor) {}
-	);
-
-
-	DECLARE_EXCEPTION(IllegalStackStateException, DecompilationException,
-		IllegalStackStateException() {}
-		IllegalStackStateException(const string& message): DecompilationException(message) {}
-	);
-
-	DECLARE_EXCEPTION(EmptyStackException, IllegalStackStateException,
-		EmptyStackException() {}
-		EmptyStackException(const string& message): IllegalStackStateException(message) {}
-	);
-
-
-	DECLARE_EXCEPTION(TypeSizeMismatchException, DecompilationException,
-		TypeSizeMismatchException(const string& message): DecompilationException(message) {}
-		TypeSizeMismatchException(const string& requiredSizeName, const string& sizeName, const string& typeName):
-				DecompilationException("Required " + requiredSizeName + ", got " + sizeName + " of type " + typeName) {}
-	);
-
-
-	DECLARE_EXCEPTION(ClassFormatError, Exception,
-		ClassFormatError(const string& message): Exception(message) {}
-	);
-
-	DECLARE_EXCEPTION(IllegalOpcodeException, ClassFormatError,
-		IllegalOpcodeException(const string& message): ClassFormatError(message) {}
-	);
-
-	DECLARE_EXCEPTION(InstructionFormatError, ClassFormatError,
-		InstructionFormatError(const string& message): ClassFormatError(message) {}
-	);
-
-	DECLARE_EXCEPTION(IllegalAttributeException, ClassFormatError,
-		IllegalAttributeException(const string& message): ClassFormatError(message) {}
-	);
-
-	DECLARE_EXCEPTION(AttributeNotFoundException, ClassFormatError,
-		AttributeNotFoundException(const string& message): ClassFormatError(message) {}
-	);
-
-
-	DECLARE_EXCEPTION(IOException, Exception,
-		IOException(): Exception() {}
-		IOException(const string& message): Exception(message) {}
-	);
-
-	DECLARE_EXCEPTION(EOFException, IOException,
-		EOFException(): IOException() {}
-	);
-
-
-
-	DECLARE_EXCEPTION(CastException, Exception,
-		CastException(): Exception() {}
-		CastException(const string& message): Exception(message) {}
-	);
-
 	template<class T, class B>
 	static T safe_cast(B o) {
 		T t = dynamic_cast<T>(o);
 		if(t == nullptr && o != nullptr)
-			throw CastException((string)"cannot cast " + typeid(B).name() + " to " + typeid(T).name());
+			throw CastException((string)"cannot cast " + typeNameOf<B>() + " to " + typeNameOf<T>());
 		return t;
 	}
 
@@ -292,10 +105,10 @@ namespace jdecompiler {
 	template<typename T>
 	static string join(const vector<T>& array, const function<string(T)> func, const string& separator = ", ") {
 		string result;
-		const uint32_t size = array.size();
+		const size_t size = array.size();
 
 		if(size > 0) {
-			uint32_t i = 0;
+			size_t i = 0;
 			while(true) {
 				result += func(array[i]);
 				if(++i == size) break;
@@ -310,10 +123,10 @@ namespace jdecompiler {
 	template<typename T>
 	static string join(const vector<T>& array, const function<string(T, uint32_t)> func, const string& separator = ", ") {
 		string result;
-		const uint32_t size = array.size();
+		const size_t size = array.size();
 
 		if(size > 0) {
-			uint32_t i = 0;
+			size_t i = 0;
 			while(true) {
 				result += func(array[i], i);
 				if(++i == size) break;
@@ -328,7 +141,7 @@ namespace jdecompiler {
 	template<typename T>
 	static string rjoin(const vector<T>& array, const function<string(T)> func, const string& separator = ", ") {
 		string result;
-		uint32_t i = array.size();
+		size_t i = array.size();
 
 		if(i > 0) {
 			while(true) {
@@ -342,12 +155,15 @@ namespace jdecompiler {
 		return result;
 	}
 
+	struct IllegalLiteralException: Exception {
+		virtual const char* getName() const override {
+			return "IllegalLiteralException";
+		}
 
-	DECLARE_EXCEPTION(IllegalLiteralException, Exception,
 		IllegalLiteralException(): Exception() {}
 		IllegalLiteralException(const char* message): Exception(message) {}
 		IllegalLiteralException(const string& message): Exception(message) {}
-	);
+	};
 
 
 	static constexpr char32_t operator"" _c32(const char* const str, size_t length) {
@@ -506,24 +322,24 @@ namespace jdecompiler {
 		private: string value;
 
 		public:
-			FormatString() {}
+			FormatString() noexcept {}
 			FormatString(const string& value): value(value) {}
 
 
-			FormatString operator+(const char* str) const {
+			FormatString operator+ (const char* str) const {
 				return FormatString(value + (value.empty() || *str == '\0' ? str : " " + (string)str));
 			}
 
-			FormatString operator+(const string& str) const {
+			FormatString operator+ (const string& str) const {
 				return FormatString(value + (value.empty() || str.empty() ? str : " " + str));
 			}
 
-			FormatString& operator+=(const char* str) {
+			FormatString& operator+= (const char* str) {
 				value += (value.empty() || *str == '\0' ? str : " " + (string)str);
 				return *this;
 			}
 
-			FormatString& operator+=(const string& str) {
+			FormatString& operator+= (const string& str) {
 				value += (value.empty() || str.empty() ? str : " " + str);
 				return *this;
 			}
@@ -624,7 +440,92 @@ namespace jdecompiler {
 	struct is_one_of<F, S, T...> {
 		static constexpr bool value = is_same<F, S>::value || is_one_of<F, T...>::value;
 	};
-}
 
-#undef DECLARE_EXCEPTION
+
+
+	template<typename T>
+	struct Stack {
+		private:
+			class Entry {
+				public:
+					const T value;
+					const Entry* const next;
+
+					Entry(T value, const Entry* next): value(value), next(next) {}
+
+					void deleteNext() const {
+						if(next != nullptr) {
+							next->deleteNext();
+							delete next;
+						}
+					}
+			};
+
+			const Entry* firstEntry;
+			uint16_t length;
+
+		protected:
+			inline void checkEmptyStack() const {
+				if(firstEntry == nullptr)
+					throw EmptyStackException();
+			}
+
+		public:
+			Stack(): firstEntry(nullptr), length(0) {}
+
+			Stack(T value): firstEntry(new Entry(value, nullptr)), length(1) {}
+
+			void push(T value) {
+				firstEntry = new Entry(value, firstEntry);
+				length++;
+			}
+
+			inline void push(T value, T operations...) {
+				push(value);
+				push(operations);
+			}
+
+			T pop() {
+				checkEmptyStack();
+
+				const Entry copiedEntry = *firstEntry;
+				delete firstEntry;
+				firstEntry = copiedEntry.next;
+				length--;
+				return copiedEntry.value;
+			}
+
+			T top() const {
+				checkEmptyStack();
+				return firstEntry->value;
+			}
+
+			T lookup(uint16_t index) const {
+				checkEmptyStack();
+
+				if(index >= length)
+					throw StackIndexOutOfBoundsException(index, length);
+
+				const Entry* currentEntry = firstEntry;
+				for(uint16_t i = 0; i < index; i++)
+					currentEntry = currentEntry->next;
+				return currentEntry->value;
+			}
+
+			inline uint16_t size() const {
+				return length;
+			}
+
+			inline bool empty() const {
+				return length == 0;
+			}
+
+			~Stack() {
+				if(firstEntry != nullptr) {
+					firstEntry->deleteNext();
+					delete firstEntry;
+				}
+			}
+	};
+}
 #endif

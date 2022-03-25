@@ -275,34 +275,18 @@ namespace jdecompiler {
 		};
 
 
-		struct IfScope;
+		struct ConditionScope: Scope {
+			public:
+				const ConditionOperation* condition;
 
-
-		struct ContinueOperation: VoidOperation {
-			const IfScope* const ifScope;
-
-			ContinueOperation(const CodeEnvironment& environment, const IfScope* ifScope);
-
-			virtual string toString(const CodeEnvironment& environment) const override;
+			protected:
+				ConditionScope(index_t startIndex, index_t endIndex, const CodeEnvironment& environment, const ConditionOperation* condition):
+						Scope(startIndex, endIndex, environment), condition(condition) {}
 		};
 
 
-		struct IfScope: Scope {
+		struct IfScope: ConditionScope {
 			private:
-				enum ScopeType {
-					IF, TERNARY, WHILE, FOR
-				};
-
-				static string to_string(const ScopeType type) {
-					switch(type) {
-						case IF:      return "if";
-						case TERNARY: return "ternary operator";
-						case WHILE:   return "while";
-						case FOR:     return "for";
-						default: return "(ScopeType)" + std::to_string((uint32_t)type);
-					}
-				}
-
 				struct ElseScope: Scope {
 					public:
 						const IfScope* const ifScope;
@@ -311,151 +295,229 @@ namespace jdecompiler {
 						mutable const Operation* ternaryFalseOperation = nullptr;
 
 					public:
-						ElseScope(const CodeEnvironment& environment, const uint32_t endPos, const IfScope* ifScope):
-								Scope(environment.index, endPos, ifScope), ifScope(ifScope) {
-						}
+						ElseScope(const CodeEnvironment& environment, const index_t endIndex, const IfScope* ifScope):
+								Scope(ifScope->endIndex, endIndex, ifScope), ifScope(ifScope) {}
 
-						virtual string getHeader(const CodeEnvironment& environment) const override {
+						virtual inline string getHeader(const CodeEnvironment&) const override {
 							return " else ";
 						}
 
-						virtual inline string getFrontSeparator(const ClassInfo& classinfo) const override {
-							return EMPTY_STRING;
-						}
-
-						virtual void finalize(const CodeEnvironment& environment) const override {
-							if(ifScope->isTernary()) {
-								ternaryFalseOperation = environment.stack.pop();
-								environment.stack.push(new TernaryOperatorOperation(ifScope->condition,
-										ifScope->ternaryTrueOperation, ternaryFalseOperation));
+						virtual string toString(const CodeEnvironment& environment) const override {
+							if(code.size() == 1 && instanceof<const IfScope*>(code[0])) {
+								return getHeader(environment) + code[0]->toString(environment);
 							}
+							if(code.size() == 2 && instanceof<const IfScope*>(code[0]) && instanceof<const ElseScope*>(code[1])) {
+								return getHeader(environment) + code[0]->toString(environment) + code[1]->toString(environment);
+							}
+							return this->Scope::toString(environment);
 						}
 
-						virtual const Type* getReturnType() const override {
-							return ifScope->isTernary() ? ternaryFalseOperation->getReturnType() : this->Scope::getReturnType();
+						virtual inline string getFrontSeparator(const ClassInfo&) const override {
+							return EMPTY_STRING;
 						}
 				};
 
-
-				mutable const ConditionOperation* condition;
-
-				friend struct instructions::IfBlock;
-				inline void setEnd(uint32_t endPos) const {
-					this->endPos = endPos;
-				}
-
-				mutable ScopeType type = IF;
-
-				friend struct ElseScope;
-				mutable const ElseScope* elseScope = nullptr;
-
-				mutable const Operation* ternaryTrueOperation = nullptr;
-
-				friend struct ContinueOperation;
-				mutable bool hasLabel = false;
+				const ElseScope* const elseScope;
 
 			public:
-				IfScope(const CodeEnvironment& environment, const int32_t offset, const ConditionOperation* condition):
-						Scope(environment.exprStartIndex, environment.bytecode.posToIndex(environment.pos + offset) - 1, environment.getCurrentScope()),
-						condition(condition) {}
+				IfScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
+						ConditionScope(startIndex, endIndex, environment, condition), elseScope(nullptr) {}
 
-				inline bool isLoop() const {
-					return type == WHILE || type == FOR;
-				}
-
-				inline bool isFor() const {
-					return type == FOR;
-				}
-
-				inline bool isTernary() const {
-					return type == TERNARY;
-				}
-
-
-			protected:
-				friend struct instructions::GotoInstruction;
-
-				void addElseScope(const CodeEnvironment& environment, const uint32_t endPos) const {
-					if(elseScope != nullptr)
-						throw IllegalStateException("Else scope already added");
-
-					if(type != IF)
-						throw IllegalStateException("Cannot add else scope to " + to_string(type));
-
-					this->endPos = endPos;
-
-					elseScope = new ElseScope(environment, endPos, this);
+				IfScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex, const ConditionOperation* condition,
+						index_t elseScopeEndIndex):
+						ConditionScope(startIndex, endIndex, environment, condition),
+						elseScope(new ElseScope(environment, elseScopeEndIndex, this)) {
 					environment.addScope(elseScope);
 				}
 
-				void setLoopType(const CodeEnvironment& environment) const {
-					if(type != IF && !isLoop())
-						throw IllegalStateException("Cannot make loop from " + to_string(type));
-					const Operation* inital = startPos == 0 ? nullptr : environment.getCurrentScope()->code[startPos - 1];
-					LOG("startPos = " << startPos);
-					type = WHILE;
-				}
-
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return elseScope == nullptr ? this->Scope::toString(environment) :
-							this->Scope::toString(environment) + elseScope->toString(environment);
-				}
-
+			protected:
 				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return (string)(isLoop() ? ((hasLabel ? getLabel() + ": " : EMPTY_STRING) +
-								(isFor() ? "for" : "while")) :
-								"if") +
-							'(' + condition->toString(environment) + ") ";
+					return "if(" + condition->toString(environment) + ") ";
 				}
 
-				virtual bool canPrintNextOperation(const vector<const Operation*>::const_iterator& i) const override {
-					if(next(i) != code.end())
-						return true;
-					const ContinueOperation* continueOperation = dynamic_cast<const ContinueOperation*>(*i);
-					return continueOperation == nullptr || continueOperation->ifScope != this;
-				}
-
-				string getLabel() const {
-					if(isLoop())
-						return "Loop";
-					throw DecompilationException("Cannot get label for " + to_string(type));
+				virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
+					return elseScope == nullptr ? this->Scope::getBackSeparator(classinfo) : EMPTY_STRING;
 				}
 
 			public:
-				virtual void finalize(const CodeEnvironment& environment) const override {
-					if(elseScope != nullptr && !environment.stack.empty() && code.empty()) {
-						type = TERNARY;
-						ternaryTrueOperation = environment.stack.pop();
-					}
-				}
 
-				virtual const Type* getReturnType() const override {
+				/*virtual const Type* getReturnType() const override {
 					return isTernary() ? ternaryTrueOperation->getReturnType() : this->Scope::getReturnType();
-				}
+				}*/
 
-				virtual void add(const Operation* operation, const CodeEnvironment& environment) const {
+				virtual void addOperation(const Operation* operation, const CodeEnvironment& environment) const override {
 					if(operation != elseScope)
-						this->Scope::add(operation, environment);
+						this->Scope::addOperation(operation, environment);
 				}
 		};
 
 
 
-		ContinueOperation::ContinueOperation(const CodeEnvironment& environment, const IfScope* ifScope): ifScope(ifScope) {
-			if(ifScope != environment.getCurrentScope())
-				ifScope->hasLabel = true;
+		struct LoopScope;
+
+		struct ContinueOperation: VoidOperation {
+			public:
+				const LoopScope* const loopScope;
+
+			protected:
+				bool hasLabel = false;
+
+			public:
+				ContinueOperation(const CodeEnvironment& environment, const LoopScope* loopScope);
+
+				virtual string toString(const CodeEnvironment& environment) const override;
+		};
+
+
+
+		struct LoopScope: ConditionScope {
+			protected:
+				mutable bool hasLabel = false;
+
+			public:
+				LoopScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
+						ConditionScope(startIndex, endIndex, environment, condition) {}
+
+				string getLabel() const {
+					if(!hasLabel)
+						hasLabel = true;
+					return "Label1";
+				}
+
+				virtual bool isBreakable() const override {
+					return true;
+				}
+
+				virtual bool isContinuable() const override {
+					return true;
+				}
+
+			protected:
+				virtual bool canPrintNextOperation(const vector<const Operation*>::const_iterator& i) const override {
+					if(next(i) != code.end())
+						return true;
+					const ContinueOperation* continueOperation = dynamic_cast<const ContinueOperation*>(*i);
+					return continueOperation == nullptr || continueOperation->loopScope != this;
+				}
+		};
+
+
+
+		ContinueOperation::ContinueOperation(const CodeEnvironment& environment, const LoopScope* loopScope): loopScope(loopScope) {
+			const Scope* currentScope = environment.getCurrentScope();
+			while(currentScope != nullptr && !currentScope->isContinuable())
+				currentScope = currentScope->parentScope;
+
+			if(currentScope != nullptr && currentScope != loopScope)
+				hasLabel = true;
 		}
 
 
 		string ContinueOperation::toString(const CodeEnvironment& environment) const {
-			return ifScope->hasLabel ? "continue " + ifScope->getLabel() : "continue";
+			return hasLabel ? "continue " + loopScope->getLabel() : "continue";
 		}
 
 
-		struct EmptyInfiniteLoopScope: Scope {
-			EmptyInfiniteLoopScope(const CodeEnvironment& environment): Scope(environment.index, environment.index, environment.getCurrentScope()) {}
+		struct WhileScope: LoopScope {
+			public:
+				WhileScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
+						LoopScope(environment, startIndex, endIndex, condition) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override { return "while(true);"; }
+				virtual string getHeader(const CodeEnvironment& environment) const override {
+					return "while(" + condition->toString(environment) + ") ";
+				}
+		};
+
+		struct ForScope: LoopScope {
+			public:
+				ForScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
+						LoopScope(environment, startIndex, endIndex, condition) {}
+
+				virtual string getHeader(const CodeEnvironment& environment) const override {
+					return "for(" + condition->toString(environment) + ") ";
+				}
+		};
+
+
+		struct SwitchScope: Scope {
+			public:
+				const Operation* const value;
+				const index_t defaultIndex;
+				const map<int32_t, index_t> indexTable;
+
+			protected:
+				static const map<int32_t, index_t> offsetTableToIndexTable(const CodeEnvironment& environment, const map<int32_t, offset_t>& offsetTable) {
+					map<int32_t, index_t> indexTable;
+
+					for(const auto& entry : offsetTable)
+						indexTable[entry.first] = environment.bytecode.posToIndex(environment.pos + entry.second);
+
+					return indexTable;
+				}
+
+			public:
+				SwitchScope(const CodeEnvironment& environment, offset_t defaultOffset, map<int32_t, offset_t> offsetTable):
+						Scope(environment.index,
+							environment.bytecode.posToIndex(environment.pos + max(defaultOffset, max_element(offsetTable.begin(), offsetTable.end(),
+								[] (auto& e1, auto& e2) { return e1.second < e2.second; })->second)),
+							environment),
+						value(environment.stack.pop()), defaultIndex(environment.bytecode.posToIndex(environment.pos + defaultOffset)),
+						indexTable(offsetTableToIndexTable(environment, offsetTable)) {}
+
+				virtual string toString(const CodeEnvironment& environment) const override {
+					environment.classinfo.increaseIndent(2);
+
+					string str = "switch(" + value->toString(environment) + ") {\n";
+					const size_t baseSize = str.size();
+
+					const map<uint32_t, index_t>& exprIndexTable = environment.exprIndexTable;
+
+					const index_t defaultExprIndex = exprIndexTable.at(defaultIndex);
+
+					uint32_t i = exprIndexTable.at(this->startIndex);
+					for(const Operation* operation : code) {
+						if(i == defaultExprIndex) {
+							environment.classinfo.reduceIndent();
+							str += environment.classinfo.getIndent() + (string)"default:\n";
+							environment.classinfo.increaseIndent();
+						} else {
+							for(auto& entry : indexTable) {
+								if(i == exprIndexTable.at(entry.second)) {
+									environment.classinfo.reduceIndent();
+									str += environment.classinfo.getIndent() + (string)"case " + to_string(entry.first) + ":\n";
+									environment.classinfo.increaseIndent();
+									break;
+								}
+							}
+						}
+						str += environment.classinfo.getIndent() + operation->toString(environment) + (instanceof<const Scope*>(operation) ? "\n" : ";\n");
+						i++;
+					}
+
+					environment.classinfo.reduceIndent(2);
+
+					if(str.size() == baseSize) {
+						str[baseSize - 1] = '}';
+						return str;
+					}
+
+					return str + environment.classinfo.getIndent() + '}';
+				}
+
+				virtual bool isBreakable() const override {
+					return true;
+				}
+		};
+
+
+
+		struct EmptyInfiniteLoopScope: Scope {
+			EmptyInfiniteLoopScope(const CodeEnvironment& environment):
+					Scope(environment.index, environment.index, environment) {}
+
+			virtual string toString(const CodeEnvironment&) const override {
+				return "while(true) {}";
+			}
 		};
 	}
 }

@@ -1,0 +1,12 @@
+namespace std {
+	namespace filesystem {
+		namespace path {
+			static const char preferred_separator =
+			#ifdef __WIN32
+				'\\';
+			#else
+				'/';
+			#endif
+		}
+	}
+}

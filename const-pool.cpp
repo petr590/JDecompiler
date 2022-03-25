@@ -50,7 +50,7 @@ namespace jdecompiler {
 					return static_cast<const T*>(constant);
 				throw InvalidConstantPoolReferenceException("Invalid constant pool reference " + hexWithPrefix<4>(index) +
 						": expected " + T::CONSTANT_NAME + ", got " + (constant == nullptr ? "null" : constant->getConstantName()));
-						//": expected " + typeid(T).name() + ", got " + (constant == nullptr ? "null" : typeid(*constant).name()));
+						//": expected " + typeNameOf(T) + ", got " + (constant == nullptr ? "null" : typeNameOf(*constant)));
 			}
 
 		public:

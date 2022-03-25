@@ -39,9 +39,9 @@ namespace jdecompiler {
 					return AnyType::getInstance();
 				}
 
-				static inline AConstNull& getInstance() {
+				static inline AConstNull* getInstance() {
 					static AConstNull instance;
-					return instance;
+					return &instance;
 				}
 		};
 
@@ -462,246 +462,25 @@ namespace jdecompiler {
 		struct DCmpInstruction: Instruction {
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new DCmpOperation(environment); }
 		};
+	}
+}
 
+#include "blocks.cpp"
+#include "block-instructions.cpp"
 
-		struct IfBlock: Instruction {
-			const int32_t offset;
-
-			IfBlock(/*const Bytecode& bytecode, */const int32_t offset): /*Block(bytecode.getPos(), bytecode.getPos() + offset),*/ offset(offset) {}
-
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override final {
-				const Scope* currentScope = environment.getCurrentScope();
-
-				const uint32_t index = environment.bytecode.posToIndex(environment.pos + offset);
-
-				if(const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope)) {
-					if(offset > 0) {
-						//LOG(environment.index << ' ' << index << ' ' << ifScope->end());
-
-						if(index - 1 == ifScope->end()) {
-							ifScope->condition = new AndOperation(ifScope->condition, getCondition(environment)->invert());
-							return nullptr;
-						}
-
-						if(environment.index == ifScope->end()) {
-							ifScope->condition = new OrOperation(ifScope->condition->invert(), getCondition(environment)->invert());
-							ifScope->setEnd(index);
-							return nullptr;
-						}
-					}
-				}
-
-				return new IfScope(environment, offset, getCondition(environment)->invert());
-			}
-
-			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const = 0;
-		};
-
-		struct IfCmpBlock: IfBlock {
-			const CompareType& compareType;
-
-			IfCmpBlock(const int32_t offset, const CompareType& compareType): IfBlock(offset), compareType(compareType) {}
-
-			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
-				const Operation* operation = environment.stack.pop();
-				if(const CmpOperation* cmpOperation = Operation::castOperationTo<const CmpOperation*>(operation))
-					return new CompareBinaryOperation(cmpOperation, compareType);
-				return new CompareWithZeroOperation(operation, compareType);
-			}
-		};
-
-
-		struct IfEqBlock: IfCmpBlock {
-			IfEqBlock(const int32_t offset): IfCmpBlock(offset, CompareType::EQUALS) {};
-		};
-
-		struct IfNotEqBlock: IfCmpBlock {
-			IfNotEqBlock(const int32_t offset): IfCmpBlock(offset, CompareType::NOT_EQUALS) {}
-		};
-
-		struct IfGtBlock: IfCmpBlock {
-			IfGtBlock(const int32_t offset): IfCmpBlock(offset, CompareType::GREATER) {}
-		};
-
-		struct IfGeBlock: IfCmpBlock {
-			IfGeBlock(const int32_t offset): IfCmpBlock(offset, CompareType::GREATER_OR_EQUALS) {}
-		};
-
-		struct IfLtBlock: IfCmpBlock {
-			IfLtBlock(const int32_t offset): IfCmpBlock(offset, CompareType::LESS) {}
-		};
-
-		struct IfLeBlock: IfCmpBlock {
-			IfLeBlock(const int32_t offset): IfCmpBlock(offset, CompareType::LESS_OR_EQUALS) {}
-		};
-
-
-		struct IfICmpBlock: IfCmpBlock {
-			IfICmpBlock(int32_t offset, const CompareType& compareType): IfCmpBlock(offset, compareType) {}
-
-			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
-				return new CompareBinaryOperation(environment, INT, compareType);
-			}
-		};
-
-
-		struct IfIEqBlock: IfICmpBlock {
-			IfIEqBlock(int32_t offset): IfICmpBlock(offset, CompareType::EQUALS) {}
-		};
-
-		struct IfINotEqBlock: IfICmpBlock {
-			IfINotEqBlock(int32_t offset): IfICmpBlock(offset, CompareType::NOT_EQUALS) {}
-		};
-
-		struct IfIGtBlock: IfICmpBlock {
-			IfIGtBlock(int32_t offset): IfICmpBlock(offset, CompareType::GREATER) {}
-		};
-
-		struct IfIGeBlock: IfICmpBlock {
-			IfIGeBlock(int32_t offset): IfICmpBlock(offset, CompareType::GREATER_OR_EQUALS) {}
-		};
-
-		struct IfILtBlock: IfICmpBlock {
-			IfILtBlock(int32_t offset): IfICmpBlock(offset, CompareType::LESS) {}
-		};
-
-		struct IfILeBlock: IfICmpBlock {
-			IfILeBlock(int32_t offset): IfICmpBlock(offset, CompareType::LESS_OR_EQUALS) {}
-		};
-
-
-		struct IfACmpBlock: IfCmpBlock {
-			IfACmpBlock(int32_t offset, const EqualsCompareType& compareType): IfCmpBlock(offset, compareType) {}
-
-			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
-				return new CompareBinaryOperation(environment, AnyObjectType::getInstance(), compareType);
-			}
-		};
-
-
-		struct IfAEqBlock: IfACmpBlock {
-			IfAEqBlock(int32_t offset): IfACmpBlock(offset, CompareType::EQUALS) {}
-		};
-
-		struct IfANotEqBlock: IfACmpBlock {
-			IfANotEqBlock(int32_t offset): IfACmpBlock(offset, CompareType::NOT_EQUALS) {}
-		};
-
-
-		struct IfNullBlock: IfBlock {
-			IfNullBlock(const int32_t offset): IfBlock(offset) {}
-
-			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
-				return new CompareWithNullOperation(environment, CompareType::EQUALS);
-			}
-		};
-
-		struct IfNonNullBlock: IfBlock {
-			IfNonNullBlock(const int32_t offset): IfBlock(offset) {}
-
-			virtual const ConditionOperation* getCondition(const CodeEnvironment& environment) const override {
-				return new CompareWithNullOperation(environment, CompareType::NOT_EQUALS);
-			}
-		};
-
-
-		struct GotoInstruction: Instruction {
-			const int32_t offset;
-
-			GotoInstruction(int32_t offset): offset(offset) {}
-
-
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				if(offset == 0) return new EmptyInfiniteLoopScope(environment);
-
-				const uint32_t index = environment.bytecode.posToIndex(environment.pos + offset);
-
-				const Scope* const currentScope = environment.getCurrentScope();
-
-
-				if(const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope)) {
-					// Here goto instruction creates else scope
-					if(offset > 0 && !ifScope->isLoop() && environment.index == ifScope->end() /* check if goto instruction in the end of ifScope */) {
-						const Scope* parentScope = ifScope->parentScope;
-
-						/* I don't remember why there is index minus 1 instead of index,
-						   but since I wrote that, then it should be so :) */
-						if(index - 1 <= parentScope->end()) {
-							ifScope->addElseScope(environment, index - 1);
-							return nullptr;
-						}
-
-						const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(environment.bytecode.getInstruction(parentScope->end()));
-						if(gotoInstruction && environment.bytecode.posToIndex(environment.bytecode.indexToPos(parentScope->end()) + gotoInstruction->offset) == index) {
-							ifScope->addElseScope(environment, parentScope->end() - 1);
-							return nullptr;
-						}
-					} else {
-						// Here goto creates operator continue
-						do {
-							//LOG(index << ' ' << ifScope->start());
-							if(index == ifScope->start()) {
-								ifScope->setLoopType(environment);
-								return new ContinueOperation(environment, ifScope);
-							}
-							ifScope = dynamic_cast<const IfScope*>(ifScope->parentScope);
-						} while(ifScope != nullptr);
-					}
-				} else if(const TryScope* tryScope = dynamic_cast<const TryScope*>(currentScope)) {
-					if(environment.index == tryScope->end()) return nullptr;
-						//return new CatchScope(environment, tryScope);
-				}
-
-				//cerr << "GOTO LOG!!! " << offset << ' ' << index << ' ' << currentScope->start() << "  " << index << ' ' << currentScope->end() << '\n' << typeid(*currentScope).name() << endl;
-
-				if(offset > 0 && index >= currentScope->start() && index - 1 <= currentScope->end()) { // goto in the borders of current scope
-					const_cast<Bytecode&>(environment.bytecode).skip(offset);
-					return nullptr;
-				}
-
-				throw DecompilationException("Illegal using of goto instruction: goto from " +
-						to_string(environment.pos) + " to " + to_string(environment.pos + offset));
-			}
-		};
-
+namespace jdecompiler {
+	namespace instructions {
 
 		struct SwitchInstruction: Instruction {
 			protected:
-				const int32_t defaultOffset;
-				map<int32_t, int32_t> offsetTable;
+				const offset_t defaultOffset;
+				map<int32_t, offset_t> offsetTable;
 
 			public:
-				SwitchInstruction(int32_t defaultOffset, map<int32_t, int32_t> offsetTable): defaultOffset(defaultOffset), offsetTable(offsetTable) {}
+				SwitchInstruction(offset_t defaultOffset, map<int32_t, offset_t> offsetTable): defaultOffset(defaultOffset), offsetTable(offsetTable) {}
 
 				virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
 					return new SwitchScope(environment, defaultOffset, offsetTable);
-				}
-		};
-
-
-		template<class ReturnOperation>
-		struct ReturnInstruction: Instruction {
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
-				return new ReturnOperation(environment);
-			}
-		};
-
-		using IReturnInstruction = ReturnInstruction<IReturnOperation>;
-		using LReturnInstruction = ReturnInstruction<LReturnOperation>;
-		using FReturnInstruction = ReturnInstruction<FReturnOperation>;
-		using DReturnInstruction = ReturnInstruction<DReturnOperation>;
-		using AReturnInstruction = ReturnInstruction<AReturnOperation>;
-
-
-		struct VReturn: VoidInstructionAndOperation {
-			private: VReturn() {}
-
-			public:
-				virtual string toString(const CodeEnvironment& environment) const override { return "return"; }
-
-				static VReturn& getInstance() {
-					static VReturn instance;
-					return instance;
 				}
 		};
 
@@ -949,6 +728,33 @@ namespace jdecompiler {
 			public: MultiANewArrayInstruction(uint16_t index, uint16_t dimensions): InstructionWithIndex(index), dimensions(dimensions) {}
 
 			virtual const Operation* toOperation(const CodeEnvironment& environment) const override { return new MultiANewArrayOperation(environment, index, dimensions); }
+		};
+
+
+		template<class ReturnOperation>
+		struct ReturnInstruction: Instruction {
+			virtual const Operation* toOperation(const CodeEnvironment& environment) const override {
+				return new ReturnOperation(environment);
+			}
+		};
+
+		using IReturnInstruction = ReturnInstruction<IReturnOperation>;
+		using LReturnInstruction = ReturnInstruction<LReturnOperation>;
+		using FReturnInstruction = ReturnInstruction<FReturnOperation>;
+		using DReturnInstruction = ReturnInstruction<DReturnOperation>;
+		using AReturnInstruction = ReturnInstruction<AReturnOperation>;
+
+
+		struct VReturn: VoidInstructionAndOperation {
+			private: VReturn() {}
+
+			public:
+				virtual string toString(const CodeEnvironment& environment) const override { return "return"; }
+
+				static VReturn* getInstance() {
+					static VReturn instance;
+					return &instance;
+				}
 		};
 
 

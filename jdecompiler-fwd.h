@@ -30,6 +30,7 @@ namespace jdecompiler {
 	using std::cout;
 	using std::cerr;
 	using std::endl;
+	using std::boolalpha;
 
 	using std::string;
 	using std::vector;
@@ -56,7 +57,9 @@ namespace jdecompiler {
 
 	using std::is_same;
 	using std::is_base_of;
+	using std::is_integral;
 	using std::is_fundamental;
+	using std::is_pointer;
 
 	using std::initializer_list;
 
@@ -466,6 +469,10 @@ namespace jdecompiler {
 		struct InstanceofInstruction;
 		struct MultiANewArrayInstruction;
 	}
+
+
+	struct Block;
+	struct RootBlock;
 
 }
 

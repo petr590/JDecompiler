@@ -19,16 +19,22 @@ namespace jdecompiler {
 	struct Attributes: vector<const Attribute*> {
 		template<class T>
 		const T* get() const {
-			for(const Attribute* attribute : *this)
-				if(const T* t = dynamic_cast<const T*>(attribute)) return t;
+			for(const Attribute* attribute : *this) {
+				if(instanceof<const T*>(attribute)) {
+					return static_cast<const T*>(attribute);
+				}
+			}
+
 			return nullptr;
 		}
 
 		template<class T>
 		const T* getExact() const {
-			for(const Attribute* attribute : *this)
-				if(const T* t = dynamic_cast<const T*>(attribute)) return t;
-			throw AttributeNotFoundException(typeid(T).name());
+			const T* t = get<T>();
+			if(t != nullptr)
+				return t;
+
+			throw AttributeNotFoundException(typeNameOf<T>());
 		}
 
 		template<class T>

@@ -9,9 +9,13 @@ namespace jdecompiler {
 		const string name;
 		const Type& type;
 
-		FieldDescriptor(const NameAndTypeConstant* nameAndType): FieldDescriptor(*nameAndType->name, *nameAndType->descriptor) {}
+		inline FieldDescriptor(const string& name, const Type& type): name(name), type(type) {}
 
-		FieldDescriptor(const string& name, const string& descriptor): name(name), type(*parseType(descriptor)) {}
+		inline FieldDescriptor(const string& name, const Type* type): FieldDescriptor(name, *type) {}
+
+		inline FieldDescriptor(const string& name, const string& descriptor): FieldDescriptor(name, parseType(descriptor)) {}
+
+		FieldDescriptor(const NameAndTypeConstant* nameAndType): FieldDescriptor(*nameAndType->name, *nameAndType->descriptor) {}
 	};
 
 
@@ -23,14 +27,15 @@ namespace jdecompiler {
 
 		protected:
 			const ConstantValueAttribute* constantValueAttribute;
-			mutable const Operation* initializer = nullptr;
-			mutable const CodeEnvironment* environment = nullptr;
-			friend void StaticInitializerScope::addOperation(const Operation*, const CodeEnvironment&) const;
+			mutable const Operation* initializer;
+			mutable const StringifyContext* context = NULL;//new FieldStringifyContext();
+			friend void StaticInitializerScope::addOperation(const Operation*, const StringifyContext&) const;
 
 		public:
 			Field(const ConstantPool& constPool, BinaryInputStream& instream): modifiers(instream.readUShort()),
 					descriptor(*new FieldDescriptor(constPool.getUtf8Constant(instream.readUShort()), constPool.getUtf8Constant(instream.readUShort()))),
-					attributes(*new Attributes(instream, constPool, instream.readUShort())), constantValueAttribute(attributes.get<ConstantValueAttribute>()) {}
+					attributes(*new Attributes(instream, constPool, instream.readUShort())), constantValueAttribute(attributes.get<ConstantValueAttribute>()),
+					initializer(constantValueAttribute == nullptr ? nullptr : constantValueAttribute->getInitializer()) {}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
 				string str;
@@ -39,8 +44,7 @@ namespace jdecompiler {
 					str += annotationsAttribute->toString(classinfo);
 
 				return str + classinfo.getIndent() + (string)(modifiersToString(modifiers) + descriptor.type.toString(classinfo)) + ' ' + descriptor.name +
-						(constantValueAttribute != nullptr ? " = " + constantValueAttribute->toString(classinfo) :
-						initializer != nullptr ? " = " + initializer->toString(*environment) : EMPTY_STRING);
+						(initializer != nullptr ? " = " + initializer->toString(*context) : EMPTY_STRING);
 			}
 
 			virtual bool canStringify(const ClassInfo& classinfo) const override {

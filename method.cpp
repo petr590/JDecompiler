@@ -83,18 +83,18 @@ namespace jdecompiler {
 					clazz(clazz), name(name), returnType(returnType), arguments(arguments), type(typeForName(name)) {}
 
 
-			string toString(const CodeEnvironment& environment) const {
-				const bool isNonStatic = !(environment.modifiers & ACC_STATIC);
+			string toString(const StringifyContext& context) const {
+				const bool isNonStatic = !(context.modifiers & ACC_STATIC);
 
-				string str = type == MethodType::CONSTRUCTOR ? environment.classinfo.thisType.simpleName :
-						returnType->toString(environment.classinfo) + ' ' + name;
+				string str = type == MethodType::CONSTRUCTOR ? context.classinfo.thisType.simpleName :
+						returnType->toString(context.classinfo) + ' ' + name;
 
-				function<string(const Type*, uint32_t)> concater = [&environment, isNonStatic] (const Type* type, uint32_t i) {
-					return type->toString(environment.classinfo) + ' ' +
-							environment.getCurrentScope()->getNameFor(environment.methodScope.getVariable(i + (uint32_t)isNonStatic, false));
+				function<string(const Type*, uint32_t)> concater = [&context, isNonStatic] (const Type* type, uint32_t i) {
+					return type->toString(context.classinfo) + ' ' +
+							context.getCurrentScope()->getNameFor(context.methodScope.getVariable(i + (uint32_t)isNonStatic, false));
 				};
 
-				if(environment.modifiers & ACC_VARARGS) {
+				if(context.modifiers & ACC_VARARGS) {
 					uint32_t varargsIndex;
 					for(uint32_t i = arguments.size(); i > 0; ) {
 						if(instanceof<const ArrayType*>(arguments[--i])) {
@@ -103,10 +103,10 @@ namespace jdecompiler {
 						}
 					}
 
-					concater = [&environment, isNonStatic, varargsIndex] (const Type* type, uint32_t i) {
-						return (i == varargsIndex ? safe_cast<const ArrayType*>(type)->elementType->toString(environment.classinfo) + "..." :
-										type->toString(environment.classinfo)) +
-										' ' + environment.methodScope.getVariable(i + isNonStatic, false).getName();
+					concater = [&context, isNonStatic, varargsIndex] (const Type* type, uint32_t i) {
+						return (i == varargsIndex ? safe_cast<const ArrayType*>(type)->elementType->toString(context.classinfo) + "..." :
+										type->toString(context.classinfo)) +
+										' ' + context.methodScope.getVariable(i + isNonStatic, false).getName();
 					};
 				}
 
@@ -143,7 +143,7 @@ namespace jdecompiler {
 			const MethodDescriptor& descriptor;
 			const Attributes& attributes;
 			const CodeAttribute* const codeAttribute;
-			const CodeEnvironment& environment;
+			const StringifyContext& context;
 
 		protected:
 			MethodScope& scope;
@@ -153,18 +153,18 @@ namespace jdecompiler {
 
 			Method(uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, const ClassInfo& classinfo):
 					modifiers(modifiers), descriptor(descriptor), attributes(attributes), codeAttribute(attributes.get<CodeAttribute>()),
-					environment(decompileCode(classinfo)), scope(environment.methodScope) {
+					context(decompileCode(classinfo)), scope(context.methodScope) {
 				const bool hasCodeAttribute = codeAttribute != nullptr;
 
 				if(modifiers & ACC_ABSTRACT && hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Abstract method cannot have Code attribute");
+					throw IllegalStateException("In method " + descriptor.name + ":\n" "Abstract method cannot have Code attribute");
 				if(modifiers & ACC_NATIVE && hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Native method cannot have Code attribute");
+					throw IllegalStateException("In method " + descriptor.name + ":\n" "Native method cannot have Code attribute");
 				if(!(modifiers & ACC_ABSTRACT) && !(modifiers & ACC_NATIVE) && !hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor.name + ":\n" + "Non-abstract and non-native method must have Code attribute");
+					throw IllegalStateException("In method " + descriptor.name + ":\n" "Non-abstract and non-native method must have Code attribute");
 			}
 
-			const CodeEnvironment& decompileCode(const ClassInfo& classinfo);
+			const StringifyContext& decompileCode(const ClassInfo& classinfo);
 
 			virtual string toString(const ClassInfo& classinfo) const override {
 				string str;
@@ -181,18 +181,18 @@ namespace jdecompiler {
 						throw IllegalAttributeException("static initializer cannot have Exceptions attribute");
 					str += "static";
 				} else {
-					str += modifiersToString(modifiers, classinfo) + descriptor.toString(environment);
+					str += modifiersToString(modifiers, classinfo) + descriptor.toString(context);
 
 					if(const ExceptionsAttribute* exceptionsAttr = attributes.get<ExceptionsAttribute>())
 						str += " throws " + join<const ClassConstant*>(exceptionsAttr->exceptions,
 								[&classinfo] (auto clazz) { return (new ClassType(*clazz->name))->toString(classinfo); });
 
 					if(const AnnotationDefaultAttribute* annotationDefaultAttr = attributes.get<AnnotationDefaultAttribute>())
-						str += " default " + annotationDefaultAttr->toString(environment.classinfo);
+						str += " default " + annotationDefaultAttr->toString(context.classinfo);
 				}
 
-				return str + (codeAttribute == nullptr ? ";" : ' ' + scope.toString(environment));
-						//&environment.classinfo == &classinfo ? environment : CodeEnvironment(environment, classinfo))); // For anonymous classes
+				return str + (codeAttribute == nullptr ? ";" : ' ' + scope.toString(context));
+						//&context.classinfo == &classinfo ? context : DecompilationContext(context, classinfo))); // For anonymous classes
 			}
 
 			virtual bool canStringify(const ClassInfo& classinfo) const override {
@@ -201,8 +201,8 @@ namespace jdecompiler {
 
 						(descriptor.type == MethodType::CONSTRUCTOR &&
 							(scope.isEmpty() && ((modifiers & ACC_PUBLIC) == ACC_PUBLIC ||
-								(modifiers & ACC_PUBLIC) == (classinfo.modifiers & ACC_PUBLIC)) || // constructor by default
-							classinfo.thisType.isAnonymous)) // anonymous class constructor
+								(modifiers & ACC_PUBLIC) == (classinfo.modifiers & ACC_PUBLIC)) // constructor by default
+							|| classinfo.thisType.isAnonymous)) // anonymous class constructor
 						||
 
 						(classinfo.modifiers & ACC_ENUM && (

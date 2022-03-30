@@ -8,9 +8,9 @@ namespace jdecompiler {
 				BlockInstruction() {}
 
 			public:
-				virtual const Block* toBlock(const Bytecode&) const = 0;
+				virtual const Block* toBlock(const DisassemblerContext&) const = 0;
 
-				virtual const Operation* toOperation(const CodeEnvironment&) const override {
+				virtual const Operation* toOperation(const DecompilationContext&) const override {
 					return nullptr;
 				}
 		};
@@ -22,42 +22,42 @@ namespace jdecompiler {
 
 			IfInstruction(offset_t offset): offset(offset) {}
 
-			virtual const Block* toBlock(const Bytecode& bytecode) const override final {
-				const Block* currentBlock = bytecode.getCurrentBlock();
+			virtual const Block* toBlock(const DisassemblerContext& context) const override final {
+				const Block* currentBlock = context.getCurrentBlock();
 
-				const index_t index = bytecode.posToIndex(bytecode.getPos() + offset) - 1;
+				const index_t index = context.posToIndex(context.getPos() + offset) - 1;
 
 				if(const IfBlock* ifBlock = dynamic_cast<const IfBlock*>(currentBlock)) {
 					if(offset > 0) {
-						//LOG(environment.index << ' ' << index << ' ' << ifBlock->end());
+						//LOG(context.index << ' ' << index << ' ' << ifBlock->end());
 
 						if(index - 1 == ifBlock->end()) {
 							return nullptr;
 						}
 
-						if(bytecode.getIndex() == ifBlock->end()) {
+						if(context.getIndex() == ifBlock->end()) {
 							ifBlock->endIndex = index;
 							return nullptr;
 						}
 					}
 				}
 
-				return createBlock(bytecode);
+				return createBlock(context);
 			}
 
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const override final {
-				const Scope* currentScope = environment.getCurrentScope();
+			virtual const Operation* toOperation(const DecompilationContext& context) const override final {
+				const Scope* currentScope = context.getCurrentScope();
 
-				const index_t index = environment.bytecode.posToIndex(environment.pos + offset);
+				const index_t index = context.posToIndex(context.pos + offset);
 
 				if(const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope)) {
 					if(offset > 0) {
 						if(index - 1 == ifScope->end()) {
-							//ifScope->condition = new AndOperation(ifScope->condition, getCondition(environment)->invert()); // TODO
+							//ifScope->condition = new AndOperation(ifScope->condition, getCondition(context)->invert()); // TODO
 						}
 
-						if(environment.index == ifScope->end()) {
-							//ifScope->condition = new OrOperation(ifScope->condition->invert(), getCondition(environment)->invert()); // TODO
+						if(context.index == ifScope->end()) {
+							//ifScope->condition = new OrOperation(ifScope->condition->invert(), getCondition(context)->invert()); // TODO
 						}
 					}
 				}
@@ -65,7 +65,7 @@ namespace jdecompiler {
 				return nullptr;
 			}
 
-			virtual const Block* createBlock(const Bytecode& bytecode) const = 0;
+			virtual const Block* createBlock(const DisassemblerContext& context) const = 0;
 		};
 
 		struct IfCmpInstruction: IfInstruction {
@@ -73,8 +73,8 @@ namespace jdecompiler {
 
 			IfCmpInstruction(offset_t offset, const CompareType& compareType): IfInstruction(offset), compareType(compareType) {}
 
-			virtual const Block* createBlock(const Bytecode& bytecode) const override {
-				return new IfCmpBlock(bytecode, offset, compareType);
+			virtual const Block* createBlock(const DisassemblerContext& context) const override {
+				return new IfCmpBlock(context, offset, compareType);
 			}
 		};
 
@@ -107,8 +107,8 @@ namespace jdecompiler {
 		struct IfICmpInstruction: IfCmpInstruction {
 			IfICmpInstruction(offset_t offset, const CompareType& compareType): IfCmpInstruction(offset, compareType) {}
 
-			virtual const Block* createBlock(const Bytecode& bytecode) const override {
-				return new IfICmpBlock(bytecode, offset, compareType);
+			virtual const Block* createBlock(const DisassemblerContext& context) const override {
+				return new IfICmpBlock(context, offset, compareType);
 			}
 		};
 
@@ -155,16 +155,16 @@ namespace jdecompiler {
 		struct IfNullInstruction: IfInstruction {
 			IfNullInstruction(offset_t offset): IfInstruction(offset) {}
 
-			virtual const Block* createBlock(const Bytecode& bytecode) const override {
-				return new IfNullBlock(bytecode, offset);
+			virtual const Block* createBlock(const DisassemblerContext& context) const override {
+				return new IfNullBlock(context, offset);
 			}
 		};
 
 		struct IfNonNullInstruction: IfInstruction {
 			IfNonNullInstruction(offset_t offset): IfInstruction(offset) {}
 
-			virtual const Block* createBlock(const Bytecode& bytecode) const override {
-				return new IfNonNullBlock(bytecode, offset);
+			virtual const Block* createBlock(const DisassemblerContext& context) const override {
+				return new IfNonNullBlock(context, offset);
 			}
 		};
 
@@ -175,42 +175,42 @@ namespace jdecompiler {
 			GotoInstruction(offset_t offset): offset(offset) {}
 
 
-			virtual const Block* toBlock(const Bytecode& bytecode) const override {
-				if(offset == 0) return new EmptyInfiniteLoopBlock(bytecode);
+			virtual const Block* toBlock(const DisassemblerContext& context) const override {
+				if(offset == 0) return new EmptyInfiniteLoopBlock(context);
 
-				const index_t index = bytecode.posToIndex(bytecode.getPos() + offset);
+				const index_t index = context.posToIndex(context.getPos() + offset);
 
-				const Block* const currentBlock = bytecode.getCurrentBlock();
+				const Block* const currentBlock = context.getCurrentBlock();
 
 
 				if(instanceof<const IfBlock*>(currentBlock)) {
 					const IfBlock* ifBlock = static_cast<const IfBlock*>(currentBlock);
 
 					// Here goto instruction creates else Block
-					if(offset > 0 && !ifBlock->isLoop() && bytecode.getIndex() == ifBlock->end() /* check if goto instruction in the end of ifBlock */) {
+					if(offset > 0 && !ifBlock->isLoop() && context.getIndex() == ifBlock->end() /* check if goto instruction in the end of ifBlock */) {
 						const Block* parentBlock = ifBlock->parentBlock;
 
 						/* I don't remember why there is index minus 1 instead of index,
 						   but since I wrote that, then it should be so :) */
 						assert(parentBlock != nullptr);
 						if(index - 1 <= parentBlock->end()) {
-							ifBlock->addElseBlock(bytecode, index - 1);
+							ifBlock->addElseBlock(context, index - 1);
 							return nullptr;
 						}
 
-						const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(bytecode.getInstruction(parentBlock->end()));
-						if(gotoInstruction && bytecode.posToIndex(bytecode.indexToPos(parentBlock->end()) + gotoInstruction->offset) == index) {
-							ifBlock->addElseBlock(bytecode, parentBlock->end() - 1);
+						const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(context.getInstruction(parentBlock->end()));
+						if(gotoInstruction != nullptr && context.posToIndex(context.indexToPos(parentBlock->end()) + gotoInstruction->offset) == index) {
+							ifBlock->addElseBlock(context, parentBlock->end() - 1);
 							return nullptr;
 						}
-					} else {
+					} else if(offset < 0) {
 						// Here goto creates operator continue
 						do {
 							//LOG(index << ' ' << ifBlock->start());
 							if(index == ifBlock->start()) {
-								ifBlock->makeItLoop(bytecode);
+								ifBlock->makeItLoop(context);
 								return nullptr;
-								//return new ContinueOperation(bytecode, ifBlock); // TODO
+								//return new ContinueOperation(context, ifBlock); // TODO
 							}
 							ifBlock = dynamic_cast<const IfBlock*>(ifBlock->parentBlock);
 						} while(ifBlock != nullptr);
@@ -218,20 +218,33 @@ namespace jdecompiler {
 				} else if(instanceof<const TryBlock*>(currentBlock)) {
 					const TryBlock* tryBlock = static_cast<const TryBlock*>(currentBlock);
 
-					if(bytecode.getIndex() == tryBlock->end()) return nullptr;
-						//return new CatchBlock(bytecode, tryBlock);
+					if(context.getIndex() == tryBlock->end()) return nullptr;
+						//return new CatchBlock(context, tryBlock);
 				}
 
-				//cerr << "GOTO LOG!!! " << offset << ' ' << index << ' ' << currentBlock->start() << "  " << index << ' ' << currentBlock->end() << '\n' << typeNameOf(*currentBlock) << endl;
-
 				if(offset > 0 && index >= currentBlock->start() && index - 1 <= currentBlock->end()) { // goto in the borders of current Block
-					const_cast<Bytecode&>(bytecode).skip(offset);
+					const_cast<DisassemblerContext&>(context).skip(offset);
 					return nullptr;
 				}
 
 				throw DecompilationException("Illegal using of goto instruction: goto from " +
-						to_string(bytecode.getPos()) + " to " + to_string(bytecode.getPos() + offset));
+						to_string(context.getPos()) + " to " + to_string(context.getPos() + offset));
 			}
+
+			/*virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				if(offset < 0) {
+					const IfScope ifScope = dynamic_cast<const IfScope*>(context.getCurrentScope());
+					while(ifScope != nullptr) {
+						//LOG(index << ' ' << ifScope->start());
+						if(index == ifScope->start()) {
+							ifScope->makeItLoop(context);
+							return nullptr;
+							//return new ContinueOperation(context, ifScope); // TODO
+						}
+						ifScope = dynamic_cast<const IfScope*>(ifScope->parentScope);
+					}
+				}
+			}*/
 		};
 	}
 }

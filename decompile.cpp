@@ -5,7 +5,7 @@
 
 namespace jdecompiler {
 
-	Instruction* Bytecode::nextInstruction() {
+	Instruction* DisassemblerContext::nextInstruction() {
 		using namespace instructions;
 
 		switch(current()) {
@@ -27,9 +27,9 @@ namespace jdecompiler {
 			case 0x0F: return DCONST_1;
 			case 0x10: return new BIPushInstruction(nextByte());
 			case 0x11: return new SIPushInstruction(nextShort());
-			case 0x12: return new LdcInstruction<TypeSize::FOUR_BYTES>(nextUByte());
-			case 0x13: return new LdcInstruction<TypeSize::FOUR_BYTES>(nextUShort());
-			case 0x14: return new LdcInstruction<TypeSize::EIGHT_BYTES>(nextUShort());
+			case 0x12: return new LdcInstruction<TypeSize::FOUR_BYTES>(*this, nextUByte());
+			case 0x13: return new LdcInstruction<TypeSize::FOUR_BYTES>(*this, nextUShort());
+			case 0x14: return new LdcInstruction<TypeSize::EIGHT_BYTES>(*this, nextUShort());
 			case 0x15: return new ILoadInstruction(nextUByte());
 			case 0x16: return new LLoadInstruction(nextUByte());
 			case 0x17: return new FLoadInstruction(nextUByte());
@@ -158,9 +158,9 @@ namespace jdecompiler {
 			case 0xAA: {
 				skip(3 - (pos & 0x3)); // alignment by 4 bytes
 				offset_t defaultOffset = nextInt();
-				pos_t low = nextInt(), high = nextInt();
+				int32_t low = nextInt(), high = nextInt();
 				if(high < low)
-					throw InstructionFormatError("Instruction tableswitch: low is less than high (low = " + to_string(low) +
+					throw InstructionFormatError("tableswitch: high < low (low = " + to_string(low) +
 							", high = " + to_string(high) + ")");
 
 				map<int32_t, offset_t> offsetTable;
@@ -173,8 +173,8 @@ namespace jdecompiler {
 				offset_t defaultOffset = nextInt();
 				map<int32_t, offset_t> offsetTable;
 				for(uint32_t i = nextUInt(); i > 0; i--) {
-					int32_t value = nextInt(), offset = nextInt();
-					offsetTable[value] = offset;
+					int32_t value = nextInt();
+					offsetTable[value] = nextInt();
 				}
 				return new SwitchInstruction(defaultOffset, offsetTable);
 			}
@@ -230,7 +230,7 @@ namespace jdecompiler {
 		}
 	}
 
-	const CodeEnvironment& Method::decompileCode(const ClassInfo& classinfo) {
+	const StringifyContext& Method::decompileCode(const ClassInfo& classinfo) {
 		using namespace operations;
 		using namespace instructions;
 
@@ -263,12 +263,15 @@ namespace jdecompiler {
 		}
 
 		if(!hasCodeAttribute)
-			return *new CodeEnvironment(*new Bytecode(0, (const uint8_t*)""), classinfo, methodScope, modifiers, descriptor, attributes, 0);
+			return *new StringifyContext(*new DisassemblerContext(classinfo.constPool, 0, (const uint8_t*)""), classinfo, methodScope, modifiers, descriptor, attributes, 0);
 
-		Bytecode& bytecode = *new Bytecode(codeAttribute->codeLength, codeAttribute->code);
+		DisassemblerContext& disassemblerContext = *new DisassemblerContext(classinfo.constPool, codeAttribute->codeLength, codeAttribute->code);
 
-		CodeEnvironment& environment =
-				*new CodeEnvironment(bytecode, classinfo, methodScope, modifiers, descriptor, attributes, codeAttribute->maxLocals);
+		StringifyContext& stringifyContext =
+				*new StringifyContext(disassemblerContext, classinfo, methodScope, modifiers, descriptor, attributes, codeAttribute->maxLocals);
+
+		DecompilationContext& decompilationContext =
+				*new DecompilationContext(stringifyContext, disassemblerContext, classinfo, methodScope, modifiers, descriptor, attributes, codeAttribute->maxLocals);
 
 		// -------------------------------------------------- Add try-catch blocks --------------------------------------------------
 		// TODO
@@ -277,8 +280,8 @@ namespace jdecompiler {
 		for(const CodeAttribute::ExceptionHandler* exceptionAttribute : codeAttribute->exceptionTable) {
 
 			const index_t
-					tryStartIndex = environment.bytecode.posToIndex(exceptionAttribute->startPos),
-					tryEndIndex = environment.bytecode.posToIndex(exceptionAttribute->endPos);
+					tryStartIndex = decompilationContext.disassemblerContext.posToIndex(exceptionAttribute->startPos),
+					tryEndIndex = decompilationContext.disassemblerContext.posToIndex(exceptionAttribute->endPos);
 
 			const auto tryBlocksFindResult = find_if(tryBlocks.begin(), tryBlocks.end(),
 					[tryStartIndex, tryEndIndex] (TryBlock* tryBlock) { return tryBlock->startIndex == tryStartIndex && tryBlock->endIndex == tryEndIndex; });
@@ -291,10 +294,10 @@ namespace jdecompiler {
 			} else {
 				tryBlock = new TryBlock(tryStartIndex, tryEndIndex);
 				tryBlocks.push_back(tryBlock);
-				bytecode.addBlock(tryBlock);
+				disassemblerContext.addBlock(tryBlock);
 			}
 
-			const index_t catchStartIndex = bytecode.posToIndex(exceptionAttribute->handlerPos) - 1;
+			const index_t catchStartIndex = disassemblerContext.posToIndex(exceptionAttribute->handlerPos) - 1;
 
 			const auto handlersFindResult = find_if(tryBlock->handlers.begin(), tryBlock->handlers.end(),
 					[catchStartIndex] (CatchBlockDataHolder& handlerData) { return handlerData.startIndex == catchStartIndex; });
@@ -307,36 +310,36 @@ namespace jdecompiler {
 		}*/
 
 
-		const vector<Instruction*>& instructions = bytecode.getInstructions();
-		vector<const Block*> blocks = bytecode.getBlocks();
+		const vector<Instruction*>& instructions = disassemblerContext.getInstructions();
+		vector<const Block*> blocks = disassemblerContext.getBlocks();
 
 		for(uint32_t i = 0, exprIndex = 0, instructionsSize = instructions.size(); i < instructionsSize; i++) {
 
-			environment.index = i;
-			environment.pos = bytecode.indexToPos(i);
+			decompilationContext.index = i;
+			decompilationContext.pos = disassemblerContext.indexToPos(i);
 
-			environment.exprIndexTable[i] = exprIndex;
+			decompilationContext.exprIndexTable[i] = exprIndex;
 
-			if(environment.stack.empty())
-				environment.exprStartIndex = i;
+			if(decompilationContext.stack.empty())
+				decompilationContext.exprStartIndex = i;
 
-			/*if(instructions[i] != nullptr && environment.addOperation(instructions[i]->toOperation(environment))) {
+			/*if(instructions[i] != nullptr && decompilationContext.addOperation(instructions[i]->toOperation(decompilationContext))) {
 				exprIndex++;
 			}*/
 
 			if(instructions[i] != nullptr) {
-				const Operation* operation = instructions[i]->toOperation(environment);
+				const Operation* operation = instructions[i]->toOperation(decompilationContext);
 				if(operation != nullptr) {
 
 					if(operation->getReturnType() != VOID) {
-						environment.stack.push(operation);
+						decompilationContext.stack.push(operation);
 					} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == VReturn::getInstance())) {
-						environment.getCurrentScope()->addOperation(operation, environment);
+						decompilationContext.getCurrentScope()->addOperation(operation, stringifyContext);
 						exprIndex++;
 					}
 
 					if(instanceof<const Scope*>(operation))
-						environment.addScope(static_cast<const Scope*>(operation));
+						decompilationContext.addScope(static_cast<const Scope*>(operation));
 				}
 			}
 
@@ -347,17 +350,17 @@ namespace jdecompiler {
 
 				if(block->start() == i) { // Do not increment iterator when erase element
 
-					const Operation* operation = block->toOperation(environment);
+					const Operation* operation = block->toOperation(decompilationContext);
 					if(operation != nullptr) {
 						if(operation->getReturnType() != VOID) {
-							environment.stack.push(operation);
+							decompilationContext.stack.push(operation);
 						} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == VReturn::getInstance())) {
-							environment.getCurrentScope()->addOperation(operation, environment);
+							decompilationContext.getCurrentScope()->addOperation(operation, stringifyContext);
 							exprIndex++;
 						}
 
 						if(instanceof<const Scope*>(operation))
-							environment.addScope(static_cast<const Scope*>(operation));
+							decompilationContext.addScope(static_cast<const Scope*>(operation));
 					}
 					blocks.erase(iter);
 				} else {
@@ -365,10 +368,10 @@ namespace jdecompiler {
 				}
 			}
 
-			environment.updateScopes();
+			decompilationContext.updateScopes();
 		}
 
-		return environment;
+		return stringifyContext;
 	}
 }
 

@@ -17,6 +17,18 @@
 
 namespace jdecompiler {
 
+	template<typename Arg, typename... Args>
+	static inline void log(Arg arg, Args... args) {
+		cout << arg;
+		if constexpr(sizeof...(Args) > 0) {
+			cout << ' ';
+			log(args...);
+		} else {
+			cout << endl;
+		}
+	}
+
+
 	static const string EMPTY_STRING = string();
 
 
@@ -229,7 +241,7 @@ namespace jdecompiler {
 			uint8_t next() {
 				check();
 				pos += 1;
-				return (uint8_t)buffer[(pos - (streampos)1) & 0xFFF];
+				return (uint8_t)buffer[(pos - (streampos)1) & (BUFFER_SIZE - 1)];
 			}
 
 		public:
@@ -254,15 +266,11 @@ namespace jdecompiler {
 			}
 
 			inline uint8_t readUByte() {
-				return next();
+				return (uint8_t)next();
 			}
 
-			/*inline char readChar() {
-				return (char)next();
-			}*/
-
 			inline int16_t readShort() {
-				return (int16_t)(next() << 8 | next());
+				return (int16_t)readUShort();
 			}
 
 			inline uint16_t readUShort() {
@@ -270,7 +278,7 @@ namespace jdecompiler {
 			}
 
 			inline int32_t readInt() {
-				return (int32_t)(next() << 24 | next() << 16 | next() << 8 | next());
+				return (int32_t)readUInt();
 			}
 
 			inline uint32_t readUInt() {
@@ -283,7 +291,7 @@ namespace jdecompiler {
 
 			inline uint64_t readULong() {
 				return (uint64_t)next() << 56 | (uint64_t)next() << 48 | (uint64_t)next() << 40 | (uint64_t)next() << 32 |
-						(uint64_t)(next() << 24 | next() << 16 | next() << 8 | next());
+						(uint64_t)next() << 24 | (uint64_t)next() << 16 | (uint64_t)next() << 8 | (uint64_t)next();
 			}
 
 			float readFloat() {
@@ -350,6 +358,11 @@ namespace jdecompiler {
 			}
 	};
 
+
+	template<typename T>
+	static string numberConstantToString(T value);
+
+
 	static inline string primitiveToString(bool value) {
 		return value ? "true" : "false";
 	}
@@ -359,36 +372,47 @@ namespace jdecompiler {
 	}
 
 	static inline string primitiveToString(int8_t num) { // byte
-		return to_string(num);
+		return numberConstantToString(num);
 	}
 
 	static inline string primitiveToString(int16_t num) { // short
-		return to_string(num);
+		return numberConstantToString(num);
 	}
 
 	static inline string primitiveToString(int32_t num) { // int
-		return to_string(num);
+		return numberConstantToString(num);
 	}
 
 	static inline string primitiveToString(int64_t num) { // long
-		return to_string(num) + 'l';
+		return numberConstantToString(num) + 'l';
 	}
 
 	static string primitiveToString(float num) {
 		if(isnan(num)) return "Float.NaN";
 		if(!isfinite(num)) return num > 0 ? "Float.POSITIVE_INFINITY" : "Float.NEGATIVE_INFINITY";
+
 		ostringstream out;
 		out.precision(9);
-		out << num << 'f';
+
+		out << num;
+		if(floor(num) == num)
+			out << ".0";
+		out << 'f';
+
 		return out.str();
 	}
 
 	static string primitiveToString(double num) {
 		if(isnan(num)) return "Double.NaN";
 		if(!isfinite(num)) return num > 0 ? "Double.POSITIVE_INFINITY" : "Double.NEGATIVE_INFINITY";
+
 		ostringstream out;
 		out.precision(17);
+
 		out << num;
+		if(floor(num) == num)
+			out << ".0";
+
 		return out.str();
 	}
 
@@ -440,6 +464,16 @@ namespace jdecompiler {
 	struct is_one_of<F, S, T...> {
 		static constexpr bool value = is_same<F, S>::value || is_one_of<F, T...>::value;
 	};
+
+
+
+	static inline uint64_t toRawBits(float f) {
+		return *(uint64_t*)&f;
+	}
+
+	static inline uint64_t toRawBits(double d) {
+		return *(uint64_t*)&d;
+	}
 
 
 

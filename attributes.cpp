@@ -72,7 +72,7 @@ namespace jdecompiler {
 		}
 	};
 
-	struct ConstantValueAttribute: Attribute, Stringified {
+	struct ConstantValueAttribute: Attribute/*, Stringified*/ {
 		const ConstValueConstant* const value;
 
 		ConstantValueAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
@@ -80,8 +80,12 @@ namespace jdecompiler {
 			if(length != 2) throw IllegalAttributeException("Length of ConstantValue attribute must be 2");
 		}
 
-		virtual string toString(const ClassInfo& classinfo) const override {
+		/*virtual string toString(const ClassInfo& classinfo) const override {
 			return value->toString(classinfo);
+		}*/
+
+		const Operation* getInitializer() const {
+			return value->toOperation();
 		}
 	};
 

@@ -39,6 +39,7 @@ namespace jdecompiler {
 
 	using std::min;
 	using std::max;
+	using std::numeric_limits;
 
 	using std::exception;
 	using std::invalid_argument;
@@ -58,6 +59,7 @@ namespace jdecompiler {
 	using std::is_same;
 	using std::is_base_of;
 	using std::is_integral;
+	using std::is_floating_point;
 	using std::is_fundamental;
 	using std::is_pointer;
 
@@ -204,9 +206,11 @@ namespace jdecompiler {
 	template<typename T>
 	struct Stack;
 
-	struct Bytecode;
+	struct DisassemblerContext;
 
-	struct CodeEnvironment;
+	struct DecompilationContext;
+
+	struct StringifyContext;
 
 	// types.cpp
 

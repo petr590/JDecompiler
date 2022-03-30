@@ -11,6 +11,48 @@
 
 namespace jdecompiler {
 
+	template<typename T>
+	static string numberConstantToString(T value) {
+		static_assert(is_integral<T>(), "type must be integral");
+
+		if(JDecompiler::getInstance().useHexNumbersAlways()) {
+			return hexWithPrefix(value);
+		}
+
+		if(JDecompiler::getInstance().canUseHexNumbers()) {
+			if(value == 0x0F) return "0x0F";
+			if(value == 0x7F) return "0x7F";
+			if constexpr((T)0x7FFF > 0) { // short, int, long
+				if(value == 0x80)   return "0x80";
+				if(value == 0xFF)   return "0xFF";
+				if(value == 0x7FFF) return "0x7FFF";
+			}
+			if constexpr((T)0x7FFFFFFF > 0) { // int, long
+				if(value == 0x8000)     return "0x8000";
+				if(value == 0xFFFF)     return "0xFFFF";
+				if(value == 0x7FFFFF)   return "0x7FFFFF";
+				if(value == 0x800000)   return "0x800000";
+				if(value == 0xFFFFFF)   return "0xFFFFFF";
+				if(value == 0x7FFFFFFF) return "0x7FFFFFFF";
+			}
+			if constexpr((T)0x7FFFFFFFFFFFFFFF > 0) { // long
+				if(value == 0x80000000ll)         return "0x80000000";
+				if(value == 0xFFFFFFFFll)         return "0xFFFFFFFF";
+				if(value == 0x7FFFFFFFFFll)       return "0x7FFFFFFFFF";
+				if(value == 0x8000000000ll)       return "0x8000000000";
+				if(value == 0xFFFFFFFFFFll)       return "0xFFFFFFFFFF";
+				if(value == 0x7FFFFFFFFFFFll)     return "0x7FFFFFFFFFFF";
+				if(value == 0x800000000000ll)     return "0x800000000000";
+				if(value == 0xFFFFFFFFFFFFll)     return "0xFFFFFFFFFFFF";
+				if(value == 0x7FFFFFFFFFFFFFll)   return "0x7FFFFFFFFFFFFF";
+				if(value == 0x80000000000000ll)   return "0x80000000000000";
+				if(value == 0xFFFFFFFFFFFFFFll)   return "0xFFFFFFFFFFFFFF";
+				if(value == 0x7FFFFFFFFFFFFFFFll) return "0x7FFFFFFFFFFFFFFF";
+			}
+		}
+		return to_string(value);
+	}
+
 	EnumClass::EnumClass(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 			const vector<const ClassType*>& interfaces, const Attributes& attributes,
 			const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders):
@@ -38,16 +80,15 @@ namespace jdecompiler {
 	}
 
 
-	CodeEnvironment::CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers,
-			const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals):
-			bytecode(bytecode), classinfo(classinfo), constPool(classinfo.constPool), stack(*new CodeStack()),
+	DecompilationContext::DecompilationContext(const StringifyContext& stringifyContext, const DisassemblerContext& disassemblerContext, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals):
+			stringifyContext(stringifyContext), disassemblerContext(disassemblerContext), classinfo(classinfo), constPool(classinfo.constPool), stack(*new CodeStack()),
 			methodScope(*methodScope), currentScope(methodScope), modifiers(modifiers), descriptor(descriptor), attributes(attributes) {
 		for(uint32_t i = methodScope->getVariablesCount(); i < maxLocals; i++)
 			methodScope->addVariable(new UnnamedVariable(AnyType::getInstance(), false));
 	}
 
 
-	void CodeEnvironment::updateScopes() {
+	void DecompilationContext::updateScopes() {
 		while(index == currentScope->end()) {
 			if(currentScope->parentScope == nullptr)
 				throw DecompilationException("Unexpected end of global function scope " + currentScope->toDebugString());
@@ -62,11 +103,12 @@ namespace jdecompiler {
 				if(scope->end() > currentScope->end())
 					throw DecompilationException((string)"Scope " + scope->toDebugString() +
 							" is out of bounds of the parent scope " + currentScope->toDebugString());
-				if(index > scope->start())
-					throw IllegalStateException("Scope " + currentScope->toDebugString() + " is added after it starts");
+				/*if(index > scope->start()) {
+					throw IllegalStateException("Scope " + scope->toDebugString() + " is added after it starts");
+				}*/
 
 				LOG("Start of " << scope->toDebugString());
-				currentScope->addOperation(scope, *this);
+				currentScope->addOperation(scope, stringifyContext);
 				currentScope = scope;
 				//scope->initiate(*this);
 				inactiveScopes.erase(i);
@@ -115,23 +157,39 @@ namespace jdecompiler {
 	}
 
 	void JDecompiler::readClassFiles() const {
-		for(BinaryInputStream* file : files) {
-			#ifndef FAIL_ON_ERROR
-			try {
-			#endif
-				const Class* clazz = Class::readClass(*file);
-				classes[clazz->thisType.getEncodedName()] = clazz;
-			#ifndef FAIL_ON_ERROR
+		if(!files.empty()) {
+			for(BinaryInputStream* file : files) {
+				if(!JDecompiler::getInstance().isFailOnError()) {
+					try {
+						const Class* clazz = Class::readClass(*file);
+						classes[clazz->thisType.getEncodedName()] = clazz;
+					}
+					  catch(const EOFException& ex) {
+						error("unexpected end of file while reading ", file->path);
+					} catch(const IOException& ex) {
+						error(ex.getName(), ": ", ex.what());
+					} catch(const DecompilationException& ex) {
+						error(ex.getName(), ": ", ex.what());
+					}
+				} else {
+					const Class* clazz = Class::readClass(*file);
+					classes[clazz->thisType.getEncodedName()] = clazz;
+				}
 			}
-			  catch(const EOFException& ex) {
-				JDecompiler::getInstance().error("unexpected end of file while reading ", file->path);
-			} catch(const IOException& ex) {
-				JDecompiler::getInstance().error(ex.getName(), ": ", ex.what());
-			} catch(const DecompilationException& ex) {
-				JDecompiler::getInstance().error(ex.getName(), ": ", ex.what());
-			}
-			#endif
+		} else {
+			error("no input file specified");
 		}
+	}
+
+	void StringifyContext::enterScope(const Scope* scope) const {
+		//assert(scope->parentScope == currentScope);
+		//LOG(*currentScope << ' ' << *scope << ' ' << *scope->parentScope);
+		currentScope = scope;
+	}
+
+	void StringifyContext::exitScope(const Scope* scope) const {
+		assert(scope == currentScope);
+		currentScope = scope->parentScope;
 	}
 }
 

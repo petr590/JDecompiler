@@ -22,12 +22,18 @@ namespace jdecompiler {
 			const char* const indent = "    ";
 
 			const bool failOnError;
+			const bool useRawConstants;
+
+			enum class UseHex { ALWAYS, AUTO, NEVER };
+
+			const UseHex useHexNumbers;
 
 			mutable map<string, const Class*> classes;
 
 			JDecompiler(const string progName, const vector<BinaryInputStream*>& files, uint16_t indentWidth, const char* indent,
-					bool failOnError, map<string, const Class*>& classes):
-					progName(progName), files(files), indentWidth(indentWidth), indent(indent), failOnError(failOnError), classes(classes) {}
+					bool failOnError, bool useRawConstants, UseHex useHexNumbers, map<string, const Class*>& classes):
+					progName(progName), files(files), indentWidth(indentWidth), indent(indent),
+					failOnError(failOnError), useRawConstants(useRawConstants), useHexNumbers(useHexNumbers), classes(classes) {}
 
 		public:
 			static const JDecompiler& getInstance() {
@@ -49,6 +55,8 @@ namespace jdecompiler {
 				const char* indent = "    ";
 
 				bool failOnError = false;
+				bool useRawConstants = false;
+				UseHex useHexNumbers = UseHex::NEVER;
 
 				map<string, const Class*> classes;
 
@@ -61,9 +69,12 @@ namespace jdecompiler {
 				#define printError(...) cerr << progName << ": error: " << __VA_ARGS__ << endl
 				#define printErrorAndExit(...) { printError(__VA_ARGS__); return false; }
 
-				#define requireValue() if(!hasValue) {\
-					printErrorAndExit("Option " << option << " required value");\
-					return false;\
+				#define requireValue() {\
+					if(!hasValue) {\
+						printErrorAndExit("option " << option << " required value");\
+						return false;\
+					}\
+					i++;\
 				}
 
 				bool isIndentWidthSpecified = false;
@@ -75,17 +86,17 @@ namespace jdecompiler {
 					if(length > 1 && arg[0] == '-') {
 
 						string option, value;
-						bool hasValue = false;
+						bool hasValue = false, hasValueWeak = false;
 						const auto splitpos = arg.find('=');
 
 						if(splitpos != string::npos) {
 							option = string(arg, 0, splitpos);
 							value = string(arg.begin() + splitpos + 1, arg.end());
-							hasValue = true;
+							hasValue = hasValueWeak = true;
 						} else {
 							option = arg;
 							if(i + 1 < argc) {
-								value = args[++i];
+								value = args[i + 1];
 								hasValue = true;
 							}
 						}
@@ -93,10 +104,16 @@ namespace jdecompiler {
 
 						if(option == "-h" || option == "--help" || option == "-?") {
 							cout << "Usage: " << progName << " [options] <class-files>\n"
-								"  -h, --help, -?                     show this message and exit\n"
-								"  -f, --fail-on-error                fail on error\n"
-								"  -w=<width> --indent-width=<width>  set indent width (by default 4)\n"
-								"  -i=<indent> --indent=<indent>      set indent (by default four spaces)" << endl;
+								"  -h, --help, -?                      show this message and exit\n"
+								"  -f, --fail-on-error                 fail on error\n"
+								"  -w=<width>, --indent-width=<width>  set indent width (by default 4)\n"
+								"  -i=<indent>, --indent=<indent>      set indent (by default four spaces)\n"
+								"  -r, --use-raw-constants             do not use constants from classes Integer, Float,\n"
+								"                                        Double etc., such as MAX_VALUE\n"
+								"  --hex[=always|auto|never]           use hex numbers:\n"
+								"                              always    always use\n"
+								"                                auto    only use for values like 0x7F, 0x80 and 0xFF\n"
+								"                               never    do not use (by default)" << endl;
 							return false;
 						} else if(option == "-f" || option == "--fail-on-error") {
 							failOnError = true;
@@ -106,9 +123,9 @@ namespace jdecompiler {
 							try {
 								indentWidth = stoi(value);
 								if(indentWidth < 0)
-									printErrorAndExit("Argument value '" << value << "' cannot be negative");
-								if(indentWidth < 0 || indentWidth > 16)
-									printErrorAndExit("Argument value '" << value << "' is out of range");
+									printErrorAndExit("indent width " << value << " cannot be negative");
+								if(indentWidth > 16)
+									printErrorAndExit("indent width " << value << " is out of range (valid values are from 0 to 16)");
 
 								indent = repeatString(indent, indentWidth);
 							} catch(const invalid_argument&) {
@@ -123,6 +140,19 @@ namespace jdecompiler {
 							requireValue();
 							value = unescapeString(value);
 							indent = repeatString(value, isIndentWidthSpecified || value != "\t" ? indentWidth : (indentWidth = 1));
+
+						} else if(option == "-r" || option == "--use-raw-constants") {
+							useRawConstants = true;
+
+						} else if(option == "--hex") {
+							if(hasValueWeak) {
+								if(value == "always")     useHexNumbers = UseHex::ALWAYS;
+								else if(value == "auto")  useHexNumbers = UseHex::AUTO;
+								else if(value == "never") useHexNumbers = UseHex::NEVER;
+								else printErrorAndExit("invalid value for option " << option << ": only valid always, auto or never");
+							} else {
+								useHexNumbers = UseHex::AUTO;
+							}
 
 						} else {
 							printErrorAndExit("Unknown argument " << arg << "\n"
@@ -140,7 +170,7 @@ namespace jdecompiler {
 				#undef requireValue
 				#undef printErrorAndExit
 
-				instance = new JDecompiler(progName, files, indentWidth, indent, failOnError, classes);
+				instance = new JDecompiler(progName, files, indentWidth, indent, failOnError, useRawConstants, useHexNumbers, classes);
 
 				return true;
 			}
@@ -148,6 +178,18 @@ namespace jdecompiler {
 
 			inline bool isFailOnError() const {
 				return failOnError;
+			}
+
+			inline bool canUseConstants() const {
+				return !useRawConstants;
+			}
+
+			inline bool canUseHexNumbers() const {
+				return useHexNumbers == UseHex::AUTO || useHexNumbers == UseHex::ALWAYS;
+			}
+
+			inline bool useHexNumbersAlways() const {
+				return useHexNumbers == UseHex::ALWAYS;
 			}
 
 			inline const char* getIndent() const {

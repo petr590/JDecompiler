@@ -8,8 +8,8 @@ namespace jdecompiler {
 		struct CmpOperation: BooleanOperation {
 			const Operation *const operand2, *const operand1;
 
-			CmpOperation(const CodeEnvironment& environment, const Type* operandType):
-					operand2(environment.stack.pop()), operand1(environment.stack.pop()) {
+			CmpOperation(const DecompilationContext& context, const Type* operandType):
+					operand2(context.stack.pop()), operand1(context.stack.pop()) {
 						operandType = operandType->castTo(operand1->getReturnType())->castTo(operand2->getReturnType());
 						operand1->castReturnTypeTo(operandType);
 						operand2->castReturnTypeTo(operandType);
@@ -18,21 +18,21 @@ namespace jdecompiler {
 
 
 		struct LCmpOperation: CmpOperation {
-			LCmpOperation(const CodeEnvironment& environment): CmpOperation(environment, LONG) {}
+			LCmpOperation(const DecompilationContext& context): CmpOperation(context, LONG) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of lcmp: toString()"); }
+			virtual string toString(const StringifyContext& context) const override { throw Exception("Illegal using of lcmp: toString()"); }
 		};
 
 		struct FCmpOperation: CmpOperation {
-			FCmpOperation(const CodeEnvironment& environment): CmpOperation(environment, FLOAT) {}
+			FCmpOperation(const DecompilationContext& context): CmpOperation(context, FLOAT) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of fcmp: toString()"); }
+			virtual string toString(const StringifyContext& context) const override { throw Exception("Illegal using of fcmp: toString()"); }
 		};
 
 		struct DCmpOperation: CmpOperation {
-			DCmpOperation(const CodeEnvironment& environment): CmpOperation(environment, DOUBLE) {}
+			DCmpOperation(const DecompilationContext& context): CmpOperation(context, DOUBLE) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override { throw Exception("Illegal using of dcmp: toString()"); }
+			virtual string toString(const StringifyContext& context) const override { throw Exception("Illegal using of dcmp: toString()"); }
 		};
 
 
@@ -107,7 +107,7 @@ namespace jdecompiler {
 				mutable bool inverted = false;
 
 			public:
-				virtual string toString(const CodeEnvironment& environment) const = 0;
+				virtual string toString(const StringifyContext& context) const = 0;
 
 				inline const ConditionOperation* invert() const {
 					inverted = !inverted;
@@ -147,16 +147,16 @@ namespace jdecompiler {
 					castOperandsTo(compareType.getRequiredType());
 				}
 
-				CompareBinaryOperation(const CodeEnvironment& environment, const Type* requiredType, const CompareType& compareType):
+				CompareBinaryOperation(const DecompilationContext& context, const Type* requiredType, const CompareType& compareType):
 						/* We don't delegate constructor because of undefined order of initialization of the function arguments
 						 * which is important in this case */
-						CompareOperation(compareType), operand2(environment.stack.pop()), operand1(environment.stack.pop()) {
+						CompareOperation(compareType), operand2(context.stack.pop()), operand1(context.stack.pop()) {
 					castOperandsTo(compareType.getRequiredType()->castTo(requiredType));
 				}
 
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return toStringPriority(operand1, environment, Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + ' '
-							+ toStringPriority(operand2, environment, Associativity::RIGHT);
+				virtual string toString(const StringifyContext& context) const override {
+					return toStringPriority(operand1, context, Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + ' '
+							+ toStringPriority(operand2, context, Associativity::RIGHT);
 				}
 		};
 
@@ -166,11 +166,11 @@ namespace jdecompiler {
 
 			CompareWithZeroOperation(const Operation* operand, const CompareType& compareType): CompareOperation(compareType), operand(operand) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override {
+			virtual string toString(const StringifyContext& context) const override {
 				return operand->getReturnType()->isInstanceof(BOOLEAN) && compareType.isEqualsCompareType ? // write `!bool` instead of `bool == false`
 						((const EqualsCompareType&)compareType).getUnaryOperator(inverted) +
-								toStringPriority(operand, environment, Associativity::RIGHT) :
-						toStringPriority(operand, environment, Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + " 0";
+								toStringPriority(operand, context, Associativity::RIGHT) :
+						toStringPriority(operand, context, Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + " 0";
 			}
 		};
 
@@ -180,11 +180,11 @@ namespace jdecompiler {
 				const Operation* const operand;
 
 			public:
-				CompareWithNullOperation(const CodeEnvironment& environment, const EqualsCompareType& compareType):
-						CompareOperation(compareType), operand(environment.stack.pop()) {}
+				CompareWithNullOperation(const DecompilationContext& context, const EqualsCompareType& compareType):
+						CompareOperation(compareType), operand(context.stack.pop()) {}
 
-				virtual string toString(const CodeEnvironment& environment) const override {
-					return operand->toString(environment) + ' ' + compareType.getOperator(inverted) + " null";
+				virtual string toString(const StringifyContext& context) const override {
+					return operand->toString(context) + ' ' + compareType.getOperator(inverted) + " null";
 				}
 		};
 
@@ -218,9 +218,9 @@ namespace jdecompiler {
 			public:
 				AndOperation(const Operation* operand1, const Operation* operand2): BinaryConditionOperation(operand1, operand2) {}
 
-				virtual string toString(const CodeEnvironment& environment) const override {
-					const string strOperand1 = toStringPriority(operand1, environment, Associativity::LEFT),
-							strOperand2 = toStringPriority(operand2, environment, Associativity::RIGHT);
+				virtual string toString(const StringifyContext& context) const override {
+					const string strOperand1 = toStringPriority(operand1, context, Associativity::LEFT),
+							strOperand2 = toStringPriority(operand2, context, Associativity::RIGHT);
 
 					return inverted ? (isConditionOperands ? strOperand1 + " || " + strOperand2 :
 							"!(" + strOperand1 + " && " + strOperand2 + ')') :
@@ -237,9 +237,9 @@ namespace jdecompiler {
 			public:
 				OrOperation(const Operation* operand1, const Operation* operand2): BinaryConditionOperation(operand1, operand2) {}
 
-				virtual string toString(const CodeEnvironment& environment) const override {
-					const string strOperand1 = toStringPriority(operand1, environment, Associativity::LEFT),
-							strOperand2 = toStringPriority(operand2, environment, Associativity::RIGHT);
+				virtual string toString(const StringifyContext& context) const override {
+					const string strOperand1 = toStringPriority(operand1, context, Associativity::LEFT),
+							strOperand2 = toStringPriority(operand2, context, Associativity::RIGHT);
 
 					return inverted ? (isConditionOperands ? strOperand1 + " && " + strOperand2 :
 							"!(" + strOperand1 + " || " + strOperand2 + ')') :
@@ -264,9 +264,9 @@ namespace jdecompiler {
 					isShort(instanceof<const IConstOperation*>(trueCase) && static_cast<const IConstOperation*>(trueCase)->value == 1 &&
 					        instanceof<const IConstOperation*>(falseCase) && static_cast<const IConstOperation*>(falseCase)->value == 0) {}
 
-			virtual string toString(const CodeEnvironment& environment) const override {
-				return isShort ? condition->toString(environment) :
-						condition->toString(environment) + " ? " + trueCase->toString(environment) + " : " + falseCase->toString(environment);
+			virtual string toString(const StringifyContext& context) const override {
+				return isShort ? condition->toString(context) :
+						condition->toString(context) + " ? " + trueCase->toString(context) + " : " + falseCase->toString(context);
 			}
 
 			virtual Priority getPriority() const override {
@@ -280,8 +280,8 @@ namespace jdecompiler {
 				const ConditionOperation* condition;
 
 			protected:
-				ConditionScope(index_t startIndex, index_t endIndex, const CodeEnvironment& environment, const ConditionOperation* condition):
-						Scope(startIndex, endIndex, environment), condition(condition) {}
+				ConditionScope(index_t startIndex, index_t endIndex, const DecompilationContext& context, const ConditionOperation* condition):
+						Scope(startIndex, endIndex, context), condition(condition) {}
 		};
 
 
@@ -295,21 +295,21 @@ namespace jdecompiler {
 						mutable const Operation* ternaryFalseOperation = nullptr;
 
 					public:
-						ElseScope(const CodeEnvironment& environment, const index_t endIndex, const IfScope* ifScope):
+						ElseScope(const DecompilationContext& context, const index_t endIndex, const IfScope* ifScope):
 								Scope(ifScope->endIndex, endIndex, ifScope), ifScope(ifScope) {}
 
-						virtual inline string getHeader(const CodeEnvironment&) const override {
+						virtual inline string getHeader(const StringifyContext&) const override {
 							return " else ";
 						}
 
-						virtual string toString(const CodeEnvironment& environment) const override {
-							if(code.size() == 1 && instanceof<const IfScope*>(code[0])) {
-								return getHeader(environment) + code[0]->toString(environment);
+						virtual string toStringImpl(const StringifyContext& context) const override {
+							if(code.size() == 1 && instanceof<const IfScope*>(code[0])) { // else if
+								return getHeader(context) + code[0]->toString(context);
 							}
-							if(code.size() == 2 && instanceof<const IfScope*>(code[0]) && instanceof<const ElseScope*>(code[1])) {
-								return getHeader(environment) + code[0]->toString(environment) + code[1]->toString(environment);
+							if(code.size() == 2 && instanceof<const IfScope*>(code[0]) && instanceof<const ElseScope*>(code[1])) { // else if ... else
+								return getHeader(context) + code[0]->toString(context) + code[1]->toString(context);
 							}
-							return this->Scope::toString(environment);
+							return this->Scope::toString(context);
 						}
 
 						virtual inline string getFrontSeparator(const ClassInfo&) const override {
@@ -320,19 +320,19 @@ namespace jdecompiler {
 				const ElseScope* const elseScope;
 
 			public:
-				IfScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
-						ConditionScope(startIndex, endIndex, environment, condition), elseScope(nullptr) {}
+				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition):
+						ConditionScope(context.exprStartIndex, endIndex, context, condition), elseScope(nullptr) {
+				}
 
-				IfScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex, const ConditionOperation* condition,
-						index_t elseScopeEndIndex):
-						ConditionScope(startIndex, endIndex, environment, condition),
-						elseScope(new ElseScope(environment, elseScopeEndIndex, this)) {
-					environment.addScope(elseScope);
+				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition, index_t elseScopeEndIndex):
+						ConditionScope(context.exprStartIndex, endIndex, context, condition),
+						elseScope(new ElseScope(context, elseScopeEndIndex, this)) {
+					context.addScope(elseScope);
 				}
 
 			protected:
-				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return "if(" + condition->toString(environment) + ") ";
+				virtual string getHeader(const StringifyContext& context) const override {
+					return "if(" + condition->toString(context) + ") ";
 				}
 
 				virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
@@ -340,14 +340,9 @@ namespace jdecompiler {
 				}
 
 			public:
-
-				/*virtual const Type* getReturnType() const override {
-					return isTernary() ? ternaryTrueOperation->getReturnType() : this->Scope::getReturnType();
-				}*/
-
-				virtual void addOperation(const Operation* operation, const CodeEnvironment& environment) const override {
+				virtual void addOperation(const Operation* operation, const StringifyContext& context) const override {
 					if(operation != elseScope)
-						this->Scope::addOperation(operation, environment);
+						this->Scope::addOperation(operation, context);
 				}
 		};
 
@@ -363,9 +358,9 @@ namespace jdecompiler {
 				bool hasLabel = false;
 
 			public:
-				ContinueOperation(const CodeEnvironment& environment, const LoopScope* loopScope);
+				ContinueOperation(const DecompilationContext& context, const LoopScope* loopScope);
 
-				virtual string toString(const CodeEnvironment& environment) const override;
+				virtual string toString(const StringifyContext& context) const override;
 		};
 
 
@@ -375,8 +370,8 @@ namespace jdecompiler {
 				mutable bool hasLabel = false;
 
 			public:
-				LoopScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
-						ConditionScope(startIndex, endIndex, environment, condition) {}
+				LoopScope(const DecompilationContext& context, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
+						ConditionScope(startIndex, endIndex, context, condition) {}
 
 				string getLabel() const {
 					if(!hasLabel)
@@ -403,8 +398,8 @@ namespace jdecompiler {
 
 
 
-		ContinueOperation::ContinueOperation(const CodeEnvironment& environment, const LoopScope* loopScope): loopScope(loopScope) {
-			const Scope* currentScope = environment.getCurrentScope();
+		ContinueOperation::ContinueOperation(const DecompilationContext& context, const LoopScope* loopScope): loopScope(loopScope) {
+			const Scope* currentScope = context.getCurrentScope();
 			while(currentScope != nullptr && !currentScope->isContinuable())
 				currentScope = currentScope->parentScope;
 
@@ -413,28 +408,28 @@ namespace jdecompiler {
 		}
 
 
-		string ContinueOperation::toString(const CodeEnvironment& environment) const {
+		string ContinueOperation::toString(const StringifyContext& context) const {
 			return hasLabel ? "continue " + loopScope->getLabel() : "continue";
 		}
 
 
 		struct WhileScope: LoopScope {
 			public:
-				WhileScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
-						LoopScope(environment, startIndex, endIndex, condition) {}
+				WhileScope(const DecompilationContext& context, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
+						LoopScope(context, startIndex, endIndex, condition) {}
 
-				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return "while(" + condition->toString(environment) + ") ";
+				virtual string getHeader(const StringifyContext& context) const override {
+					return "while(" + condition->toString(context) + ") ";
 				}
 		};
 
 		struct ForScope: LoopScope {
 			public:
-				ForScope(const CodeEnvironment& environment, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
-						LoopScope(environment, startIndex, endIndex, condition) {}
+				ForScope(const DecompilationContext& context, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
+						LoopScope(context, startIndex, endIndex, condition) {}
 
-				virtual string getHeader(const CodeEnvironment& environment) const override {
-					return "for(" + condition->toString(environment) + ") ";
+				virtual string getHeader(const StringifyContext& context) const override {
+					return "for(" + condition->toString(context) + ") ";
 				}
 		};
 
@@ -446,62 +441,62 @@ namespace jdecompiler {
 				const map<int32_t, index_t> indexTable;
 
 			protected:
-				static const map<int32_t, index_t> offsetTableToIndexTable(const CodeEnvironment& environment, const map<int32_t, offset_t>& offsetTable) {
+				static const map<int32_t, index_t> offsetTableToIndexTable(const DecompilationContext& context, const map<int32_t, offset_t>& offsetTable) {
 					map<int32_t, index_t> indexTable;
 
 					for(const auto& entry : offsetTable)
-						indexTable[entry.first] = environment.bytecode.posToIndex(environment.pos + entry.second);
+						indexTable[entry.first] = context.posToIndex(context.pos + entry.second);
 
 					return indexTable;
 				}
 
 			public:
-				SwitchScope(const CodeEnvironment& environment, offset_t defaultOffset, map<int32_t, offset_t> offsetTable):
-						Scope(environment.index,
-							environment.bytecode.posToIndex(environment.pos + max(defaultOffset, max_element(offsetTable.begin(), offsetTable.end(),
+				SwitchScope(const DecompilationContext& context, offset_t defaultOffset, map<int32_t, offset_t> offsetTable):
+						Scope(context.index,
+							context.posToIndex(context.pos + max(defaultOffset, max_element(offsetTable.begin(), offsetTable.end(),
 								[] (auto& e1, auto& e2) { return e1.second < e2.second; })->second)),
-							environment),
-						value(environment.stack.pop()), defaultIndex(environment.bytecode.posToIndex(environment.pos + defaultOffset)),
-						indexTable(offsetTableToIndexTable(environment, offsetTable)) {}
+							context),
+						value(context.stack.pop()), defaultIndex(context.posToIndex(context.pos + defaultOffset)),
+						indexTable(offsetTableToIndexTable(context, offsetTable)) {}
 
-				virtual string toString(const CodeEnvironment& environment) const override {
-					environment.classinfo.increaseIndent(2);
+				virtual string toStringImpl(const StringifyContext& context) const override {
+					context.classinfo.increaseIndent(2);
 
-					string str = "switch(" + value->toString(environment) + ") {\n";
+					string str = "switch(" + value->toString(context) + ") {\n";
 					const size_t baseSize = str.size();
 
-					const map<uint32_t, index_t>& exprIndexTable = environment.exprIndexTable;
+					const map<uint32_t, index_t>& exprIndexTable = context.exprIndexTable;
 
 					const index_t defaultExprIndex = exprIndexTable.at(defaultIndex);
 
 					uint32_t i = exprIndexTable.at(this->startIndex);
 					for(const Operation* operation : code) {
 						if(i == defaultExprIndex) {
-							environment.classinfo.reduceIndent();
-							str += environment.classinfo.getIndent() + (string)"default:\n";
-							environment.classinfo.increaseIndent();
+							context.classinfo.reduceIndent();
+							str += context.classinfo.getIndent() + (string)"default:\n";
+							context.classinfo.increaseIndent();
 						} else {
 							for(auto& entry : indexTable) {
 								if(i == exprIndexTable.at(entry.second)) {
-									environment.classinfo.reduceIndent();
-									str += environment.classinfo.getIndent() + (string)"case " + to_string(entry.first) + ":\n";
-									environment.classinfo.increaseIndent();
+									context.classinfo.reduceIndent();
+									str += context.classinfo.getIndent() + (string)"case " + to_string(entry.first) + ":\n";
+									context.classinfo.increaseIndent();
 									break;
 								}
 							}
 						}
-						str += environment.classinfo.getIndent() + operation->toString(environment) + (instanceof<const Scope*>(operation) ? "\n" : ";\n");
+						str += context.classinfo.getIndent() + operation->toString(context) + (instanceof<const Scope*>(operation) ? "\n" : ";\n");
 						i++;
 					}
 
-					environment.classinfo.reduceIndent(2);
+					context.classinfo.reduceIndent(2);
 
 					if(str.size() == baseSize) {
 						str[baseSize - 1] = '}';
 						return str;
 					}
 
-					return str + environment.classinfo.getIndent() + '}';
+					return str + context.classinfo.getIndent() + '}';
 				}
 
 				virtual bool isBreakable() const override {
@@ -512,10 +507,10 @@ namespace jdecompiler {
 
 
 		struct EmptyInfiniteLoopScope: Scope {
-			EmptyInfiniteLoopScope(const CodeEnvironment& environment):
-					Scope(environment.index, environment.index, environment) {}
+			EmptyInfiniteLoopScope(const DecompilationContext& context):
+					Scope(context.index, context.index, context) {}
 
-			virtual string toString(const CodeEnvironment&) const override {
+			virtual string toStringImpl(const StringifyContext&) const override {
 				return "while(true) {}";
 			}
 		};

@@ -3,7 +3,7 @@
 
 namespace jdecompiler {
 
-	namespace JavaSE {
+	namespace javase {
 		namespace java {
 			namespace lang {
 				const ClassType

@@ -79,17 +79,17 @@ namespace jdecompiler {
 
 	struct Operation {
 		protected:
-			static inline const Operation* getArray(const CodeEnvironment& environment, const Type* elementType);
+			static inline const Operation* getArray(const DecompilationContext& context, const Type* elementType);
 
 			Operation() noexcept {}
 
 			virtual ~Operation() {}
 
 		public:
-			virtual string toString(const CodeEnvironment& environment) const = 0;
+			virtual string toString(const StringifyContext& context) const = 0;
 
-			virtual string toArrayInitString(const CodeEnvironment& environment) const {
-				return toString(environment);
+			virtual string toArrayInitString(const StringifyContext& context) const {
+				return toString(context);
 			}
 
 			virtual const Type* getReturnType() const = 0;
@@ -110,17 +110,18 @@ namespace jdecompiler {
 
 
 		public:
-			template<class O>
-			static inline O castOperationTo(const Operation* operation);
+			virtual const Operation* getOriginalOperation() const {
+				return this;
+			}
 
 
 			template<class D, class... Ds>
-			static bool checkDup(const CodeEnvironment& environment, const Operation* operation);
+			static bool checkDup(const DecompilationContext& context, const Operation* operation);
 
 
 			template<class D, class... Ds>
-			static inline const Type* getDupReturnType(const CodeEnvironment& environment, const Operation* operation, const Type* defaultType = VOID) {
-				return checkDup<D, Ds...>(environment, operation) ? operation->getReturnType() : defaultType;
+			static inline const Type* getDupReturnType(const DecompilationContext& context, const Operation* operation, const Type* defaultType = VOID) {
+				return checkDup<D, Ds...>(context, operation) ? operation->getReturnType() : defaultType;
 			}
 
 
@@ -129,13 +130,13 @@ namespace jdecompiler {
 				return Priority::DEFAULT_PRIORITY;
 			}
 
-			inline string toStringPriority(const Operation* operation, const CodeEnvironment& environment, const Associativity associativity) const {
+			inline string toStringPriority(const Operation* operation, const StringifyContext& context, const Associativity associativity) const {
 				const Priority thisPriority = this->getPriority(),
 				               otherPriority = operation->getPriority();
 
 				if(otherPriority < thisPriority || (otherPriority == thisPriority && getAssociativityByPriority(otherPriority) != associativity))
-					return '(' + operation->toString(environment) + ')';
-				return operation->toString(environment);
+					return '(' + operation->toString(context) + ')';
+				return operation->toString(context);
 			}
 
 			virtual inline string getFrontSeparator(const ClassInfo& classinfo) const {
@@ -241,8 +242,8 @@ namespace jdecompiler {
 				return declared;
 			}
 
-			bool setDeclared(bool declared) const {
-				return this->declared = declared;
+			void setDeclared(bool declared) const {
+				this->declared = declared;
 			}
 
 			Variable(const Type* type, bool declared): type(type), declared(declared) {}
@@ -300,7 +301,7 @@ namespace jdecompiler {
 
 	struct Instruction {
 		public:
-			virtual const Operation* toOperation(const CodeEnvironment&) const = 0;
+			virtual const Operation* toOperation(const DecompilationContext&) const = 0;
 
 		protected:
 			Instruction() {}
@@ -308,9 +309,11 @@ namespace jdecompiler {
 			virtual ~Instruction() {}
 
 		public:
-			virtual const Block* toBlock(const Bytecode&) const {
+			virtual const Block* toBlock(const DisassemblerContext&) const {
 				return nullptr;
 			}
+
+			//virtual int32_t getStackChange() const = 0;
 	};
 
 
@@ -324,12 +327,15 @@ namespace jdecompiler {
 			mutable vector<const Block*> innerBlocks;
 
 		public:
-			Block(index_t startIndex, index_t endIndex, const Bytecode& bytecode) noexcept;
+			Block(index_t startIndex, index_t endIndex, const Block* parentBlock) noexcept:
+					startIndex(startIndex), endIndex(endIndex), parentBlock(parentBlock) {}
+
+			Block(index_t startIndex, index_t endIndex, const DisassemblerContext& context) noexcept;
 
 			Block(index_t startIndex, index_t endIndex) noexcept:
-					startIndex(startIndex), endIndex(endIndex), parentBlock(nullptr) {}
+					Block(startIndex, endIndex, nullptr) {}
 
-			virtual const Operation* toOperation(const CodeEnvironment& environment) const = 0;
+			virtual const Operation* toOperation(const DecompilationContext& context) const = 0;
 
 			inline index_t start() const {
 				return startIndex;
@@ -351,188 +357,18 @@ namespace jdecompiler {
 	struct RootBlock: Block {
 		RootBlock(index_t endIndex) noexcept: Block(0, endIndex) {}
 
-		virtual const Operation* toOperation(const CodeEnvironment&) const override {
+		virtual const Operation* toOperation(const DecompilationContext&) const override {
 			return nullptr;
 		}
 	};
+}
 
+#include "disassembler-context.cpp"
 
+namespace jdecompiler {
 
-	struct Bytecode {
-		public:
-			const uint32_t length;
-			const uint8_t* const bytes;
-
-		private:
-			pos_t pos = 0;
-			index_t index = 0;
-			vector<Instruction*> instructions;
-			mutable vector<const Block*> blocks, inactiveBlocks;
-			const Block* currentBlock = nullptr;
-			map<pos_t, index_t> indexMap;
-			map<index_t, pos_t> posMap;
-
-		public:
-			inline const Block* getCurrentBlock() const {
-				return currentBlock;
-			}
-
-			Bytecode(const uint32_t length, const uint8_t* bytes): length(length), bytes(bytes) {
-
-				while(available()) {
-					indexMap[pos] = index;
-					posMap[index] = pos;
-					index++;
-
-					instructions.push_back(nextInstruction());
-
-					next();
-				}
-
-				index_t lastIndex = index;
-				assert(lastIndex == instructions.size());
-
-				currentBlock = new RootBlock(lastIndex);
-
-				index = 0;
-
-				for(const Instruction* instruction = instructions[0]; index < lastIndex; instruction = instructions[++index]) {
-					pos = posMap[index];
-
-					if(instruction != nullptr) {
-						const Block* block = instruction->toBlock(*this);
-						if(block != nullptr)
-							addBlock(block);
-					}
-
-					updateBlocks();
-				}
-			}
-
-			inline const vector<Instruction*>& getInstructions() const {
-				return instructions;
-			}
-
-			inline const vector<const Block*>& getBlocks() const {
-				return blocks;
-			}
-
-			const Instruction* getInstruction(index_t index) const {
-				if(index >= instructions.size())
-					throw IndexOutOfBoundsException(index, instructions.size());
-				return instructions[index];
-			}
-
-			const Instruction* getInstructionNoexcept(index_t index) const noexcept {
-				if(index >= instructions.size())
-					return nullptr;
-				return instructions[index];
-			}
-
-			inline void addBlock(const Block* block) const {
-				blocks.push_back(block);
-				inactiveBlocks.push_back(block);
-			}
-
-		protected:
-			void updateBlocks() {
-
-				while(index >= currentBlock->end()) {
-					if(currentBlock->parentBlock == nullptr)
-						throw DecompilationException("Unexpected end of global function block " + currentBlock->toDebugString());
-					LOG("End of " << currentBlock->toDebugString());
-					currentBlock = currentBlock->parentBlock;
-				}
-
-				for(auto i = inactiveBlocks.begin(); i != inactiveBlocks.end(); ) {
-					const Block* block = *i;
-					if(block->start() <= index) {
-						if(block->end() > currentBlock->end()) {
-							throw DecompilationException("Block " + block->toDebugString() +
-									" is out of bounds of the parent block " + currentBlock->toDebugString());
-						}
-
-						LOG("Start of " << block->toDebugString());
-
-						currentBlock->addInnerBlock(block);
-						currentBlock = block;
-						inactiveBlocks.erase(i);
-					} else
-						++i;
-				}
-			}
-
-			inline uint8_t next() {
-				return (uint8_t)bytes[++pos];
-			}
-
-
-			inline int8_t nextByte() {
-				return (int8_t)next();
-			}
-
-			inline uint8_t nextUByte() {
-				return (uint8_t)next();
-			}
-
-			inline int16_t nextShort() {
-				return (int16_t)(next() << 8 | next());
-			}
-
-			inline uint16_t nextUShort() {
-				return (uint16_t)(next() << 8 | next());
-			}
-
-			inline int32_t nextInt() {
-				return (int32_t)(next() << 24 | next() << 16 | next() << 8 | next());
-			}
-
-			inline uint32_t nextUInt() {
-				return (uint32_t)(next() << 24 | next() << 16 | next() << 8 | next());
-			}
-
-			inline uint8_t current() const {
-				return bytes[pos];
-			}
-
-			inline bool available() const {
-				return length - pos > 0;
-			}
-
-			Instruction* nextInstruction();
-
-		public:
-			inline pos_t getPos() const {
-				return pos;
-			}
-
-			inline index_t getIndex() const {
-				return index;
-			}
-
-			inline void skip(int32_t count) {
-				pos += (uint32_t)count;
-			}
-
-			index_t posToIndex(pos_t pos) const {
-				const auto foundPos = indexMap.find(pos);
-				if(foundPos != indexMap.end())
-					return foundPos->second;
-
-				throw BytecodePosOutOfBoundsException(pos, length);
-			}
-
-			pos_t indexToPos(index_t index) const {
-				const auto foundIndex = posMap.find(index);
-				if(foundIndex != posMap.end())
-					return foundIndex->second;
-
-				throw BytecodeIndexOutOfBoundsException(index, length);
-			}
-	};
-
-	Block::Block(index_t startIndex, index_t endIndex, const Bytecode& bytecode) noexcept:
-			startIndex(startIndex), endIndex(endIndex), parentBlock(bytecode.getCurrentBlock()) {}
+	Block::Block(index_t startIndex, index_t endIndex, const DisassemblerContext& context) noexcept:
+			Block(startIndex, endIndex, context.getCurrentBlock()) {}
 
 
 	struct CodeStack: Stack<const Operation*> {
@@ -558,100 +394,22 @@ namespace jdecompiler {
 			throw DecompilationException("Illegal operation type " + typeNameOf<O>() + " for operation " + typeNameOf(*operation));
 		}
 	};
+}
 
+#include "decompilation-context.cpp"
+#include "stringify-context.cpp"
 
-	struct CodeEnvironment {
-		public:
-			const Bytecode& bytecode;
-			const ClassInfo& classinfo;
-			const ConstantPool& constPool;
-			CodeStack& stack;
-			MethodScope& methodScope;
+namespace jdecompiler {
 
-		private:
-			const Scope* currentScope;
-
-		public:
-			const uint16_t modifiers;
-			const MethodDescriptor& descriptor;
-			const Attributes& attributes;
-			pos_t pos = 0;
-			index_t index = 0, exprStartIndex = 0;
-			map<uint32_t, index_t> exprIndexTable;
-
-		private:
-			mutable vector<const Scope*> inactiveScopes;
-
-		public:
-			CodeEnvironment(const Bytecode& bytecode, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers,
-					const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals);
-
-			CodeEnvironment(const CodeEnvironment&) = delete;
-
-			CodeEnvironment& operator=(const CodeEnvironment&) = delete;
-
-			/*bool addOperation(const Operation* operation) {
-				if(operation == nullptr)
-					return false;
-
-				//LOG(typeNameOf(operation));
-
-				bool status = false;
-
-				if(operation->getReturnType() != VOID) {
-					stack.push(operation);
-				} else if(operation->canAddToCode() && !(index == instructions.size() - 1 && operation == &VReturn::getInstance())) {
-					currentScope->addOperation(operation, *this);
-					status = true;
-				}
-
-				if(instanceof<const Scope*>(operation))
-					addScope(static_cast<const Scope*>(operation));
-
-				return status;
-			}*/
-
-
-			void updateScopes();
-
-			inline const Scope* getCurrentScope() const {
-				return currentScope;
-			}
-
-			inline void addScope(const Scope* scope) const {
-				inactiveScopes.push_back(scope);
-			}
-
-			~CodeEnvironment() {
-				delete &stack;
-			}
-
-		protected:
-			template<typename Arg, typename... Args>
-			inline void print(ostream& out, Arg arg, Args... args) const {
-				if constexpr(sizeof...(Args) != 0)
-					print(out << arg, args...);
-				else
-					out << arg << endl;
-			}
-
-		public:
-			template<typename... Args>
-			inline void warning(Args... args) const {
-				print(cerr << descriptor.toString() << ':' << pos << ": warning: ", args...);
-			}
-	};
-
-
-	const Operation* Operation::getArray(const CodeEnvironment& environment, const Type* elementType) {
-		return environment.stack.popAs(new ArrayType(elementType));
+	const Operation* Operation::getArray(const DecompilationContext& context, const Type* elementType) {
+		return context.stack.popAs(new ArrayType(elementType));
 	}
 
 
 	template<class D, class... Ds>
-	bool Operation::checkDup(const CodeEnvironment& environment, const Operation* operation) {
+	bool Operation::checkDup(const DecompilationContext& context, const Operation* operation) {
 		if(instanceof<const D*>(operation)) {
-			if(static_cast<const D*>(operation)->operation != environment.stack.pop())
+			if(static_cast<const D*>(operation)->operation != context.stack.pop())
 				throw DecompilationException("Illegal stack state after dup operation");
 			return true;
 		}
@@ -659,7 +417,7 @@ namespace jdecompiler {
 		if constexpr(sizeof...(Ds) == 0)
 			return false;
 		else
-			return checkDup<Ds...>(environment, operation);
+			return checkDup<Ds...>(context, operation);
 	}
 
 
@@ -670,8 +428,6 @@ namespace jdecompiler {
 			const Scope *const parentScope;
 
 		protected:
-			const uint16_t localsCount;
-
 			mutable vector<Variable*> variables;
 			mutable uint16_t lastAddedVarIndex = 0;
 
@@ -682,19 +438,19 @@ namespace jdecompiler {
 			mutable vector<const Scope*> innerScopes;
 
 		private:
-			Scope(index_t startIndex, index_t endIndex, const Scope* parentScope, uint16_t localsCount):
-					startIndex(startIndex), endIndex(endIndex), parentScope(parentScope), localsCount(localsCount), variables(localsCount) {}
+			Scope(index_t startIndex, index_t endIndex, const Scope* parentScope, uint16_t variablesCount):
+					startIndex(startIndex), endIndex(endIndex), parentScope(parentScope), variables(variablesCount) {}
 
 		public:
 
-			Scope(index_t startIndex, index_t endIndex, uint16_t localsCount):
-					Scope(startIndex, endIndex, nullptr, localsCount) {}
+			Scope(index_t startIndex, index_t endIndex, uint16_t variablesCount):
+					Scope(startIndex, endIndex, nullptr, variablesCount) {}
 
 			Scope(index_t startIndex, index_t endIndex, const Scope* parentScope):
-					Scope(startIndex, endIndex, parentScope, parentScope->localsCount) {}
+					Scope(startIndex, endIndex, parentScope, parentScope->variables.size()) {}
 
-			Scope(index_t startIndex, index_t endIndex, const CodeEnvironment& environment):
-					Scope(startIndex, endIndex, environment.getCurrentScope(), environment.getCurrentScope()->localsCount) {}
+			Scope(index_t startIndex, index_t endIndex, const DecompilationContext& context):
+					Scope(startIndex, endIndex, context.getCurrentScope()) {}
 
 
 			inline index_t start() const {
@@ -711,17 +467,19 @@ namespace jdecompiler {
 				return var == nullptr && parentScope != nullptr ? parentScope->findVariable(index) : var;
 			}
 
-			const Variable* findDeclaredVariable(index_t index) const {
-				const Variable* var = findVariable(index);
+			const Variable* findVariableAtInnerScopes(index_t index) const {
+				const Variable* var = variables[index];
+
 				if(var == nullptr) {
 					for(const Scope* scope : innerScopes) {
-						var = scope->findDeclaredVariable(index);
+						var = scope->findVariableAtInnerScopes(index);
 						if(var != nullptr)
 							return var;
-						LOG(scope->toDebugString() << ' ' << var);
-						LOG(join<Variable*>(scope->variables, [] (Variable* v) { return to_string((uint64_t)v); }));
 					}
+				} else {
+					variables[index] = nullptr;
 				}
+
 				return var;
 			}
 
@@ -736,12 +494,17 @@ namespace jdecompiler {
 				const Variable* var = findVariable(index);
 				if(var == nullptr) {
 					if(isDeclared) {
-						var = findDeclaredVariable(index);
-						if(var == nullptr)
-							throw DecompilationException("Variable #" + to_string(index) + " not found");
+						for(const Scope* scope : innerScopes) {
+							var = scope->findVariableAtInnerScopes(index);
+							if(var != nullptr)
+								return *var;
+						}
+
+						throw DecompilationException("Variable #" + to_string(index) + " not found");
+
 					} else {
 						var = variables[index] = new UnnamedVariable(AnyType::getInstance(), false);
-						lastAddedVarIndex = localsCount;
+						lastAddedVarIndex = variables.size();
 					}
 				}
 				return *var;
@@ -755,7 +518,7 @@ namespace jdecompiler {
 			}
 
 			void addVariable(Variable* var) {
-				if(lastAddedVarIndex >= localsCount)
+				if(lastAddedVarIndex >= variables.size())
 					throw IllegalStateException("cannot add variable: no free place");
 
 				variables[lastAddedVarIndex] = var;
@@ -789,39 +552,46 @@ namespace jdecompiler {
 				return name;
 			}
 
-			//virtual void initiate(const CodeEnvironment&) {}
+			//virtual void initiate(const DecompilationContext&) {}
 
-			virtual void finalize(const CodeEnvironment&) const {}
+			virtual void finalize(const DecompilationContext&) const {}
 
-			virtual string toString(const CodeEnvironment& environment) const override {
-				environment.classinfo.increaseIndent();
+			virtual string toString(const StringifyContext& context) const override final {
+				context.enterScope(this);
+				const string str = toStringImpl(context);
+				context.exitScope(this);
+				return str;
+			}
 
-				string str = getHeader(environment) + "{\n";
+			virtual string toStringImpl(const StringifyContext& context) const {
+				context.classinfo.increaseIndent();
+
+				string str = getHeader(context) + "{\n";
 				const size_t baseSize = str.size();
 
 				for(auto i = code.begin(); i != code.end(); ++i) {
 					if(canPrintNextOperation(i)) {
 						const Operation* operation = *i;
 						if(operation->getReturnType() == VOID)
-							str += operation->getFrontSeparator(environment.classinfo) + operation->toString(environment) +
-									operation->getBackSeparator(environment.classinfo);
+							str += operation->getFrontSeparator(context.classinfo) + operation->toString(context) +
+									operation->getBackSeparator(context.classinfo);
 					}
 				}
 
-				environment.classinfo.reduceIndent();
+				context.classinfo.reduceIndent();
 
 				if(str.size() == baseSize) {
 					str[baseSize - 1] = '}';
 					return str;
 				}
 
-				return str + environment.classinfo.getIndent() + '}';
+				return str + context.classinfo.getIndent() + '}';
 			}
 
 		protected:
 			virtual inline bool canPrintNextOperation(const vector<const Operation*>::const_iterator& i) const { return true; }
 
-			virtual string getHeader(const CodeEnvironment& environment) const {
+			virtual string getHeader(const StringifyContext& context) const {
 				return EMPTY_STRING;
 			}
 
@@ -834,7 +604,7 @@ namespace jdecompiler {
 				return variables.size();
 			}
 
-			virtual void addOperation(const Operation* operation, const CodeEnvironment& environment) const {
+			virtual void addOperation(const Operation* operation, const StringifyContext& context) const {
 				code.push_back(operation);
 				if(instanceof<const Scope*>(operation))
 					innerScopes.push_back(static_cast<const Scope*>(operation));
@@ -863,6 +633,10 @@ namespace jdecompiler {
 			string toDebugString() const {
 				return typeNameOf(*this) + " {" + to_string(startIndex) + ".." + to_string(endIndex) + '}';
 			}
+
+			friend ostream& operator<< (ostream& out, const Scope& scope) {
+				return out << (&scope != nullptr ? scope.toDebugString() : "null");
+			}
 	};
 
 
@@ -882,7 +656,7 @@ namespace jdecompiler {
 			StaticInitializerScope(index_t startIndex, index_t endIndex, uint16_t localsCount):
 					MethodScope(startIndex, endIndex, localsCount) {}
 
-			virtual void addOperation(const Operation* operation, const CodeEnvironment& environment) const override;
+			virtual void addOperation(const Operation* operation, const StringifyContext& context) const override;
 
 			inline bool isFieldsInitialized() const {
 				return fieldsInitialized;

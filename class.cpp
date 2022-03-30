@@ -35,18 +35,17 @@ namespace jdecompiler {
 				vector<const Method*> methods;
 				methods.reserve(methodDataHolders.size());
 				for(const MethodDataHolder methodData : methodDataHolders) {
-					#ifndef FAIL_ON_ERROR
-					try {
-					#endif
+					if(!JDecompiler::getInstance().isFailOnError()) {
+						try {
+							methods.push_back(methodData.createMethod(classinfo));
+						} catch(DecompilationException& ex) {
+							const char* message = ex.what();
+							cerr << "Exception while decompiling method " << methodData.descriptor.toString() << ": "
+									<< typeNameOf(ex) << (*message == '\0' ? EMPTY_STRING : (string)": " + message) << endl;
+						}
+					} else {
 						methods.push_back(methodData.createMethod(classinfo));
-					#ifndef FAIL_ON_ERROR
-					} catch(DecompilationException& ex) {
-						const char* message = ex.what();
-						cerr << "Exception while decompiling method " << methodData.descriptor.toString() << ": "
-								<< typeNameOf(ex) << (*message == '\0' ? EMPTY_STRING : (string)": " + message) << endl;
-						//if(JDecompiler::getInstance().isFailOnError())
 					}
-					#endif
 				}
 				return methods;
 			}
@@ -223,7 +222,7 @@ namespace jdecompiler {
 						str += annotationsAttribute->toString(classinfo);
 
 					return str + descriptor.name + (arguments.empty() ? EMPTY_STRING :
-							'(' + rjoin<const Operation*>(arguments, [this] (auto arg) { return arg->toString(*environment); }) + ')');
+							'(' + rjoin<const Operation*>(arguments, [this] (auto arg) { return arg->toString(*context); }) + ')');
 				}
 			};
 

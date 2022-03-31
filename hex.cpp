@@ -8,7 +8,7 @@ namespace jdecompiler {
 
 		static constexpr const char* const digits = "0123456789ABCDEF";
 
-		char str[length + 1];
+		char str[length + 1U];
 		str[length] = '\0';
 
 		for(uint16_t i = length; i-- > 0; ) {

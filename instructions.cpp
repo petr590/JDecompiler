@@ -681,13 +681,13 @@ namespace jdecompiler {
 
 		struct NewArrayInstruction: Instruction {
 			protected:
-				const Type *const memberType;
+				const ArrayType *const arrayType;
 
 			public:
-				NewArrayInstruction(uint8_t code): memberType(getArrayTypeByCode(code)) {}
+				NewArrayInstruction(uint8_t code): arrayType(new ArrayType(getArrayTypeByCode(code))) {}
 
 				virtual const Operation* toOperation(const DecompilationContext& context) const override {
-					return new NewArrayOperation(context, memberType);
+					return new NewArrayOperation(context, arrayType);
 				}
 		};
 

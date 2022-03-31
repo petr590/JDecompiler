@@ -508,7 +508,8 @@ namespace jdecompiler {
 
 			BinaryOperatorOperationImpl(const Type* type, const DecompilationContext& context):
 						BinaryOperatorOperation('^', priority_parameter, type, context),
-						isBitNot(instanceof<const IConstOperation*>(operand2) && static_cast<const IConstOperation*>(operand2)->value == -1) {}
+						isBitNot((instanceof<const IConstOperation*>(operand2) && static_cast<const IConstOperation*>(operand2)->value == -1)
+							|| (instanceof<const LConstOperation*>(operand2) && static_cast<const LConstOperation*>(operand2)->value == -1)) {}
 
 			virtual string toString(const StringifyContext& context) const override {
 				return isBitNot ? '~' + this->toStringPriority(operand1, context, Associativity::RIGHT):
@@ -1228,15 +1229,20 @@ namespace jdecompiler {
 				friend struct ArrayStoreOperation;
 
 			public:
-				NewArrayOperation(const DecompilationContext& context, const ArrayType* arrayType): arrayType(arrayType) {
-					const uint16_t dimensions = arrayType->nestingLevel;
-					lengths.reserve(dimensions);
-					for(uint16_t i = 0; i < dimensions; i++)
-						lengths.push_back(context.stack.popAs(INT));
-				}
+				NewArrayOperation(const DecompilationContext& context, const ArrayType* arrayType):
+					NewArrayOperation(context, arrayType, 1) {}
 
-				NewArrayOperation(const DecompilationContext& context, const Type* memberType, uint16_t dimensions = 1):
-						NewArrayOperation(context, new ArrayType(memberType, dimensions)) {}
+			protected:
+				NewArrayOperation(const DecompilationContext& context, const ArrayType* arrayType, uint16_t dimensions):
+						arrayType(arrayType), lengths(arrayType->nestingLevel) {
+
+					if(dimensions > arrayType->nestingLevel)
+						throw DecompilationException("instruction newarray (or another derivative of it)"
+								"has too many dimensions (" + to_string(dimensions) + ") for its array type " + arrayType->toString());
+
+					for(uint16_t i = dimensions; i > 0; )
+						lengths[--i] = context.stack.popAs(INT);
+				}
 
 
 				virtual const Type* getReturnType() const override {
@@ -1245,28 +1251,35 @@ namespace jdecompiler {
 
 				virtual string toString(const StringifyContext& context) const override {
 					if(initializer.empty()) {
-						return "new " + arrayType->memberType->toString(context.classinfo) + rjoin<const Operation*>(lengths,
-								[&context] (auto length) { return '[' + length->toString(context) + ']'; }, EMPTY_STRING);
+						return "new " + arrayType->memberType->toString(context.classinfo) + join<const Operation*>(lengths,
+								[&context] (auto length) { return length == nullptr ? "[]" : '[' + length->toString(context) + ']'; }, EMPTY_STRING);
 					}
 
 					return "new " + arrayType->toString(context.classinfo) + ' ' + toArrayInitString(context);
 				}
 
 				virtual string toArrayInitString(const StringifyContext& context) const override {
-					return "{ " + join<const Operation*>(initializer,
-							[&context] (auto element) { return element->toArrayInitString(context); }) + " }";
+					const bool isOneDimensional = arrayType->nestingLevel == 1;
+					return (isOneDimensional ? "{ " : "{") + join<const Operation*>(initializer,
+							[&context] (const Operation* element) { return element->toArrayInitString(context); }) + (isOneDimensional ? " }" : "}");
 				}
 		};
 
 		struct ANewArrayOperation: NewArrayOperation {
 			ANewArrayOperation(const DecompilationContext& context, uint16_t index):
-					NewArrayOperation(context, parseReferenceType(*context.constPool.get<ClassConstant>(index)->name)) {}
+					NewArrayOperation(context, new ArrayType(parseReferenceType(*context.constPool.get<ClassConstant>(index)->name))) {}
 		};
 
 
 		struct MultiANewArrayOperation: NewArrayOperation {
 			MultiANewArrayOperation(const DecompilationContext& context, uint16_t index, uint16_t dimensions):
-					NewArrayOperation(context, new ArrayType(*context.constPool.get<ClassConstant>(index)->name)) {}
+					NewArrayOperation(context, safe_cast<const ArrayType*>(parseReferenceType(*context.constPool.get<ClassConstant>(index)->name)),
+					dimensions) {
+				if(dimensions > arrayType->nestingLevel) {
+					throw DecompilationException("The nesting level of the multianewarray instruction (" + to_string(dimensions) + ")"
+							" greater than nesting level of the array type " + arrayType->toString());
+				}
+			}
 		};
 
 
@@ -1288,8 +1301,6 @@ namespace jdecompiler {
 							newArray->initializer.push_back(value);
 							isInitializer = true;
 						}
-						/*else
-							cerr << "type mismatch: " << endl;*/
 					}
 				};
 
@@ -1461,14 +1472,26 @@ namespace jdecompiler {
 
 		template<typename T>
 		const Operation* FPConstOperation<T>::valueOf(T value) {
-			if(value == (T)M_PI && JDecompiler::getInstance().canUseConstants()) {
-				static const FieldDescriptor PIField("PI", ConstOperation<T>::TYPE);
+			if(JDecompiler::getInstance().canUseConstants()) {
 				static const ClassType MathClass("java/lang/Math");
 
-				if constexpr(is_same<T, float>()) {
-					return new CastOperation<true>(new GetStaticFieldOperation(MathClass, PIField), FLOAT); // cast Math.PI to float
-				} else {
-					return new GetStaticFieldOperation(MathClass, PIField);
+				if(value == (T)M_PI) {
+					static const FieldDescriptor PIField("PI", DOUBLE);
+
+					if constexpr(is_float<T>()) {
+						return new CastOperation<true>(new GetStaticFieldOperation(MathClass, PIField), FLOAT); // cast Math.PI to float
+					} else {
+						return new GetStaticFieldOperation(MathClass, PIField);
+					}
+				}
+				if(value == (T)M_E) {
+					static const FieldDescriptor EField("E", DOUBLE);
+
+					if constexpr(is_float<T>()) {
+						return new CastOperation<true>(new GetStaticFieldOperation(MathClass, EField), FLOAT); // cast Math.E to float
+					} else {
+						return new GetStaticFieldOperation(MathClass, EField);
+					}
 				}
 			}
 

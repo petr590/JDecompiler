@@ -19,17 +19,26 @@ namespace jdecompiler {
 			const MethodDescriptor& descriptor;
 			const Attributes& attributes;
 			pos_t pos = 0;
-			index_t index = 0, exprStartIndex = 0;
-			map<uint32_t, index_t> exprIndexTable;
+			//index_t index = 0, exprStartIndex = 0;
+			const map<uint32_t, index_t>& exprIndexTable;
 
-		private:
+		protected:
 			mutable vector<const Scope*> inactiveScopes;
 
+			StringifyContext(const DisassemblerContext& disassemblerContext, const ClassInfo& classinfo, MethodScope& methodScope,
+					uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, const map<uint32_t, index_t>& exprIndexTable):
+					disassemblerContext(disassemblerContext), classinfo(classinfo), constPool(classinfo.constPool),
+					stack(*new CodeStack()), methodScope(methodScope), currentScope((const Scope*)&methodScope),
+					modifiers(modifiers), descriptor(descriptor), attributes(attributes), exprIndexTable(exprIndexTable) {}
+
 		public:
-			StringifyContext(const DisassemblerContext& disassemblerContext, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers,
-					const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals):
-					disassemblerContext(disassemblerContext), classinfo(classinfo), constPool(classinfo.constPool), stack(*new CodeStack()),
-					methodScope(*methodScope), currentScope((const Scope*)methodScope), modifiers(modifiers), descriptor(descriptor), attributes(attributes) {}
+			StringifyContext(const DisassemblerContext& disassemblerContext, const ClassInfo& classinfo, MethodScope* methodScope,
+					uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes):
+					StringifyContext(disassemblerContext, classinfo, *methodScope, modifiers, descriptor, attributes, *new map<uint32_t, index_t>()) {}
+
+			StringifyContext(const DecompilationContext& context):
+					StringifyContext(context.disassemblerContext, context.classinfo, context.methodScope,
+					context.modifiers, context.descriptor, context.attributes, context.exprIndexTable) {}
 
 			StringifyContext(const StringifyContext&) = delete;
 
@@ -39,7 +48,7 @@ namespace jdecompiler {
 				if(operation == nullptr)
 					return false;
 
-				//LOG(typeNameOf(operation));
+				//log(typeNameOf(operation));
 
 				bool status = false;
 

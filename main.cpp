@@ -80,8 +80,9 @@ namespace jdecompiler {
 	}
 
 
-	DecompilationContext::DecompilationContext(const StringifyContext& stringifyContext, const DisassemblerContext& disassemblerContext, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals):
-			stringifyContext(stringifyContext), disassemblerContext(disassemblerContext), classinfo(classinfo), constPool(classinfo.constPool), stack(*new CodeStack()),
+	DecompilationContext::DecompilationContext(const DisassemblerContext& disassemblerContext, const ClassInfo& classinfo, MethodScope* methodScope,
+			uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals):
+			disassemblerContext(disassemblerContext), classinfo(classinfo), constPool(classinfo.constPool), stack(*new CodeStack()),
 			methodScope(*methodScope), currentScope(methodScope), modifiers(modifiers), descriptor(descriptor), attributes(attributes) {
 		for(uint32_t i = methodScope->getVariablesCount(); i < maxLocals; i++)
 			methodScope->addVariable(new UnnamedVariable(AnyType::getInstance(), false));
@@ -93,7 +94,7 @@ namespace jdecompiler {
 			if(currentScope->parentScope == nullptr)
 				throw DecompilationException("Unexpected end of global function scope " + currentScope->toDebugString());
 			currentScope->finalize(*this);
-			LOG("End of " << currentScope->toDebugString());
+			log("End of", currentScope->toDebugString());
 			currentScope = currentScope->parentScope;
 		}
 
@@ -107,8 +108,8 @@ namespace jdecompiler {
 					throw IllegalStateException("Scope " + scope->toDebugString() + " is added after it starts");
 				}*/
 
-				LOG("Start of " << scope->toDebugString());
-				currentScope->addOperation(scope, stringifyContext);
+				log("Start of", scope->toDebugString());
+				currentScope->addOperation(scope, *stringifyContext);
 				currentScope = scope;
 				//scope->initiate(*this);
 				inactiveScopes.erase(i);
@@ -183,12 +184,13 @@ namespace jdecompiler {
 
 	void StringifyContext::enterScope(const Scope* scope) const {
 		//assert(scope->parentScope == currentScope);
-		//LOG(*currentScope << ' ' << *scope << ' ' << *scope->parentScope);
 		currentScope = scope;
 	}
 
 	void StringifyContext::exitScope(const Scope* scope) const {
-		assert(scope == currentScope);
+		/*if(scope != currentScope) {
+			throw AssertionError("While stringify method " + descriptor.toString() + ": scope != currentScope: scope = " + scope->toDebugString() + "; currentScope = " + currentScope->toDebugString());
+		}*/
 		currentScope = scope->parentScope;
 	}
 }
@@ -202,8 +204,6 @@ int main(int argc, const char* args[]) {
 
 	if(!JDecompiler::init(argc, args))
 		return 0;
-
-	//LOG("isFailOnError = " << JDecompiler::getInstance().isFailOnError());
 
 	JDecompiler::getInstance().readClassFiles();
 

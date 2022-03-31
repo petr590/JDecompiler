@@ -22,6 +22,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <tuple>
 
 #define inline FORCE_INLINE
 
@@ -36,6 +37,7 @@ namespace jdecompiler {
 	using std::vector;
 	using std::map;
 	using std::set;
+	using std::tuple;
 
 	using std::min;
 	using std::max;

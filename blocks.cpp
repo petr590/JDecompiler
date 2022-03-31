@@ -75,6 +75,9 @@ namespace jdecompiler {
 			};
 
 
+			const index_t conditionStartIndex;
+
+
 			mutable IfType type = IF;
 
 			mutable const ElseBlock* elseBlock = nullptr;
@@ -83,7 +86,7 @@ namespace jdecompiler {
 
 
 			IfBlock(const DisassemblerContext& context, offset_t offset):
-					Block(context.getIndex(), context.posToIndex(context.getPos() + offset) - 1, context) {}
+					Block(context.index, context.posToIndex(context.getPos() + offset) - 1, context), conditionStartIndex(context.exprStartIndex) {}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override final {
 				const ConditionOperation* const condition = getCondition(context)->invert();
@@ -135,10 +138,10 @@ namespace jdecompiler {
 			}
 
 			void makeItLoop(const DisassemblerContext& context) const {
-				if(type != IF && !isLoop())
+				if(type == IF && !isLoop())
 				/*const Operation* inital = startIndex == 0 ? nullptr : context.getCurrentScope()->code[startIndex - 1];
 					throw IllegalStateException("Cannot make loop from " + to_string(type));
-				LOG("startIndex = " << startIndex);*/
+				logf("startIndex = %d", startIndex);*/
 				type = WHILE;
 			}
 		};

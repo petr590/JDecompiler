@@ -274,6 +274,15 @@ namespace jdecompiler {
 	};
 
 
+	static const ClassType
+			*const OBJECT(new ClassType("java/lang/Object")),
+			*const STRING(new ClassType("java/lang/String")),
+			*const CLASS(new ClassType("java/lang/Class")),
+			*const METHOD_TYPE(new ClassType("java/lang/invoke/MethodType")),
+			*const METHOD_HANDLE(new ClassType("java/lang/invoke/MethodHandle")),
+			*const THROWABLE(new ClassType("java/lang/Throwable"));
+
+
 	struct ArrayType final: ReferenceType {
 		public:
 			const Type *memberType, *elementType;
@@ -298,9 +307,16 @@ namespace jdecompiler {
 
 			ArrayType(const Type& memberType, uint16_t nestingLevel = 1): ArrayType(&memberType, nestingLevel) {}
 
-			ArrayType(const Type* memberType, uint16_t nestingLevel = 1): memberType(memberType), nestingLevel(nestingLevel) {
+			ArrayType(const Type* memberType, uint16_t nestingLevel = 1): memberType(memberType) {
 				if(nestingLevel == 0)
 					throw IllegalArgumentException("nestingLevel cannot be zero");
+
+				if(instanceof<const ArrayType*>(memberType)) {
+					nestingLevel += static_cast<const ArrayType*>(memberType)->nestingLevel;
+					memberType = static_cast<const ArrayType*>(memberType)->memberType;
+				}
+
+				this->nestingLevel = nestingLevel;
 
 				for(uint16_t i = 0; i < nestingLevel; i++)
 					braces += "[]";
@@ -328,9 +344,14 @@ namespace jdecompiler {
 
 		protected:
 			virtual bool isInstanceofImpl(const Type* other) const override {
+				if(*other == *OBJECT) {
+					return true;
+				}
+
 				const ArrayType* arrayType = dynamic_cast<const ArrayType*>(other);
-				return arrayType != nullptr && this->nestingLevel == arrayType->nestingLevel &&
-						this->memberType->isInstanceof(arrayType->memberType);
+
+				return arrayType != nullptr && (this->nestingLevel == arrayType->nestingLevel && this->memberType->isInstanceof(arrayType->memberType)
+						|| this->elementType->isInstanceof(arrayType->elementType));
 			}
 	};
 
@@ -417,15 +438,6 @@ namespace jdecompiler {
 		return this == other || (other == INT && (this == BYTE || this == CHAR || this == SHORT)) || // allow cast byte, char and short to int
 				                ((other == SHORT || other == CHAR) && this == BYTE); // allow cast byte to char and short
 	}
-
-
-	static const ClassType
-			*const OBJECT(new ClassType("java/lang/Object")),
-			*const STRING(new ClassType("java/lang/String")),
-			*const CLASS(new ClassType("java/lang/Class")),
-			*const METHOD_TYPE(new ClassType("java/lang/invoke/MethodType")),
-			*const METHOD_HANDLE(new ClassType("java/lang/invoke/MethodHandle")),
-			*const THROWABLE(new ClassType("java/lang/Throwable"));
 
 
 

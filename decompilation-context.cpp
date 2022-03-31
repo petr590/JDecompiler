@@ -11,9 +11,12 @@ namespace jdecompiler {
 			MethodScope& methodScope;
 
 		private:
-			const StringifyContext& stringifyContext;
+			const StringifyContext* stringifyContext = nullptr;
 			const DisassemblerContext& disassemblerContext;
 			const Scope* currentScope;
+
+			friend struct Method;
+			friend struct StringifyContext;
 
 		public:
 			const uint16_t modifiers;
@@ -27,7 +30,7 @@ namespace jdecompiler {
 			mutable vector<const Scope*> inactiveScopes;
 
 		public:
-			DecompilationContext(const StringifyContext& stringifyContext, const DisassemblerContext& disassemblerContext, const ClassInfo& classinfo,
+			DecompilationContext(const DisassemblerContext& disassemblerContext, const ClassInfo& classinfo,
 					MethodScope* methodScope, uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals);
 
 			DecompilationContext(const DecompilationContext&) = delete;
@@ -38,7 +41,7 @@ namespace jdecompiler {
 				if(operation == nullptr)
 					return false;
 
-				//LOG(typeNameOf(operation));
+				//log(typeNameOf(operation));
 
 				bool status = false;
 

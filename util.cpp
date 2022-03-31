@@ -15,14 +15,17 @@
 #include "index-types.cpp"
 #include "exceptions.cpp"
 
+#define log(...) logFunc("[ jdecompiler/" __FILE__ " ]:", __VA_ARGS__)
+#define logf(pattern, ...) printf("[ jdecompiler/" __FILE__ " ]: " pattern, __VA_ARGS__)
+
 namespace jdecompiler {
 
 	template<typename Arg, typename... Args>
-	static inline void log(Arg arg, Args... args) {
+	static inline void logFunc(Arg arg, Args... args) {
 		cout << arg;
 		if constexpr(sizeof...(Args) > 0) {
 			cout << ' ';
-			log(args...);
+			logFunc(args...);
 		} else {
 			cout << endl;
 		}
@@ -133,7 +136,7 @@ namespace jdecompiler {
 
 
 	template<typename T>
-	static string join(const vector<T>& array, const function<string(T, uint32_t)> func, const string& separator = ", ") {
+	static string join(const vector<T>& array, const function<string(T, size_t)> func, const string& separator = ", ") {
 		string result;
 		const size_t size = array.size();
 
@@ -455,15 +458,33 @@ namespace jdecompiler {
 		#undef checkLength
 	}
 
-	template <typename...>
-	struct is_one_of {
-		static constexpr bool value = false;
+
+	template<bool v>
+	struct bool_type {
+		static constexpr bool value = v;
+
+		inline constexpr bool_type() noexcept {}
+
+		inline constexpr operator bool () const noexcept { return v; }
 	};
 
-	template <typename F, typename S, typename... T>
-	struct is_one_of<F, S, T...> {
-		static constexpr bool value = is_same<F, S>::value || is_one_of<F, T...>::value;
-	};
+	struct false_type: bool_type<false> {};
+
+	struct true_type: bool_type<true> {};
+
+
+	template<typename...>
+	struct is_one_of: false_type {};
+
+	template<typename F, typename S, typename... T>
+	struct is_one_of<F, S, T...>: bool_type<is_same<F, S>() || is_one_of<F, T...>()> {};
+
+
+	template<typename T>
+	struct is_float: false_type {};
+
+	template<>
+	struct is_float<float>: true_type {};
 
 
 

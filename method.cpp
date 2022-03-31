@@ -89,24 +89,36 @@ namespace jdecompiler {
 				string str = type == MethodType::CONSTRUCTOR ? context.classinfo.thisType.simpleName :
 						returnType->toString(context.classinfo) + ' ' + name;
 
-				function<string(const Type*, uint32_t)> concater = [&context, isNonStatic] (const Type* type, uint32_t i) {
-					return type->toString(context.classinfo) + ' ' +
-							context.getCurrentScope()->getNameFor(context.methodScope.getVariable(i + (uint32_t)isNonStatic, false));
+				uint32_t offset = (uint32_t)isNonStatic;
+
+				const auto getVarName = [&context, &offset] (const Type* type, size_t i) {
+					return context.getCurrentScope()->getNameFor(
+							context.methodScope.getVariable(i + (type->getSize() != TypeSize::EIGHT_BYTES ? offset : offset++), false));
 				};
 
+
+				function<string(const Type*, size_t)> concater;
+
 				if(context.modifiers & ACC_VARARGS) {
-					uint32_t varargsIndex;
-					for(uint32_t i = arguments.size(); i > 0; ) {
+					size_t varargsIndex = -1;
+					for(size_t i = arguments.size(); i > 0; ) {
 						if(instanceof<const ArrayType*>(arguments[--i])) {
 							varargsIndex = i;
 							break;
 						}
 					}
 
-					concater = [&context, isNonStatic, varargsIndex] (const Type* type, uint32_t i) {
+					if(varargsIndex == -1) {
+						throw IllegalMethodHeaderException("Varargs method " + this->toString() + " must have at least one array argument");
+					}
+
+					concater = [&context, &getVarName, varargsIndex] (const Type* type, size_t i) {
 						return (i == varargsIndex ? safe_cast<const ArrayType*>(type)->elementType->toString(context.classinfo) + "..." :
-										type->toString(context.classinfo)) +
-										' ' + context.methodScope.getVariable(i + isNonStatic, false).getName();
+							type->toString(context.classinfo)) + ' ' + getVarName(type, i);
+					};
+				} else {
+					concater = [&context, &getVarName] (const Type* type, size_t i) {
+						return type->toString(context.classinfo) + ' ' + getVarName(type, i);
 					};
 				}
 
@@ -154,14 +166,15 @@ namespace jdecompiler {
 			Method(uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, const ClassInfo& classinfo):
 					modifiers(modifiers), descriptor(descriptor), attributes(attributes), codeAttribute(attributes.get<CodeAttribute>()),
 					context(decompileCode(classinfo)), scope(context.methodScope) {
+
 				const bool hasCodeAttribute = codeAttribute != nullptr;
 
 				if(modifiers & ACC_ABSTRACT && hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor.name + ":\n" "Abstract method cannot have Code attribute");
+					throw IllegalMethodHeaderException(descriptor.toString() + ": Abstract method cannot have Code attribute");
 				if(modifiers & ACC_NATIVE && hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor.name + ":\n" "Native method cannot have Code attribute");
-				if(!(modifiers & ACC_ABSTRACT) && !(modifiers & ACC_NATIVE) && !hasCodeAttribute)
-					throw IllegalStateException("In method " + descriptor.name + ":\n" "Non-abstract and non-native method must have Code attribute");
+					throw IllegalMethodHeaderException(descriptor.toString() + ": Native method cannot have Code attribute");
+				if(!(modifiers & (ACC_ABSTRACT | ACC_NATIVE)) && !hasCodeAttribute)
+					throw IllegalMethodHeaderException(descriptor.toString() + ": Non-abstract and non-native method must have Code attribute");
 			}
 
 			const StringifyContext& decompileCode(const ClassInfo& classinfo);

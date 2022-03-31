@@ -29,7 +29,7 @@ namespace jdecompiler {
 
 				if(const IfBlock* ifBlock = dynamic_cast<const IfBlock*>(currentBlock)) {
 					if(offset > 0) {
-						//LOG(context.index << ' ' << index << ' ' << ifBlock->end());
+						//log(context.index, index, ifBlock->end());
 
 						if(index - 1 == ifBlock->end()) {
 							return nullptr;
@@ -203,23 +203,32 @@ namespace jdecompiler {
 							ifBlock->addElseBlock(context, parentBlock->end() - 1);
 							return nullptr;
 						}
-					} else if(offset < 0) {
-						// Here goto creates operator continue
-						do {
-							//LOG(index << ' ' << ifBlock->start());
-							if(index == ifBlock->start()) {
-								ifBlock->makeItLoop(context);
-								return nullptr;
-								//return new ContinueOperation(context, ifBlock); // TODO
-							}
-							ifBlock = dynamic_cast<const IfBlock*>(ifBlock->parentBlock);
-						} while(ifBlock != nullptr);
 					}
 				} else if(instanceof<const TryBlock*>(currentBlock)) {
 					const TryBlock* tryBlock = static_cast<const TryBlock*>(currentBlock);
 
 					if(context.getIndex() == tryBlock->end()) return nullptr;
 						//return new CatchBlock(context, tryBlock);
+				}
+
+				if(offset < 0) {
+					// Here goto creates operator continue
+					const Block* block = currentBlock;
+
+					do {
+						if(instanceof<const IfBlock*>(block)) {
+							const IfBlock* ifBlock = static_cast<const IfBlock*>(block);
+
+							log(index, ifBlock->conditionStartIndex);
+
+							if(index == ifBlock->conditionStartIndex) {
+								ifBlock->makeItLoop(context);
+								return nullptr;
+								//return new ContinueOperation(context, ifBlock); // TODO
+							}
+						}
+						block = block->parentBlock;
+					} while(block != nullptr);
 				}
 
 				if(offset > 0 && index >= currentBlock->start() && index - 1 <= currentBlock->end()) { // goto in the borders of current Block
@@ -235,7 +244,7 @@ namespace jdecompiler {
 				if(offset < 0) {
 					const IfScope ifScope = dynamic_cast<const IfScope*>(context.getCurrentScope());
 					while(ifScope != nullptr) {
-						//LOG(index << ' ' << ifScope->start());
+						//log(index, ifScope->start());
 						if(index == ifScope->start()) {
 							ifScope->makeItLoop(context);
 							return nullptr;

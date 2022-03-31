@@ -309,7 +309,7 @@ namespace jdecompiler {
 							if(code.size() == 2 && instanceof<const IfScope*>(code[0]) && instanceof<const ElseScope*>(code[1])) { // else if ... else
 								return getHeader(context) + code[0]->toString(context) + code[1]->toString(context);
 							}
-							return this->Scope::toString(context);
+							return this->Scope::toStringImpl(context);
 						}
 
 						virtual inline string getFrontSeparator(const ClassInfo&) const override {
@@ -456,7 +456,7 @@ namespace jdecompiler {
 							context.posToIndex(context.pos + max(defaultOffset, max_element(offsetTable.begin(), offsetTable.end(),
 								[] (auto& e1, auto& e2) { return e1.second < e2.second; })->second)),
 							context),
-						value(context.stack.pop()), defaultIndex(context.posToIndex(context.pos + defaultOffset)),
+						value(context.stack.popAs(ANY_INT)), defaultIndex(context.posToIndex(context.pos + defaultOffset)),
 						indexTable(offsetTableToIndexTable(context, offsetTable)) {}
 
 				virtual string toStringImpl(const StringifyContext& context) const override {

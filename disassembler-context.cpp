@@ -9,9 +9,10 @@ namespace jdecompiler {
 			const uint32_t length;
 			const uint8_t* const bytes;
 
-		private:
 			pos_t pos = 0;
 			index_t index = 0, exprStartIndex = 0;
+
+		private:
 			vector<Instruction*> instructions;
 			mutable vector<const Block*> blocks, inactiveBlocks;
 			const Block* currentBlock = nullptr;
@@ -24,18 +25,36 @@ namespace jdecompiler {
 			}
 
 			DisassemblerContext(const ConstantPool& constPool, uint32_t length, const uint8_t* bytes): constPool(constPool), length(length), bytes(bytes) {
+				if(length == 0)
+					return;
+
+				int32_t stackContent = 0, exprIndex = 0;
+
+				vector<index_t> exprStartIndexTable;
 
 				while(available()) {
 					indexMap[pos] = index;
 					posMap[index] = pos;
 					index++;
 
-					instructions.push_back(nextInstruction());
+					auto [takeFromStack, putOnStack, instruction] = nextInstruction();
+
+					stackContent -= takeFromStack;
+					assert(stackContent >= 0);
+					stackContent += putOnStack;
+					assert(stackContent >= 0);
+
+					exprStartIndexTable.push_back(exprStartIndex);
+
+					if(stackContent == 0)
+						exprStartIndex = index;
+
+					instructions.push_back(instruction);
 
 					next();
 				}
 
-				index_t lastIndex = index;
+				const index_t lastIndex = index;
 				assert(lastIndex == instructions.size());
 
 				currentBlock = new RootBlock(lastIndex);
@@ -44,12 +63,9 @@ namespace jdecompiler {
 
 				for(const Instruction* instruction = instructions[0]; index < lastIndex; instruction = instructions[++index]) {
 					pos = posMap[index];
+					exprStartIndex = exprStartIndexTable[index];
 
 					if(instruction != nullptr) {
-						/*stackSize += instruction->getStackChange();
-						assert(stackSize >= 0);
-						if(stackSize == 0)
-							exprStartIndex = index;*/
 
 						const Block* block = instruction->toBlock(*this);
 						if(block != nullptr)
@@ -91,7 +107,7 @@ namespace jdecompiler {
 				while(index >= currentBlock->end()) {
 					if(currentBlock->parentBlock == nullptr)
 						throw DecompilationException("Unexpected end of global function block " + currentBlock->toDebugString());
-					LOG("End of " << currentBlock->toDebugString());
+					log("End of", currentBlock->toDebugString());
 					currentBlock = currentBlock->parentBlock;
 				}
 
@@ -103,7 +119,7 @@ namespace jdecompiler {
 									" is out of bounds of the parent block " + currentBlock->toDebugString());
 						}
 
-						LOG("Start of " << block->toDebugString());
+						log("Start of", block->toDebugString());
 
 						currentBlock->addInnerBlock(block);
 						currentBlock = block;
@@ -150,7 +166,7 @@ namespace jdecompiler {
 				return length - pos > 0;
 			}
 
-			Instruction* nextInstruction();
+			tuple<int32_t, int32_t, Instruction*> nextInstruction();
 
 		public:
 			inline pos_t getPos() const {

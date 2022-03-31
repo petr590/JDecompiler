@@ -39,8 +39,8 @@ namespace jdecompiler {
 		IllegalStateException(const string& message): Exception(message) {}
 	);
 
-	DECLARE_EXCEPTION(AssertionException, Exception,
-		AssertionException(const string& message): Exception(message) {}
+	DECLARE_EXCEPTION(AssertionError, Exception,
+		AssertionError(const string& message): Exception(message) {}
 	);
 
 
@@ -129,8 +129,8 @@ namespace jdecompiler {
 		ClassFormatError(const string& message): Exception(message) {}
 	);
 
-	DECLARE_EXCEPTION(IllegalOpcodeException, ClassFormatError,
-		IllegalOpcodeException(const string& message): ClassFormatError(message) {}
+	DECLARE_EXCEPTION(IllegalOpcodeError, ClassFormatError,
+		IllegalOpcodeError(const string& message): ClassFormatError(message) {}
 	);
 
 	DECLARE_EXCEPTION(InstructionFormatError, ClassFormatError,
@@ -143,6 +143,11 @@ namespace jdecompiler {
 
 	DECLARE_EXCEPTION(AttributeNotFoundException, ClassFormatError,
 		AttributeNotFoundException(const string& message): ClassFormatError(message) {}
+	);
+
+
+	DECLARE_EXCEPTION(IllegalMethodHeaderException, ClassFormatError,
+		IllegalMethodHeaderException(const string& message): ClassFormatError(message) {}
 	);
 
 

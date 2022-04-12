@@ -16,6 +16,10 @@ namespace jdecompiler {
 		inline FieldDescriptor(const string& name, const string& descriptor): FieldDescriptor(name, parseType(descriptor)) {}
 
 		FieldDescriptor(const NameAndTypeConstant* nameAndType): FieldDescriptor(*nameAndType->name, *nameAndType->descriptor) {}
+
+		string toString() const {
+			return type.getName() + ' ' + name;
+		}
 	};
 
 
@@ -28,14 +32,22 @@ namespace jdecompiler {
 		protected:
 			const ConstantValueAttribute* constantValueAttribute;
 			mutable const Operation* initializer;
-			mutable const StringifyContext* context = NULL;//new FieldStringifyContext();
+			mutable const StringifyContext* context;
 			friend void StaticInitializerScope::addOperation(const Operation*, const StringifyContext&) const;
 
 		public:
-			Field(const ConstantPool& constPool, BinaryInputStream& instream): modifiers(instream.readUShort()),
-					descriptor(*new FieldDescriptor(constPool.getUtf8Constant(instream.readUShort()), constPool.getUtf8Constant(instream.readUShort()))),
-					attributes(*new Attributes(instream, constPool, instream.readUShort())), constantValueAttribute(attributes.get<ConstantValueAttribute>()),
-					initializer(constantValueAttribute == nullptr ? nullptr : constantValueAttribute->getInitializer()) {}
+			Field(uint16_t modifiers, const FieldDescriptor& descriptor, const Attributes& attributes, const ClassInfo& classinfo): modifiers(modifiers),
+					descriptor(descriptor), attributes(attributes), constantValueAttribute(attributes.get<ConstantValueAttribute>()),
+					initializer(constantValueAttribute == nullptr ? nullptr : constantValueAttribute->getInitializer()),
+					context(initializer == nullptr ? nullptr : classinfo.getFieldStringifyContext()) {
+				if(initializer != nullptr)
+					initializer->castReturnTypeTo(&descriptor.type);
+			}
+
+			Field(const ClassInfo& classinfo, BinaryInputStream& instream): Field(instream.readUShort(),
+					*new FieldDescriptor(classinfo.constPool.getUtf8Constant(instream.readUShort()),
+							classinfo.constPool.getUtf8Constant(instream.readUShort())),
+					*new Attributes(instream, classinfo.constPool, instream.readUShort()), classinfo) {}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
 				string str;
@@ -78,6 +90,22 @@ namespace jdecompiler {
 				if(modifiers & ACC_VOLATILE) str += "volatile";
 
 				return str;
+			}
+	};
+
+
+	struct FieldDataHolder {
+		public:
+			const uint16_t modifiers;
+			const FieldDescriptor& descriptor;
+			const Attributes& attributes;
+
+			FieldDataHolder(const ConstantPool& constPool, BinaryInputStream& instream): modifiers(instream.readUShort()),
+					descriptor(*new FieldDescriptor(constPool.getUtf8Constant(instream.readUShort()), constPool.getUtf8Constant(instream.readUShort()))),
+					attributes(*new Attributes(instream, constPool, instream.readUShort())) {}
+
+			const Field* createField(const ClassInfo& classinfo) const {
+				return new Field(modifiers, descriptor, attributes, classinfo);
 			}
 	};
 }

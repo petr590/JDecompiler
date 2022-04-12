@@ -31,10 +31,11 @@ namespace jdecompiler {
 					interfaces(interfaces), attributes(attributes), classinfo(classinfo),
 					fields(fields), methods(methods) {}
 
-			const vector<const Method*> createMethodsFromMethodData(const vector<MethodDataHolder> methodDataHolders) const {
+		private:
+			const vector<const Method*> createMethods(const vector<MethodDataHolder> methodsData, const ClassInfo& classinfo) const {
 				vector<const Method*> methods;
-				methods.reserve(methodDataHolders.size());
-				for(const MethodDataHolder methodData : methodDataHolders) {
+				methods.reserve(methodsData.size());
+				for(const MethodDataHolder methodData : methodsData) {
 					if(!JDecompiler::getInstance().isFailOnError()) {
 						try {
 							methods.push_back(methodData.createMethod(classinfo));
@@ -50,13 +51,37 @@ namespace jdecompiler {
 				return methods;
 			}
 
-			Class(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
-					const vector<const ClassType*>& interfaces, const Attributes& attributes,
-					const vector<const Field*>& fields, const vector<MethodDataHolder>& methodDataHolders):
+
+			const vector<const Field*> createFields(const vector<FieldDataHolder> fieldsData, const ClassInfo& classinfo) const {
+				vector<const Field*> fields;
+				fields.reserve(fieldsData.size());
+
+				for(const FieldDataHolder fieldData : fieldsData) {
+					if(!JDecompiler::getInstance().isFailOnError()) {
+						try {
+							fields.push_back(fieldData.createField(classinfo));
+						} catch(DecompilationException& ex) {
+							const char* message = ex.what();
+							cerr << "Exception while decompiling field " << fieldData.descriptor.toString() << ": "
+									<< typeNameOf(ex) << (*message == '\0' ? EMPTY_STRING : (string)": " + message) << endl;
+						}
+					} else {
+						fields.push_back(fieldData.createField(classinfo));
+					}
+				}
+
+				return fields;
+			}
+
+
+		protected: // Do not do it through constructor delegation, otherwise the fields are not initialized
+			Class(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool,
+					uint16_t modifiers, const vector<const ClassType*>& interfaces, const Attributes& attributes,
+					const vector<FieldDataHolder>& fieldsData, const vector<MethodDataHolder>& methodsData):
 					version(version), thisType(thisType), superType(superType), constPool(constPool), modifiers(modifiers),
 					interfaces(interfaces), attributes(attributes),
 					classinfo(*new ClassInfo(*this, thisType, superType, constPool, attributes, modifiers)),
-					fields(fields), methods(createMethodsFromMethodData(methodDataHolders)) {}
+					fields(createFields(fieldsData, classinfo)), methods(createMethods(methodsData, classinfo)) {}
 
 
 		public:
@@ -228,18 +253,25 @@ namespace jdecompiler {
 
 
 			struct EnumConstructorDescriptor: MethodDescriptor {
+				const vector<const Type*> factualArguments;
+
 				EnumConstructorDescriptor(const MethodDescriptor& other):
-						MethodDescriptor(other.clazz, other.name, other.returnType, vector<const Type*>(other.arguments.begin() + 2, other.arguments.end())) {}
+						MethodDescriptor(other.clazz, other.name, other.returnType, other.arguments),
+						factualArguments(other.arguments.begin() + 2, other.arguments.end()) {}
+
+				/*virtual bool canStringify(const ClassInfo& classinfo) const override {
+					return !factualArguments.empty() && MethodDescriptor::canStringify(classinfo);
+				}*/
 			};
 
 			vector<const EnumField*> enumFields;
 			vector<const Field*> otherFields;
 
-			static vector<MethodDataHolder> processMethodData(vector<MethodDataHolder>& methodDataHolders) {
+			static vector<MethodDataHolder> processMethodData(const vector<MethodDataHolder>& methodsData) {
 				vector<MethodDataHolder> newMethodDataHolders;
-				newMethodDataHolders.reserve(methodDataHolders.size());
+				newMethodDataHolders.reserve(methodsData.size());
 
-				for(MethodDataHolder& methodData : methodDataHolders) {
+				for(const MethodDataHolder& methodData : methodsData) {
 					newMethodDataHolders.push_back(MethodDataHolder(methodData.modifiers,
 							methodData.descriptor.type == MethodDescriptor::MethodType::CONSTRUCTOR ?
 							*new EnumConstructorDescriptor(methodData.descriptor) : methodData.descriptor, methodData.attributes));
@@ -251,7 +283,7 @@ namespace jdecompiler {
 		public:
 			EnumClass(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 					const vector<const ClassType*>& interfaces, const Attributes& attributes,
-					const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders);
+					const vector<FieldDataHolder>& fieldsData, vector<MethodDataHolder>& methodsData);
 
 
 		protected:
@@ -281,8 +313,8 @@ namespace jdecompiler {
 		public:
 			AnonymousClass(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
 					const vector<const ClassType*>& interfaces, const Attributes& attributes,
-					const vector<const Field*>& fields, vector<MethodDataHolder>& methodDataHolders):
-					Class(version, thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) {}
+					const vector<FieldDataHolder>& fieldsData, vector<MethodDataHolder>& methodsData):
+					Class(version, thisType, superType, constPool, modifiers, interfaces, attributes, fieldsData, methodsData) {}
 
 
 
@@ -402,25 +434,25 @@ namespace jdecompiler {
 
 
 		const uint16_t fieldsCount = instream.readUShort();
-		vector<const Field*> fields;
-		fields.reserve(fieldsCount);
+		vector<FieldDataHolder> fieldsData;
+		fieldsData.reserve(fieldsCount);
 
 		for(uint16_t i = 0; i < fieldsCount; i++)
-			fields.push_back(new Field(constPool, instream));
+			fieldsData.push_back(FieldDataHolder(constPool, instream));
 
 
 		const uint16_t methodsCount = instream.readUShort();
-		vector<MethodDataHolder> methodDataHolders;
-		methodDataHolders.reserve(methodsCount);
+		vector<MethodDataHolder> methodsData;
+		methodsData.reserve(methodsCount);
 
 		for(uint16_t i = 0; i < methodsCount; i++)
-			methodDataHolders.push_back(MethodDataHolder(constPool, instream, thisType));
+			methodsData.push_back(MethodDataHolder(constPool, instream, thisType));
 
 		const Attributes& attributes = *new Attributes(instream, constPool, instream.readUShort());
 
-		return modifiers & ACC_ENUM ?      new EnumClass(version, thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) :
-		       thisType.isAnonymous ? new AnonymousClass(version, thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders) :
-		                                       new Class(version, thisType, superType, constPool, modifiers, interfaces, attributes, fields, methodDataHolders);
+		return modifiers & ACC_ENUM ? new EnumClass(version, thisType, superType, constPool, modifiers, interfaces, attributes, fieldsData, methodsData) :
+		  thisType.isAnonymous ? new AnonymousClass(version, thisType, superType, constPool, modifiers, interfaces, attributes, fieldsData, methodsData) :
+		                                  new Class(version, thisType, superType, constPool, modifiers, interfaces, attributes, fieldsData, methodsData);
 	}
 }
 

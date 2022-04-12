@@ -1,0 +1,1 @@
+-std=c++17 -Werror=shadow-local -Imissing-headers

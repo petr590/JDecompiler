@@ -3,7 +3,7 @@
 
 #undef inline
 #include <type_traits>
-#define inline FORCE_INLINE
+#define inline INLINE
 #include "util.cpp"
 
 #define DEFINE_CONSTANT_NAME(name)\
@@ -24,8 +24,10 @@ namespace jdecompiler {
 
 
 	struct ConstantPool {
-		private:
+		public:
 			const uint16_t size;
+
+		private:
 			Constant** const pool;
 
 			#define checkTemplate() static_assert(is_base_of<Constant, T>::value,\
@@ -159,6 +161,9 @@ namespace jdecompiler {
 
 		StringConstant(uint16_t valueRef): valueRef(valueRef) {}
 
+		StringConstant(uint16_t valueRef, const ConstantPool& constPool):
+				valueRef(valueRef), value(constPool.get<Utf8Constant>(valueRef)) {}
+
 		StringConstant(const Utf8Constant* value): valueRef(0), value(value) {}
 
 		virtual void init(const ConstantPool& constPool) override {
@@ -277,6 +282,9 @@ namespace jdecompiler {
 		const Utf8Constant* descriptor;
 
 		MethodTypeConstant(uint16_t descriptorRef): descriptorRef(descriptorRef) {}
+
+		MethodTypeConstant(uint16_t descriptorRef, const ConstantPool& constPool):
+				descriptorRef(descriptorRef), descriptor(constPool.get<Utf8Constant>(descriptorRef)) {}
 
 		virtual void init(const ConstantPool& constPool) override {
 			descriptor = constPool.get<Utf8Constant>(descriptorRef);

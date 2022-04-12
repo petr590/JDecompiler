@@ -167,7 +167,7 @@ namespace jdecompiler {
 			CompareWithZeroOperation(const Operation* operand, const CompareType& compareType): CompareOperation(compareType), operand(operand) {}
 
 			virtual string toString(const StringifyContext& context) const override {
-				return operand->getReturnType()->isInstanceof(BOOLEAN) && compareType.isEqualsCompareType ? // write `!bool` instead of `bool == false`
+				return operand->getReturnType()->isSubtypeOf(BOOLEAN) && compareType.isEqualsCompareType ? // write `!bool` instead of `bool == false`
 						((const EqualsCompareType&)compareType).getUnaryOperator(inverted) +
 								toStringPriority(operand, context, Associativity::RIGHT) :
 						toStringPriority(operand, context, Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + " 0";
@@ -253,7 +253,7 @@ namespace jdecompiler {
 
 
 		struct TernaryOperatorOperation: ReturnableOperation<> {
-			const ConditionOperation *const condition;
+			const ConditionOperation* const condition;
 			const Operation *const trueCase, *const falseCase;
 
 			const bool isShort;
@@ -276,12 +276,16 @@ namespace jdecompiler {
 
 
 		struct ConditionScope: Scope {
-			public:
-				const ConditionOperation* condition;
-
 			protected:
+				mutable const ConditionOperation* condition;
+
 				ConditionScope(index_t startIndex, index_t endIndex, const DecompilationContext& context, const ConditionOperation* condition):
 						Scope(startIndex, endIndex, context), condition(condition) {}
+
+			public:
+				inline const ConditionOperation* getCondition() const {
+					return condition;
+				}
 		};
 
 
@@ -292,11 +296,12 @@ namespace jdecompiler {
 						const IfScope* const ifScope;
 
 					protected:
-						mutable const Operation* ternaryFalseOperation = nullptr;
+						mutable const Operation* ternaryFalseCase = nullptr;
+						mutable bool isTernary = false;
 
 					public:
 						ElseScope(const DecompilationContext& context, const index_t endIndex, const IfScope* ifScope):
-								Scope(ifScope->endIndex, endIndex, ifScope), ifScope(ifScope) {}
+								Scope(ifScope->endIndex, endIndex, ifScope->parentScope), ifScope(ifScope) {}
 
 						virtual inline string getHeader(const StringifyContext&) const override {
 							return " else ";
@@ -315,9 +320,35 @@ namespace jdecompiler {
 						virtual inline string getFrontSeparator(const ClassInfo&) const override {
 							return EMPTY_STRING;
 						}
+
+						virtual void finalize(const DecompilationContext& context) const override {
+							if(ifScope->isTernary) {
+								if(!context.stack.empty()) {
+									isTernary = true;
+									ternaryFalseCase = context.stack.pop();
+									context.stack.push(new TernaryOperatorOperation(ifScope->condition, ifScope->ternaryTrueCase, ternaryFalseCase));
+								} else {
+									context.warning("fail to indicate false case of ternary operator");
+									ifScope->isTernary = false;
+								}
+
+								/*log('[');
+								for(int i = 0; i < context.stack.size(); i++)
+									log(typeNameOf(context.stack.lookup(i)));
+								log(']');*/
+							}
+						}
+
+						virtual const Type* getReturnType() const override {
+							return isTernary ? ternaryFalseCase->getReturnType() : Scope::getReturnType();
+						}
+
 				};
 
+
 				const ElseScope* const elseScope;
+				mutable bool isTernary = false;
+				mutable const Operation* ternaryTrueCase = nullptr;
 
 			public:
 				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition):
@@ -343,6 +374,17 @@ namespace jdecompiler {
 				virtual void addOperation(const Operation* operation, const StringifyContext& context) const override {
 					if(operation != elseScope)
 						this->Scope::addOperation(operation, context);
+				}
+
+				virtual void finalize(const DecompilationContext& context) const override {
+					if(elseScope != nullptr && code.empty() && elseScope->code.empty() && !context.stack.empty()) {
+						isTernary = true;
+						ternaryTrueCase = context.stack.pop();
+					}
+				}
+
+				virtual const Type* getReturnType() const override {
+					return isTernary ? ternaryTrueCase->getReturnType() : Scope::getReturnType();
 				}
 		};
 
@@ -430,6 +472,46 @@ namespace jdecompiler {
 
 				virtual string getHeader(const StringifyContext& context) const override {
 					return "for(" + condition->toString(context) + ") ";
+				}
+		};
+
+
+		struct InfiniteLoopScope: LoopScope {
+			public:
+				struct TrueConstOperation: ConditionOperation {
+					private: TrueConstOperation() {}
+
+					public:
+						virtual const Type* getReturnType() const override {
+							return BOOLEAN;
+						}
+
+						virtual string toString(const StringifyContext&) const override {
+							return "true";
+						}
+
+						static const TrueConstOperation* getInstance() {
+							static TrueConstOperation INSTANCE;
+							return &INSTANCE;
+						}
+				};
+
+
+				InfiniteLoopScope(const DecompilationContext& context, index_t startIndex, index_t endIndex):
+						LoopScope(context, startIndex, endIndex, TrueConstOperation::getInstance()) {}
+
+
+				virtual string getHeader(const StringifyContext& context) const override {
+					return "while(" + condition->toString(context) + ") ";
+				}
+
+
+				virtual void finalize(const DecompilationContext&) const override {
+					if(code.size() == 1 && instanceof<const IfScope*>(code[0])) {
+						const IfScope* ifScope = static_cast<const IfScope*>(code[0]);
+						condition = ifScope->getCondition();
+						code = ifScope->getCode();
+					}
 				}
 		};
 

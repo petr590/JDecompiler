@@ -27,7 +27,7 @@ namespace jdecompiler {
 
 	template<typename T>
 	struct TypeByBuiltinType {
-		static_assert(is_one_of<T, bool, int32_t, int64_t, float, double, BuiltinTypes::MarkerStruct>::value, "illegal basic type T");
+		static_assert(is_one_of<T, bool, int32_t, int64_t, float, double, BuiltinTypes::MarkerStruct>::value, "illegal builtin type");
 	};
 
 	template<> struct TypeByBuiltinType<bool>    { static const Type* const value; };
@@ -103,6 +103,10 @@ namespace jdecompiler {
 
 			inline void castReturnTypeTo(const Type* type) const {
 				onCastReturnType(getReturnType()->castTo(type));
+			}
+
+			inline void twoWayCastReturnTypeTo(const Type* type) const {
+				onCastReturnType(getReturnType()->twoWayCastTo(type));
 			}
 
 		protected:
@@ -210,7 +214,7 @@ namespace jdecompiler {
 			mutable const Type* type;
 			mutable bool declared;
 
-			mutable vector<const Operation*> linkedOperations;
+			mutable vector<const Operation*> bindedOperations;
 
 			/*friend struct operations::LoadOperation;
 			friend struct operations::StoreOperation;
@@ -219,13 +223,13 @@ namespace jdecompiler {
 
 
 		public:
-			void linkWith(const Operation* operation) const {
-				linkedOperations.push_back(operation);
+			void bindTo(const Operation* operation) const {
+				bindedOperations.push_back(operation);
 				castTypeTo(operation->getReturnType());
 			}
 
 			const Type* setType(const Type* newType) const {
-				for(const Operation* operation : linkedOperations)
+				for(const Operation* operation : bindedOperations)
 					newType = operation->getReturnTypeAs(newType);
 				return this->type = newType;
 			}
@@ -459,6 +463,10 @@ namespace jdecompiler {
 
 			inline index_t end() const {
 				return endIndex;
+			}
+
+			inline vector<const Operation*>& getCode() const {
+				return code;
 			}
 
 		protected:

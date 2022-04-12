@@ -3,7 +3,14 @@
 
 namespace jdecompiler {
 
-	struct DecompilationContext {
+	struct DecompilationContext: Context {
+		private:
+			const DisassemblerContext& disassemblerContext;
+			const StringifyContext* stringifyContext = nullptr;
+
+			friend struct Method;
+			friend struct StringifyContext;
+
 		public:
 			const ClassInfo& classinfo;
 			const ConstantPool& constPool;
@@ -11,18 +18,12 @@ namespace jdecompiler {
 			MethodScope& methodScope;
 
 		private:
-			const StringifyContext* stringifyContext = nullptr;
-			const DisassemblerContext& disassemblerContext;
 			const Scope* currentScope;
-
-			friend struct Method;
-			friend struct StringifyContext;
 
 		public:
 			const uint16_t modifiers;
 			const MethodDescriptor& descriptor;
 			const Attributes& attributes;
-			pos_t pos = 0;
 			index_t index = 0, exprStartIndex = 0;
 			map<uint32_t, index_t> exprIndexTable;
 
@@ -89,16 +90,7 @@ namespace jdecompiler {
 				delete &stack;
 			}
 
-		protected:
-			template<typename Arg, typename... Args>
-			inline void print(ostream& out, Arg arg, Args... args) const {
-				if constexpr(sizeof...(Args) != 0)
-					print(out << arg, args...);
-				else
-					out << arg << endl;
-			}
 
-		public:
 			template<typename... Args>
 			inline void warning(Args... args) const {
 				print(cerr << descriptor.toString() << ':' << pos << ": warning: ", args...);

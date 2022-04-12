@@ -17,48 +17,65 @@ namespace jdecompiler {
 
 
 	struct Attributes: vector<const Attribute*> {
-		template<class T>
-		const T* get() const {
-			for(const Attribute* attribute : *this) {
-				if(instanceof<const T*>(attribute)) {
-					return static_cast<const T*>(attribute);
+		public:
+			template<class T>
+			const T* get() const {
+				//log(this->size());
+				for(const Attribute* attribute : *this) {
+					if(instanceof<const T*>(attribute)) {
+						return static_cast<const T*>(attribute);
+					}
+				}
+
+				return nullptr;
+			}
+
+			template<class T>
+			const T* getExact() const {
+				const T* t = get<T>();
+				if(t != nullptr)
+					return t;
+
+				throw AttributeNotFoundException(typeNameOf<T>());
+			}
+
+			template<class T>
+			inline bool has() const {
+				return get<T>() != nullptr;
+			}
+
+			static inline const Attribute* readAttribute(BinaryInputStream& instream, const ConstantPool& constPool, const string& name, const uint32_t length);
+
+			Attributes(BinaryInputStream& instream, const ConstantPool& constPool, uint16_t attributeCount) {
+				//log(attributeCount);
+				this->reserve(attributeCount);
+
+				for(uint16_t i = 0; i < attributeCount; i++) {
+					const uint16_t addr = instream.readUShort();
+					//log(constPool.size, addr);
+					const string& name = constPool.getUtf8Constant(addr);
+					//log(name);
+					const uint32_t length = instream.readUInt();
+					const streampos pos = instream.getPos() + (streampos)length;
+
+					const Attribute* attribute = readAttribute(instream, constPool, name, length);
+
+					instream.setPosTo(pos);
+
+					this->push_back(attribute);
 				}
 			}
 
-			return nullptr;
-		}
+			Attributes(const Attributes&) = delete;
 
-		template<class T>
-		const T* getExact() const {
-			const T* t = get<T>();
-			if(t != nullptr)
-				return t;
+		private:
+			Attributes(nullptr_t) noexcept {}
 
-			throw AttributeNotFoundException(typeNameOf<T>());
-		}
-
-		template<class T>
-		inline bool has() const {
-			return get<T>() != nullptr;
-		}
-
-		static inline const Attribute* readAttribute(BinaryInputStream& instream, const ConstantPool& constPool, const string& name, const uint32_t length);
-
-		Attributes(BinaryInputStream& instream, const ConstantPool& constPool, uint16_t attributeCount) {
-			this->reserve(attributeCount);
-
-			for(uint16_t i = 0; i < attributeCount; i++) {
-				const string& name = constPool.getUtf8Constant(instream.readUShort());
-				const uint32_t length = instream.readUInt();
-				const streampos pos = instream.getPos() + (streampos)length;
-
-				const Attribute* attribute = readAttribute(instream, constPool, name, length);
-
-				instream.setPosTo(pos);
-
-				this->push_back(attribute);
+		public:
+			static const Attributes& getEmptyInstance() {
+				static Attributes EMPTY_INSTANCE(nullptr);
+				return EMPTY_INSTANCE;
 			}
-		}
 	};
 
 
@@ -376,13 +393,15 @@ namespace jdecompiler {
 	};
 
 
-	/*struct SignatureAttribute: Attribute {
+	struct SignatureAttribute: Attribute {
 		const ClassSignature* classSignature;
 
-		SignatureAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool): Attribute("Signature", length), classSignature(new ClassSignature(constPool.get<Utf8Constant>(instream.readUShort()))) {
+		SignatureAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+				Attribute("Signature", length), classSignature(new ClassSignature(constPool.get<Utf8Constant>(instream.readUShort()))) {
+
 			if(length != 2) throw IllegalAttributeException("Length of Signature attribute must be 2");
 		}
-	};*/
+	};
 
 
 	struct BootstrapMethod {

@@ -513,58 +513,66 @@ namespace jdecompiler {
 
 
 		struct InvokeInstruction: InstructionWithIndex {
-			InvokeInstruction(uint16_t index): InstructionWithIndex(index) {}
+			const MethodDescriptor& descriptor;
+
+			InvokeInstruction(uint16_t index, const ConstantPool& constPool):
+					InstructionWithIndex(index), descriptor(*new MethodDescriptor(constPool.get<MethodrefConstant>(index))) {}
 		};
 
 
 		struct InvokevirtualInstruction: InvokeInstruction {
-			InvokevirtualInstruction(uint16_t index): InvokeInstruction(index) {}
+			InvokevirtualInstruction(uint16_t index, const ConstantPool& constPool): InvokeInstruction(index, constPool) {}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override {
-				return new InvokevirtualOperation(context, index);
+				return new InvokevirtualOperation(context, descriptor);
 			}
 		};
 
 
 		struct InvokespecialInstruction: InvokeInstruction {
-			InvokespecialInstruction(uint16_t index): InvokeInstruction(index) {}
+			InvokespecialInstruction(uint16_t index, const ConstantPool& constPool): InvokeInstruction(index, constPool) {}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override {
-				return new InvokespecialOperation(context, index);
+				return new InvokespecialOperation(context, descriptor);
 			}
 		};
 
 
 		struct InvokestaticInstruction: InvokeInstruction {
-			InvokestaticInstruction(uint16_t index): InvokeInstruction(index) {}
+			InvokestaticInstruction(uint16_t index, const ConstantPool& constPool): InvokeInstruction(index, constPool) {}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override {
-				return new InvokestaticOperation(context, index);
+				return new InvokestaticOperation(context, descriptor);
 			}
 		};
 
 
 		struct InvokeinterfaceInstruction: InvokeInstruction {
-			InvokeinterfaceInstruction(uint16_t index, uint16_t count, uint16_t zeroByte, const DisassemblerContext& context): InvokeInstruction(index) {
+			InvokeinterfaceInstruction(uint16_t index, uint16_t count, uint8_t zeroByte, const DisassemblerContext& context):
+					InvokeInstruction(index, context.constPool) {
+
 				if(count == 0)
-					cerr << "warning: illegal format of instruction invokeinterface at pos " << hexWithPrefix(context.getPos()) <<
-							": by specification, count must not be zero" << endl;
+					context.warning("illegal format of instruction invokeinterface at pos " + hexWithPrefix(context.getPos()) +
+							": by specification, count must not be zero");
+
 				if(zeroByte != 0)
-					cerr << "warning: illegal format of instruction invokeinterface at pos " << hexWithPrefix(context.getPos()) <<
-							": by specification, fourth byte must be zero" << endl;
+					context.warning("illegal format of instruction invokeinterface at pos " + hexWithPrefix(context.getPos()) +
+							": by specification, fourth byte must be zero");
 			}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override {
-				return new InvokeinterfaceOperation(context, index);
+				return new InvokeinterfaceOperation(context, descriptor);
 			}
 		};
 
 
-		struct InvokedynamicInstruction: InvokeInstruction {
-			InvokedynamicInstruction(uint16_t index, uint16_t zeroShort, const DisassemblerContext& context): InvokeInstruction(index) {
+		struct InvokedynamicInstruction: InstructionWithIndex {
+			InvokedynamicInstruction(uint16_t index, uint16_t zeroShort, const DisassemblerContext& context):
+					InstructionWithIndex(index) {
+
 				if(zeroShort != 0)
-					cerr << "warning: illegal format of instruction invokedynamic at pos " << hexWithPrefix(context.getPos()) <<
-							": by specification, third and fourth bytes must be zero" << endl;
+					context.warning("illegal format of instruction invokedynamic at pos " + hexWithPrefix(context.getPos()) +
+							": by specification, third and fourth bytes must be zero");
 			}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override {
@@ -623,13 +631,11 @@ namespace jdecompiler {
 						context.stack.push(new InvokestaticOperation(context,
 								*new MethodDescriptor(STRING_CONCAT_FACTORY, "publicLookup", CALL_SITE, {})));
 
-						StringConstant* nameArgument = new StringConstant(invokeDynamicConstant->nameAndType->nameRef);
-						nameArgument->init(context.constPool);
-						context.stack.push(new StringConstOperation(nameArgument));
+						context.stack.push(new StringConstOperation(
+								new StringConstant(invokeDynamicConstant->nameAndType->nameRef, context.constPool))); // name argument
 
-						MethodTypeConstant* typeArgument = new MethodTypeConstant(invokeDynamicConstant->nameAndType->descriptorRef);
-						typeArgument->init(context.constPool);
-						context.stack.push(new MethodTypeConstOperation(typeArgument));
+						context.stack.push(new MethodTypeConstOperation(
+								new MethodTypeConstant(invokeDynamicConstant->nameAndType->descriptorRef, context.constPool))); // type argument
 
 						// push static arguments on stack
 						for(uint32_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
@@ -640,12 +646,12 @@ namespace jdecompiler {
 							context.stack.push(operation);
 
 						switch(bootstrapMethod->methodHandle->referenceKind) {
-							case RefKind::INVOKEVIRTUAL: return new InvokevirtualOperation(context, index);
-							case RefKind::INVOKESTATIC: return new InvokestaticOperation(context, index);
-							case RefKind::INVOKESPECIAL: return new InvokespecialOperation(context, index);
+							case RefKind::INVOKEVIRTUAL: return new InvokevirtualOperation(context, descriptor);
+							case RefKind::INVOKESTATIC:  return new InvokestaticOperation(context, descriptor);
+							case RefKind::INVOKESPECIAL: return new InvokespecialOperation(context, descriptor);
 							case RefKind::NEWINVOKESPECIAL: return new InvokespecialOperation(context,
-										new NewOperation(context, bootstrapMethod->methodHandle->referenceConstant->clazz), index);
-							case RefKind::INVOKEINTERFACE: return new InvokeinterfaceOperation(context, index);
+										new NewOperation(context, bootstrapMethod->methodHandle->referenceConstant->clazz), descriptor);
+							case RefKind::INVOKEINTERFACE: return new InvokeinterfaceOperation(context, descriptor);
 							default: throw IllegalStateException((string)"Illegal referenceConstant kind " +
 									to_string((unsigned int)bootstrapMethod->methodHandle->referenceKind));
 						}

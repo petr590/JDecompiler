@@ -1,16 +1,17 @@
 #ifndef JDECOMPILER_DISASSEMBLER_CONTEXT_CPP
 #define JDECOMPILER_DISASSEMBLER_CONTEXT_CPP
 
+#include "context.cpp"
+
 namespace jdecompiler {
 
-	struct DisassemblerContext {
+	struct DisassemblerContext: Context {
 		public:
 			const ConstantPool& constPool;
 			const uint32_t length;
 			const uint8_t* const bytes;
 
-			pos_t pos = 0;
-			index_t index = 0, exprStartIndex = 0;
+			index_t index = 0;
 
 		private:
 			vector<Instruction*> instructions;
@@ -20,36 +21,18 @@ namespace jdecompiler {
 			map<index_t, pos_t> posMap;
 
 		public:
-			inline const Block* getCurrentBlock() const {
-				return currentBlock;
-			}
-
-			DisassemblerContext(const ConstantPool& constPool, uint32_t length, const uint8_t* bytes): constPool(constPool), length(length), bytes(bytes) {
+			DisassemblerContext(const ConstantPool& constPool, uint32_t length, const uint8_t bytes[]): constPool(constPool), length(length), bytes(bytes) {
 				if(length == 0)
 					return;
 
-				int32_t stackContent = 0, exprIndex = 0;
-
-				vector<index_t> exprStartIndexTable;
+				int32_t stackContent = 0;
 
 				while(available()) {
 					indexMap[pos] = index;
 					posMap[index] = pos;
 					index++;
 
-					auto [takeFromStack, putOnStack, instruction] = nextInstruction();
-
-					stackContent -= takeFromStack;
-					assert(stackContent >= 0);
-					stackContent += putOnStack;
-					assert(stackContent >= 0);
-
-					exprStartIndexTable.push_back(exprStartIndex);
-
-					if(stackContent == 0)
-						exprStartIndex = index;
-
-					instructions.push_back(instruction);
+					instructions.push_back(nextInstruction());
 
 					next();
 				}
@@ -63,7 +46,6 @@ namespace jdecompiler {
 
 				for(const Instruction* instruction = instructions[0]; index < lastIndex; instruction = instructions[++index]) {
 					pos = posMap[index];
-					exprStartIndex = exprStartIndexTable[index];
 
 					if(instruction != nullptr) {
 
@@ -76,12 +58,9 @@ namespace jdecompiler {
 				}
 			}
 
+
 			inline const vector<Instruction*>& getInstructions() const {
 				return instructions;
-			}
-
-			inline const vector<const Block*>& getBlocks() const {
-				return blocks;
 			}
 
 			const Instruction* getInstruction(index_t index) const {
@@ -94,6 +73,15 @@ namespace jdecompiler {
 				if(index >= instructions.size())
 					return nullptr;
 				return instructions[index];
+			}
+
+
+			inline const vector<const Block*>& getBlocks() const {
+				return blocks;
+			}
+
+			inline const Block* getCurrentBlock() const {
+				return currentBlock;
 			}
 
 			inline void addBlock(const Block* block) const {
@@ -166,7 +154,7 @@ namespace jdecompiler {
 				return length - pos > 0;
 			}
 
-			tuple<int32_t, int32_t, Instruction*> nextInstruction();
+			Instruction* nextInstruction();
 
 		public:
 			inline pos_t getPos() const {
@@ -195,6 +183,12 @@ namespace jdecompiler {
 					return foundIndex->second;
 
 				throw BytecodeIndexOutOfBoundsException(index, length);
+			}
+
+
+			template<typename... Args>
+			inline void warning(Args... args) const {
+				print(cerr << "Disassembler warning: ", args...);
 			}
 	};
 }

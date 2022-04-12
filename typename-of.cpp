@@ -3,7 +3,7 @@
 
 #undef inline
 #include <regex>
-#define inline FORCE_INLINE
+#define inline INLINE
 
 namespace jdecompiler {
 	using std::regex;

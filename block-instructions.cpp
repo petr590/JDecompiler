@@ -140,6 +140,10 @@ namespace jdecompiler {
 
 		struct IfACmpInstruction: IfCmpInstruction {
 			IfACmpInstruction(offset_t offset, const EqualsCompareType& compareType): IfCmpInstruction(offset, compareType) {}
+
+			virtual const Block* createBlock(const DisassemblerContext& context) const override {
+				return new IfACmpBlock(context, offset, (const EqualsCompareType&)compareType);
+			}
 		};
 
 
@@ -187,7 +191,7 @@ namespace jdecompiler {
 					const IfBlock* ifBlock = static_cast<const IfBlock*>(currentBlock);
 
 					// Here goto instruction creates else Block
-					if(offset > 0 && !ifBlock->isLoop() && context.getIndex() == ifBlock->end() /* check if goto instruction in the end of ifBlock */) {
+					if(offset > 0 && context.getIndex() == ifBlock->end() /* check if goto instruction in the end of ifBlock */) {
 						const Block* parentBlock = ifBlock->parentBlock;
 
 						/* I don't remember why there is index minus 1 instead of index,
@@ -212,23 +216,7 @@ namespace jdecompiler {
 				}
 
 				if(offset < 0) {
-					// Here goto creates operator continue
-					const Block* block = currentBlock;
-
-					do {
-						if(instanceof<const IfBlock*>(block)) {
-							const IfBlock* ifBlock = static_cast<const IfBlock*>(block);
-
-							log(index, ifBlock->conditionStartIndex);
-
-							if(index == ifBlock->conditionStartIndex) {
-								ifBlock->makeItLoop(context);
-								return nullptr;
-								//return new ContinueOperation(context, ifBlock); // TODO
-							}
-						}
-						block = block->parentBlock;
-					} while(block != nullptr);
+					return new InfiniteLoopBlock(context, index);
 				}
 
 				if(offset > 0 && index >= currentBlock->start() && index - 1 <= currentBlock->end()) { // goto in the borders of current Block
@@ -240,20 +228,7 @@ namespace jdecompiler {
 						to_string(context.getPos()) + " to " + to_string(context.getPos() + offset));
 			}
 
-			/*virtual const Operation* toOperation(const DecompilationContext& context) const override {
-				if(offset < 0) {
-					const IfScope ifScope = dynamic_cast<const IfScope*>(context.getCurrentScope());
-					while(ifScope != nullptr) {
-						//log(index, ifScope->start());
-						if(index == ifScope->start()) {
-							ifScope->makeItLoop(context);
-							return nullptr;
-							//return new ContinueOperation(context, ifScope); // TODO
-						}
-						ifScope = dynamic_cast<const IfScope*>(ifScope->parentScope);
-					}
-				}
-			}*/
+			/*virtual const Operation* toOperation(const DecompilationContext& context) const override {}*/
 		};
 	}
 }

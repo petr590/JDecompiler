@@ -3,9 +3,10 @@
 
 #undef inline
 #include <cassert>
-#define inline FORCE_INLINE
+#define inline INLINE
 #include "const-pool.cpp"
-#include "jdecompiler.cpp"
+#include "jdecompiler-instance.cpp"
+#include "classinfo.cpp"
 
 namespace jdecompiler {
 
@@ -50,30 +51,99 @@ namespace jdecompiler {
 				return !isBasic();
 			}
 
+		private:
 			template<class T>
-			inline const T* castTo(const T* t) const {
-				if(const T* castedType = this->castToNoexcept(t))
+			static constexpr void checkType() {
+				static_assert(is_base_of<Type, T>::value, "template class T must be subclass of class Type");
+			}
+
+
+			template<bool isNoexcept>
+			const Type* getNullType(const Type* type) const {
+				if constexpr(isNoexcept)
+					return nullptr;
+				else
+					throw DecompilationException("incopatible types: " + this->toString() + " and " + type->toString());
+			}
+
+
+			template<bool isNoexcept>
+			const Type* cast0(const Type* type) const {
+				const Type* castedType;
+
+				if((castedType = this->castImpl(type)) != nullptr)
 					return castedType;
+
+				if(this->canReverseCast(type) && (castedType = type->reversedCastImpl(this)) != nullptr)
+					return castedType;
+
+				return getNullType<isNoexcept>(type);
+			}
+
+			template<bool isNoexcept>
+			const Type* castToNarrowest0(const Type* type) const {
+				const Type* castedType;
+
+				if((castedType = this->castToNarrowestImpl(type)) != nullptr)
+					return castedType;
+
+				return getNullType<isNoexcept>(type);
+			}
+
+		public:
+			template<class T>
+			inline const T* castTo(const T* type) const {
+				checkType<T>();
+				return safe_cast<const T*>(cast0<false>(type));
+			}
+
+			template<class T>
+			inline const T* castNoexcept(const T* type) const {
+				checkType<T>();
+				return safe_cast<const T*>(cast0<true>(type));
+			}
+
+
+			template<class T>
+			inline const T* castToNarrowest(const T* type) const {
+				checkType<T>();
+				return safe_cast<const T*>(castToNarrowest0<false>(type));
+			}
+
+			template<class T>
+			inline const T* castToNarrowestNoexcept(const T* type) const {
+				checkType<T>();
+				return safe_cast<const T*>(castToNarrowest0<true>(type));
+			}
+
+
+			template<class T>
+			const T* twoWayCastTo(const T* t) const {
+				checkType<T>();
+
+				const Type* castedType;
+
+				if((castedType = this->castImpl(t)) != nullptr)
+					return safe_cast<const T*>(castedType);
+
+				if((castedType = ((const Type*)t)->castImpl(this)) != nullptr)
+					return safe_cast<const T*>(castedType);
+
+				if((castedType = this->reversedCastImpl(t)) != nullptr)
+					return safe_cast<const T*>(castedType);
+
+				if((castedType = ((const Type*)t)->reversedCastImpl(this)) != nullptr)
+					return safe_cast<const T*>(castedType);
+
 				throw DecompilationException("incopatible types: " + this->toString() + " and " + t->toString());
 			}
 
-			template<class T>
-			const T* castToNoexcept(const T* t) const {
-				static_assert(is_base_of<Type, T>::value, "template class T of function Type::castTo is not subclass of class Type");
-
-				const Type* castedType = this->castToImpl(t);
-
-				if((castedType = this->castToImpl(t)) != nullptr)
-					return safe_cast<const T*>(castedType);
-
-				if(this->canReverseCast(t) && (castedType = ((const Type*)t)->castToImpl(this)) != nullptr)
-					return safe_cast<const T*>(castedType);
-
-				return nullptr;
+			bool isSubtypeOf(const Type* type) const {
+				return this->isSubtypeOfImpl(type) || (this->canReverseCast(type) && type->isSubtypeOfImpl(this));
 			}
 
-			bool isInstanceof(const Type* type) const {
-			    return this->isInstanceofImpl(type) || (this->canReverseCast(type) && type->isInstanceofImpl(this));
+			bool isStrictSubtypeOf(const Type* type) const {
+				return this->isStrictSubtypeOfImpl(type) || (this->canReverseCast(type) && type->isStrictSubtypeOfImpl(this));
 			}
 
 		protected:
@@ -81,13 +151,26 @@ namespace jdecompiler {
 				return true;
 			}
 
-			virtual bool isInstanceofImpl(const Type* type) const = 0;
+			virtual bool isSubtypeOfImpl(const Type* type) const = 0;
 
-			virtual const Type* castToImpl(const Type* type) const = 0;
+			virtual bool isStrictSubtypeOfImpl(const Type* type) const {
+				return isSubtypeOfImpl(type);
+			}
+
+
+			virtual const Type* castImpl(const Type* type) const = 0;
+
+			virtual const Type* castToNarrowestImpl(const Type* type) const {
+				return castImpl(type);
+			}
+
+			virtual const Type* reversedCastImpl(const Type* type) const {
+				return castImpl(type);
+			}
 
 		public:
-			bool operator== (const Type& type) const {
-				return this == &type || (typeid(*this) == typeid(type) && this->getEncodedName() == type.getEncodedName());
+			inline friend bool operator== (const Type& type1, const Type& type2) {
+				return &type1 == &type2 || (typeid(type1) == typeid(type2) && type1.getEncodedName() == type2.getEncodedName());
 			}
 
 			inline friend bool operator!= (const Type& type1, const Type& type2) {
@@ -119,7 +202,7 @@ namespace jdecompiler {
 
 	struct SpecialType: Type {
 		protected:
-			constexpr SpecialType() {}
+			constexpr SpecialType() noexcept {}
 
 		public:
 			virtual bool isBasic() const override final {
@@ -160,12 +243,20 @@ namespace jdecompiler {
 				return other->isSpecial();
 			}
 
-			virtual bool isInstanceofImpl(const Type* other) const override {
+			virtual bool isSubtypeOfImpl(const Type* other) const override {
 				return this == other;
 			}
 
-			virtual const Type* castToImpl(const Type* other) const override {
-				return this->isInstanceofImpl(other) ? this : nullptr;
+			virtual bool isStrictSubtypeOfImpl(const Type* other) const override {
+				return this == other;
+			}
+
+			virtual const Type* castToNarrowestImpl(const Type* other) const override {
+				return this->isSubtypeOfImpl(other) ? this : nullptr;
+			}
+
+			virtual const Type* castImpl(const Type* other) const override {
+				return this->isSubtypeOfImpl(other) ? other : nullptr;
 			}
 	};
 
@@ -186,8 +277,8 @@ namespace jdecompiler {
 			}
 
 		protected:
-			virtual const Type* castToImpl(const Type* other) const override {
-				return this->isInstanceofImpl(other) ? this : nullptr;
+			virtual const Type* castImpl(const Type* other) const override {
+				return this->isSubtypeOfImpl(other) ? this : nullptr;
 			}
 	};
 
@@ -268,7 +359,7 @@ namespace jdecompiler {
 			}
 
 		protected:
-			virtual bool isInstanceofImpl(const Type* other) const override {
+			virtual bool isSubtypeOfImpl(const Type* other) const override {
 				return instanceof<const ClassType*>(other);
 			}
 	};
@@ -343,32 +434,32 @@ namespace jdecompiler {
 			}
 
 		protected:
-			virtual bool isInstanceofImpl(const Type* other) const override {
+			virtual bool isSubtypeOfImpl(const Type* other) const override {
 				if(*other == *OBJECT) {
 					return true;
 				}
 
 				const ArrayType* arrayType = dynamic_cast<const ArrayType*>(other);
 
-				return arrayType != nullptr && (this->nestingLevel == arrayType->nestingLevel && this->memberType->isInstanceof(arrayType->memberType)
-						|| this->elementType->isInstanceof(arrayType->elementType));
+				return arrayType != nullptr && (this->nestingLevel == arrayType->nestingLevel && this->memberType->isSubtypeOf(arrayType->memberType)
+						|| this->elementType->isSubtypeOf(arrayType->elementType));
 			}
 	};
 
 
 	struct ParameterType final: ReferenceType {
-	    public:
-		    ParameterType(const char* encodedName) {
-			    string name;
-			    uint32_t i = 0;
-			    for(char c = encodedName[0]; isLetterOrDigit(c); c = encodedName[++i])
-				    name += c;
-			    this->encodedName = this->name = name;
-		    }
+		public:
+			ParameterType(const char* encodedName) {
+				string name;
+				uint32_t i = 0;
+				for(char c = encodedName[0]; isLetterOrDigit(c); c = encodedName[++i])
+					name += c;
+				this->encodedName = this->name = name;
+			}
 
-		    virtual string toString() const override {
-			    return "ParameterType {" + name + '}';
-		    }
+			virtual string toString() const override {
+				return "ParameterType {" + name + '}';
+			}
 
 			virtual string toString(const ClassInfo& classinfo) const override final {
 				return name;
@@ -379,7 +470,7 @@ namespace jdecompiler {
 			}
 
 		protected:
-			virtual bool isInstanceofImpl(const Type* other) const override {
+			virtual bool isSubtypeOfImpl(const Type* other) const override {
 				return *this == *other;
 			}
 	};
@@ -434,9 +525,9 @@ namespace jdecompiler {
 
 
 	template<>
-	bool PrimitiveType<TypeSize::FOUR_BYTES>::isInstanceofImpl(const Type* other) const {
+	bool PrimitiveType<TypeSize::FOUR_BYTES>::isSubtypeOfImpl(const Type* other) const {
 		return this == other || (other == INT && (this == BYTE || this == CHAR || this == SHORT)) || // allow cast byte, char and short to int
-				                ((other == SHORT || other == CHAR) && this == BYTE); // allow cast byte to char and short
+						(other == SHORT && this == BYTE); // allow casting byte to short; casting byte to char is not allowed
 	}
 
 
@@ -495,13 +586,32 @@ namespace jdecompiler {
 				return size;
 			}
 
-			virtual bool isInstanceofImpl(const Type* other) const override {
+			virtual bool isSubtypeOfImpl(const Type* other) const override {
+				if(isStrictSubtypeOfImpl(other))
+					return true;
+
+				if(other->isBasic())
+					for(const BasicType* type : types)
+						if(type->isSubtypeOf(other))
+							return true;
+
+				/*if(instanceof<const AmbigousType*>(other)) {
+					for(const Type* type1 : types)
+						for(const Type* type2 : static_cast<const AmbigousType*>(other)->types)
+							if(*type1 == *type2)
+								return true;
+				}*/
+
+				return false;
+			}
+
+			virtual bool isStrictSubtypeOfImpl(const Type* other) const override {
 				if(*this == *other)
 					return true;
 
 				if(other->isBasic())
 					for(const BasicType* type : types)
-						if(type->isInstanceof(other))
+						if(type == other)
 							return true;
 
 				if(instanceof<const AmbigousType*>(other)) {
@@ -515,25 +625,45 @@ namespace jdecompiler {
 			}
 
 		protected:
-			virtual const Type* castToImpl(const Type* other) const override {
+			template<bool direct>
+			const Type* castImpl0(const Type* other) const {
+
 				if(*this == *other)
 					return this;
 
-				if(other->isBasic())
-					for(const BasicType* type : types)
-						if(const Type* castedType = type->castToNoexcept(other))
-							return castedType;
+				if(other->isBasic()) {
+					vector<const BasicType*> newTypes;
+					for(const BasicType* type : types) {
+						const BasicType* castedType = safe_cast<const BasicType*>(
+								direct ? type->castToNarrowestNoexcept(other) : other->castToNarrowestNoexcept(type));
+						if(castedType != nullptr && find(newTypes.begin(), newTypes.end(), castedType) == newTypes.end()) {
+							newTypes.push_back(castedType);
+						}
+					}
+					return newTypes.empty() ? nullptr : newTypes.size() == 1 ? newTypes[0] : (const Type*)new AmbigousType(newTypes);
+				}
 
 				if(instanceof<const AmbigousType*>(other)) {
 					vector<const BasicType*> newTypes;
-					for(const BasicType* type1 : types)
-						for(const BasicType* type2 : static_cast<const AmbigousType*>(other)->types)
-							if(*type1 == *type2)
-								newTypes.push_back(type1);
+					for(const BasicType* type1 : types) {
+						for(const BasicType* type2 : static_cast<const AmbigousType*>(other)->types) {
+							const BasicType* newType = dynamic_cast<const BasicType*>(direct ? type1->castNoexcept(type2) : type2->castNoexcept(type1));
+							if(newType != nullptr && find(newTypes.begin(), newTypes.end(), newType) == newTypes.end())
+								newTypes.push_back(newType);
+						}
+					}
 					return newTypes.empty() ? nullptr : new AmbigousType(newTypes);
 				}
 
 				return nullptr;
+			}
+
+			virtual const Type* castImpl(const Type* other) const override {
+				return castImpl0<true>(other);
+			}
+
+			virtual const Type* reversedCastImpl(const Type* other) const override {
+				return castImpl0<false>(other);
 			}
 	};
 
@@ -571,12 +701,12 @@ namespace jdecompiler {
 				return TypeSize::FOUR_BYTES; // ???
 			}
 
-			virtual bool isInstanceofImpl(const Type* other) const override {
+			virtual bool isSubtypeOfImpl(const Type* other) const override {
 				return true;
 			}
 
 		protected:
-			virtual const Type* castToImpl(const Type* other) const override {
+			virtual const Type* castImpl(const Type* other) const override {
 				return other;
 			}
 
@@ -626,13 +756,13 @@ namespace jdecompiler {
 				return TypeSize::FOUR_BYTES;
 			}
 
-			virtual bool isInstanceofImpl(const Type* other) const override {
+			virtual bool isSubtypeOfImpl(const Type* other) const override {
 				return this == other || (other->isBasic() && !other->isPrimitive());
 			}
 
 		protected:
-			virtual const Type* castToImpl(const Type* other) const override {
-				return this->isInstanceofImpl(other) ? other : nullptr;
+			virtual const Type* castImpl(const Type* other) const override {
+				return this->isSubtypeOfImpl(other) ? other : nullptr;
 			}
 
 		public:
@@ -651,7 +781,8 @@ namespace jdecompiler {
 	static const AmbigousType
 			*const ANY_INT_OR_BOOLEAN(new AmbigousType({BOOLEAN, INT, SHORT, CHAR, BYTE})),
 			*const ANY_INT(new AmbigousType({INT, SHORT, CHAR, BYTE})),
-			*const BYTE_OR_BOOLEAN(new AmbigousType({BOOLEAN, BYTE}));
+			*const BYTE_OR_BOOLEAN(new AmbigousType({BOOLEAN, BYTE})),
+			*const INT_OR_BOOLEAN(new AmbigousType({BOOLEAN, INT}));
 
 
 	struct ExcludingType final: SpecialType {
@@ -694,7 +825,7 @@ namespace jdecompiler {
 				return TypeSize::FOUR_BYTES;
 			}
 
-			virtual bool isInstanceofImpl(const Type* other) const override {
+			virtual bool isSubtypeOfImpl(const Type* other) const override {
 				if(*this == *other)
 					return true;
 
@@ -711,7 +842,7 @@ namespace jdecompiler {
 				if(instanceof<const AmbigousType*>(other)) {
 					for(const BasicType* t1 : this->types) {
 						for(const Type* t2 : static_cast<const AmbigousType*>(other)->types) {
-							if(!t2->isInstanceof(t1)) {
+							if(!t2->isSubtypeOf(t1)) {
 								return true;
 							}
 						}
@@ -722,7 +853,7 @@ namespace jdecompiler {
 			}
 
 		protected:
-			virtual const Type* castToImpl(const Type* other) const override {
+			virtual const Type* castImpl(const Type* other) const override {
 				if(*this == *other)
 					return this;
 

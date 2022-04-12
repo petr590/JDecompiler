@@ -8,12 +8,13 @@
 #include <sstream>
 #include <math.h>
 #include <algorithm>
-#define inline FORCE_INLINE
+#define inline INLINE
 
 #include "jdecompiler-fwd.h"
 #include "typename-of.cpp"
 #include "index-types.cpp"
 #include "exceptions.cpp"
+#include "util/binary-input-stream.cpp"
 
 #define log(...) logFunc("[ jdecompiler/" __FILE__ " ]:", __VA_ARGS__)
 #define logf(pattern, ...) printf("[ jdecompiler/" __FILE__ " ]: " pattern, __VA_ARGS__)
@@ -171,10 +172,6 @@ namespace jdecompiler {
 	}
 
 	struct IllegalLiteralException: Exception {
-		virtual const char* getName() const override {
-			return "IllegalLiteralException";
-		}
-
 		IllegalLiteralException(): Exception() {}
 		IllegalLiteralException(const char* message): Exception(message) {}
 		IllegalLiteralException(const string& message): Exception(message) {}
@@ -217,116 +214,6 @@ namespace jdecompiler {
 		if(c < 0x80000000) return { (char)((c >> 30 & 0x1) | 0xFC), (char)((c >> 24 & 0x3F) | 0x80), (char)((c >> 18 & 0x3F) | 0x80), (char)((c >> 12 & 0x3F) | 0x80), (char)((c >> 6 & 0x3F) | 0x80), (char)((c & 0x3F) | 0x80) }; // 1111110x 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx
 		throw Exception("Invalid code point U+" + hex(c));
 	}
-
-
-
-	class BinaryInputStream {
-		public:
-			static const uint32_t BUFFER_SIZE = 4096;
-
-			const string path;
-
-		private:
-			ifstream infile;
-			char buffer[BUFFER_SIZE];
-			streampos end;
-			streampos pos = 0, max = 0;
-
-			void check() {
-				if(pos >= max) {
-					max = min(infile.tellg() + (streampos)BUFFER_SIZE, end);
-					infile.read(buffer, max % BUFFER_SIZE + BUFFER_SIZE);
-				}
-				if(pos >= end)
-					throw EOFException();
-			}
-
-			uint8_t next() {
-				check();
-				pos += 1;
-				return (uint8_t)buffer[(pos - (streampos)1) & (BUFFER_SIZE - 1)];
-			}
-
-		public:
-			BinaryInputStream(const string& path): path(path), infile(path, ios::binary | ios::in) {
-				if(!infile.good())
-					throw IOException("Cannnot open the file '" + path + '\'');
-				infile.seekg(0, ios::end);
-				end = infile.tellg();
-				infile.seekg(0, ios::beg);
-			}
-
-			inline const streampos& getPos() const {
-				return pos;
-			}
-
-			inline void setPosTo(const streampos& pos) {
-				this->pos = pos;
-			}
-
-			inline int8_t readByte() {
-				return (int8_t)next();
-			}
-
-			inline uint8_t readUByte() {
-				return (uint8_t)next();
-			}
-
-			inline int16_t readShort() {
-				return (int16_t)readUShort();
-			}
-
-			inline uint16_t readUShort() {
-				return (uint16_t)(next() << 8 | next());
-			}
-
-			inline int32_t readInt() {
-				return (int32_t)readUInt();
-			}
-
-			inline uint32_t readUInt() {
-				return (uint32_t)(next() << 24 | next() << 16 | next() << 8 | next());
-			}
-
-			inline int64_t readLong() {
-				return (int64_t)readULong();
-			}
-
-			inline uint64_t readULong() {
-				return (uint64_t)next() << 56 | (uint64_t)next() << 48 | (uint64_t)next() << 40 | (uint64_t)next() << 32 |
-						(uint64_t)next() << 24 | (uint64_t)next() << 16 | (uint64_t)next() << 8 | (uint64_t)next();
-			}
-
-			float readFloat() {
-				static_assert(sizeof(float) == sizeof(uint32_t));
-				float f;
-				uint32_t bytes = readUInt();
-				memcpy(&f, &bytes, sizeof(float));
-				return f;
-			}
-
-			double readDouble() {
-				static_assert(sizeof(double) == sizeof(uint64_t));
-				double d;
-				uint64_t bytes = readULong();
-				memcpy(&d, &bytes, sizeof(double));
-				return d;
-			}
-
-			const uint8_t* readBytes(uint32_t size) {
-				uint8_t* bytes = new uint8_t[size + 1];
-				for(uint32_t i = 0; i < size; i++)
-					bytes[i] = next();
-				bytes[size] = '\0';
-
-				return bytes;
-			}
-
-			inline const char* readString(uint32_t size) {
-				return (const char*)readBytes(size);
-			}
-		#undef BUFFER_SIZE
-	};
 
 
 	class FormatString {

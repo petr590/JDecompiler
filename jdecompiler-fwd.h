@@ -1,16 +1,16 @@
 #ifndef JDECOMPILER_H
 #define JDECOMPILER_H
 
-#define LOG(...) cout << "[ jdecompiler/" __FILE__ " ]: " << __VA_ARGS__ << endl
-
 #ifdef NO_INLINE
-#	define FORCE_INLINE
-#elif !defined(NO_FORCE_INLINE)
+#	define INLINE
+#elif defined(FORCE_INLINE)
 #	ifdef __GNUC__ // For gcc
-#		define FORCE_INLINE inline __attribute__((always_inline))
+#		define INLINE inline __attribute__((always_inline))
+#	else
+#		define INLINE inline
 #	endif
 #else
-#	define FORCE_INLINE inline
+#	define INLINE inline
 #endif
 
 #ifdef NO_STATIC_ASSERT
@@ -23,8 +23,10 @@
 #include <map>
 #include <set>
 #include <tuple>
+#include <iostream>
+#include "util/binary-input-stream.cpp"
 
-#define inline FORCE_INLINE
+#define inline INLINE
 
 namespace jdecompiler {
 
@@ -49,11 +51,7 @@ namespace jdecompiler {
 
 	using std::function;
 
-	using std::ios;
-	using std::ifstream;
-	using std::ostream;
 	using std::ostringstream;
-	using std::streampos;
 
 	using std::to_string;
 	using std::memcpy;
@@ -66,6 +64,8 @@ namespace jdecompiler {
 	using std::is_pointer;
 
 	using std::initializer_list;
+
+	using namespace util;
 
 
 	static const uint32_t CLASS_SIGNATURE = 0xCAFEBABE;
@@ -93,11 +93,6 @@ namespace jdecompiler {
 
 
 	// jdecompiler-util
-
-	struct Exception;
-
-	struct BinaryInputStream;
-
 
 	struct FormatString;
 
@@ -275,7 +270,6 @@ namespace jdecompiler {
 		struct PopOperation;
 
 		struct OperatorOperation;
-		struct BinaryOperatorOperation;
 		template<char32_t operation, Priority priority> struct BinaryOperatorOperationImpl;
 		template<char32_t operation, Priority priority> struct UnaryOperatorOperation;
 

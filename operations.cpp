@@ -246,11 +246,16 @@ namespace jdecompiler {
 				static inline const Type* getTypeByValue(int32_t value) {
 					static const AmbigousType
 							CHAR_OR_SHORT_OR_INT({CHAR, SHORT, INT}),
+							CHAR_OR_INT({CHAR, INT}),
 							SHORT_OR_INT({SHORT, INT});
 
 					if((bool)value == value)     return ANY_INT_OR_BOOLEAN;
 					if((int8_t)value == value)   return ANY_INT;
-					if((char16_t)value == value) return &CHAR_OR_SHORT_OR_INT;
+					if((char16_t)value == value) {
+						if((int16_t)value == value)
+							return &CHAR_OR_SHORT_OR_INT;
+						return &CHAR_OR_INT;
+					}
 					if((int16_t)value == value)  return &SHORT_OR_INT;
 					return INT;
 				}
@@ -265,12 +270,16 @@ namespace jdecompiler {
 				}
 
 				virtual string toString(const StringifyContext& context) const override {
-					if(returnType->isInstanceof(BOOLEAN)) return primitiveToString((bool)value);
-					if(returnType->isInstanceof(BYTE))    return primitiveToString((int8_t)value);
-					if(returnType->isInstanceof(CHAR))    return primitiveToString((char16_t)value);
-					if(returnType->isInstanceof(SHORT))   return primitiveToString((int16_t)value);
-					if(returnType->isInstanceof(INT))     return primitiveToString(value);
+					if(returnType->isStrictSubtypeOf(INT))     return primitiveToString(value);
+					if(returnType->isStrictSubtypeOf(SHORT))   return primitiveToString((int16_t)value);
+					if(returnType->isStrictSubtypeOf(CHAR))    return primitiveToString((char16_t)value);
+					if(returnType->isStrictSubtypeOf(BYTE))    return primitiveToString((int8_t)value);
+					if(returnType->isStrictSubtypeOf(BOOLEAN)) return primitiveToString((bool)value);
 					throw IllegalStateException("Illegal type of iconst operation: " + returnType->toString());
+				}
+
+				virtual void onCastReturnType(const Type* newType) const override {
+					returnType = newType;
 				}
 		};
 
@@ -335,21 +344,22 @@ namespace jdecompiler {
 		using MethodHandleConstOperation = LdcOperation<TypeSize::FOUR_BYTES, MethodHandleConstant, BuiltinTypes::MethodHandle>;
 
 
-		struct LoadOperation: ReturnableOperation<> {
+		struct LoadOperation: Operation {
 			public:
 				const uint16_t index;
 				const Variable& variable;
 
-			protected:
-				LoadOperation(const Type* requiredType, uint16_t index, const Variable& variable):
-						ReturnableOperation(variable.getType()->castTo(requiredType)), index(index), variable(variable) {}
-
-			public:
 				LoadOperation(const Type* requiredType, const DecompilationContext& context, uint16_t index):
-						LoadOperation(requiredType, index, context.getCurrentScope()->getVariable(index, true)) {}
+						index(index), variable(context.getCurrentScope()->getVariable(index, true)) {
+					variable.castTypeTo(requiredType);
+				}
 
 				virtual string toString(const StringifyContext& context) const override {
 					return context.getCurrentScope()->getNameFor(variable);
+				}
+
+				virtual const Type* getReturnType() const override {
+					return variable.getType();
 				}
 
 				virtual void onCastReturnType(const Type* newType) const override {
@@ -432,9 +442,9 @@ namespace jdecompiler {
 				const char* const stringOperator;
 
 			private:
-				const Priority priority;
-
 				const char* const oppositeOperator;
+
+				const Priority priority;
 
 				static const char* oppositeOperatorOf(char32_t charOperator) {
 					switch(charOperator) {
@@ -448,8 +458,8 @@ namespace jdecompiler {
 
 			public:
 				OperatorOperation(char32_t charOperator, Priority priority, const Type* type):
-						ReturnableOperation(type), stringOperator(char32ToString(charOperator)), oppositeOperator(oppositeOperatorOf(charOperator)),
-						priority(priority) {}
+						ReturnableOperation(type), stringOperator(char32ToString(charOperator)),
+						oppositeOperator(oppositeOperatorOf(charOperator)), priority(priority) {}
 
 				virtual Priority getPriority() const override {
 					return priority;
@@ -473,9 +483,9 @@ namespace jdecompiler {
 				BinaryOperatorOperation(char32_t charOperator, Priority priority, const Type* type, const DecompilationContext& context):
 						OperatorOperation(charOperator, priority, type), operand2(context.stack.pop()),
 							operand1(context.stack.pop()) {
-					const Type* requiredType = operand1->getReturnType()->castTo(operand2->getReturnType())->castTo(type);
-					operand1->castReturnTypeTo(requiredType);
-					operand2->castReturnTypeTo(requiredType);
+					const Type* requiredType = operand1->getReturnType()->twoWayCastTo(operand2->getReturnType())->castTo(type);
+					operand1->twoWayCastReturnTypeTo(requiredType);
+					operand2->twoWayCastReturnTypeTo(requiredType);
 				}
 
 			virtual string toString(const StringifyContext& context) const override {
@@ -575,7 +585,7 @@ namespace jdecompiler {
 
 					initReturnType<Dup1Operation, Dup2Operation>(context, value);
 					value->castReturnTypeTo(requiredType);
-					variable.linkWith(value);
+					variable.bindTo(value);
 
 					if(!variable.isDeclared() && returnType == VOID) {
 						variable.setDeclared(true);
@@ -874,7 +884,6 @@ namespace jdecompiler {
 				}
 
 				inline string instanceFieldToString(const StringifyContext& context, const Operation* object) const {
-					assert(&context != nullptr);
 					return !(context.modifiers & ACC_STATIC) && instanceof<const ALoadOperation*>(object) &&
 							static_cast<const ALoadOperation*>(object)->index == 0 && !context.getCurrentScope()->hasVariable(descriptor.name) ?
 								descriptor.name : object->toString(context) + '.' + descriptor.name;
@@ -903,7 +912,6 @@ namespace jdecompiler {
 				GetStaticFieldOperation(const DecompilationContext& context, uint16_t index): GetFieldOperation(context, index) {}
 
 				virtual string toString(const StringifyContext& context) const override {
-					assert(&context != nullptr);
 					return staticFieldToString(context);
 				}
 		};
@@ -1017,9 +1025,6 @@ namespace jdecompiler {
 				InvokeOperation(const DecompilationContext& context, const MethodDescriptor& descriptor):
 						descriptor(descriptor), arguments(popArguments(context)) {}
 
-				InvokeOperation(const DecompilationContext& context, const MethodrefConstant* methodref):
-						InvokeOperation(context, *new MethodDescriptor(methodref)) {}
-
 				InvokeOperation(const DecompilationContext& context, uint16_t index):
 						InvokeOperation(context, context.constPool.get<MethodrefConstant>(index)) {}
 
@@ -1038,11 +1043,8 @@ namespace jdecompiler {
 				InvokeNonStaticOperation(const DecompilationContext& context, const MethodDescriptor& descriptor):
 						InvokeOperation(context, descriptor), object(context.stack.popAs(&descriptor.clazz)) {}
 
-				InvokeNonStaticOperation(const DecompilationContext& context, uint16_t index):
-						InvokeOperation(context, index), object(context.stack.popAs(&descriptor.clazz)) {}
-
-				InvokeNonStaticOperation(const DecompilationContext& context, const Operation* object, uint16_t index):
-						InvokeOperation(context, index), object(object) {
+				InvokeNonStaticOperation(const DecompilationContext& context, const Operation* object, const MethodDescriptor& descriptor):
+						InvokeOperation(context, descriptor), object(object) {
 					object->castReturnTypeTo(&descriptor.clazz);
 				}
 
@@ -1060,7 +1062,8 @@ namespace jdecompiler {
 
 
 		struct InvokevirtualOperation: InvokeNonStaticOperation {
-			InvokevirtualOperation(const DecompilationContext& context, uint16_t index): InvokeNonStaticOperation(context, index) {}
+			InvokevirtualOperation(const DecompilationContext& context, const MethodDescriptor& descriptor):
+					InvokeNonStaticOperation(context, descriptor) {}
 		};
 
 
@@ -1087,12 +1090,12 @@ namespace jdecompiler {
 				}
 
 			public:
-				InvokespecialOperation(const DecompilationContext& context, uint16_t index):
-						InvokeNonStaticOperation(context, index),
+				InvokespecialOperation(const DecompilationContext& context, const MethodDescriptor& descriptor):
+						InvokeNonStaticOperation(context, descriptor),
 						isConstructor(getIsConstructor()), isSuperConstructor(getIsSuperConstructor(context)), returnType(getReturnType(context)) {}
 
-				InvokespecialOperation(const DecompilationContext& context, const Operation* object, uint16_t index):
-						InvokeNonStaticOperation(context, object, index),
+				InvokespecialOperation(const DecompilationContext& context, const Operation* object, const MethodDescriptor& descriptor):
+						InvokeNonStaticOperation(context, object, descriptor),
 						isConstructor(getIsConstructor()), isSuperConstructor(getIsSuperConstructor(context)), returnType(getReturnType(context)) {}
 
 				virtual string toString(const StringifyContext& context) const override {
@@ -1133,9 +1136,8 @@ namespace jdecompiler {
 
 		struct InvokestaticOperation: InvokeOperation {
 			public:
-				InvokestaticOperation(const DecompilationContext& context, uint16_t index): InvokeOperation(context, index) {}
-
-				InvokestaticOperation(const DecompilationContext& context, const MethodDescriptor& descriptor): InvokeOperation(context, descriptor) {}
+				InvokestaticOperation(const DecompilationContext& context, const MethodDescriptor& descriptor):
+						InvokeOperation(context, descriptor) {}
 
 				virtual string toString(const StringifyContext& context) const override {
 					return staticMethodToString(context) + '(' +
@@ -1151,8 +1153,8 @@ namespace jdecompiler {
 
 
 		struct InvokeinterfaceOperation: InvokeNonStaticOperation {
-			InvokeinterfaceOperation(const DecompilationContext& context, uint16_t index):
-					InvokeNonStaticOperation(context, index) {}
+			InvokeinterfaceOperation(const DecompilationContext& context, const MethodDescriptor& descriptor):
+					InvokeNonStaticOperation(context, descriptor) {}
 		};
 
 

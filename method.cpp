@@ -79,6 +79,9 @@ namespace jdecompiler {
 			MethodDescriptor(const ReferenceType& clazz, const string& name, const Type* returnType, const initializer_list<const Type*> arguments):
 					MethodDescriptor(clazz, name, returnType, vector<const Type*>(arguments)) {}
 
+			MethodDescriptor(const ReferenceType& clazz, const string& name, const Type* returnType):
+					MethodDescriptor(clazz, name, returnType, vector<const Type*>()) {}
+
 			MethodDescriptor(const ReferenceType& clazz, const string& name, const Type* returnType, const vector<const Type*>& arguments):
 					clazz(clazz), name(name), returnType(returnType), arguments(arguments), type(typeForName(name)) {}
 
@@ -267,6 +270,7 @@ namespace jdecompiler {
 			const MethodDescriptor& descriptor;
 			const Attributes& attributes;
 
+		#if 1
 			MethodDataHolder(const ConstantPool& constPool, BinaryInputStream& instream, const ClassType& thisType):
 					modifiers(instream.readUShort()), descriptor(
 						*new MethodDescriptor(thisType, constPool.getUtf8Constant(instream.readUShort()), constPool.getUtf8Constant(instream.readUShort()))),
@@ -278,6 +282,31 @@ namespace jdecompiler {
 			const Method* createMethod(const ClassInfo& classinfo) const {
 				return new Method(modifiers, descriptor, attributes, classinfo);
 			}
+
+		#else // Когда я включаю эту чать блока, появляется странный баг при декомпиляции enum-ов
+
+		private:
+			function<const Method*(const ClassInfo&)> defaultMethodCreator() {
+				return [this] (const ClassInfo& classinfo) {
+					return new Method(modifiers, descriptor, attributes, classinfo);
+				};
+			}
+
+		public:
+			const function<const Method*(const ClassInfo&)> createMethod;
+
+			MethodDataHolder(const ConstantPool& constPool, BinaryInputStream& instream, const ClassType& thisType):
+					modifiers(instream.readUShort()), descriptor(
+						*new MethodDescriptor(thisType, constPool.getUtf8Constant(instream.readUShort()), constPool.getUtf8Constant(instream.readUShort()))),
+					attributes(*new Attributes(instream, constPool, instream.readUShort())), createMethod(defaultMethodCreator()) {}
+
+			MethodDataHolder(uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes,
+					const function<const Method*(const ClassInfo&)>& methodCreator):
+					modifiers(modifiers), descriptor(descriptor), attributes(attributes), createMethod(methodCreator) {}
+
+			MethodDataHolder(uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes):
+					MethodDataHolder(modifiers, descriptor, attributes, defaultMethodCreator()) {}
+		#endif
 	};
 }
 

@@ -1,9 +1,9 @@
-#ifndef JDECOMPILER_JDECOMPILER_CPP
-#define JDECOMPILER_JDECOMPILER_CPP
+#ifndef JDECOMPILER_JDECOMPILER_INSTANCE_CPP
+#define JDECOMPILER_JDECOMPILER_INSTANCE_CPP
 
 #undef inline
 #include <filesystem>
-#define inline FORCE_INLINE
+#define inline INLINE
 #include "util.cpp"
 
 namespace jdecompiler {
@@ -17,6 +17,7 @@ namespace jdecompiler {
 			const string progName;
 
 			const vector<BinaryInputStream*> files;
+			const bool atLeastOneFileSpecified;
 
 			const uint16_t indentWidth = 4;
 			const char* const indent = "    ";
@@ -30,10 +31,12 @@ namespace jdecompiler {
 
 			mutable map<string, const Class*> classes;
 
-			JDecompiler(const string progName, const vector<BinaryInputStream*>& files, uint16_t indentWidth, const char* indent,
+			JDecompiler(const string progName, const vector<BinaryInputStream*>& files, bool atLeastOneFileSpecified, uint16_t indentWidth, const char* indent,
 					bool failOnError, bool useRawConstants, UseHex useHexNumbers, map<string, const Class*>& classes):
-					progName(progName), files(files), indentWidth(indentWidth), indent(indent),
+					progName(progName), files(files), atLeastOneFileSpecified(atLeastOneFileSpecified), indentWidth(indentWidth), indent(indent),
 					failOnError(failOnError), useRawConstants(useRawConstants), useHexNumbers(useHexNumbers), classes(classes) {}
+
+
 
 		public:
 			static const JDecompiler& getInstance() {
@@ -78,6 +81,8 @@ namespace jdecompiler {
 				}
 
 				bool isIndentWidthSpecified = false;
+
+				bool atLeastOneFileSpecified = false;
 
 				for(int i = 1; i < argc; i++) {
 					const string arg = args[i];
@@ -159,6 +164,7 @@ namespace jdecompiler {
 								"Use " << progName << " --help for more information");
 						}
 					} else {
+						atLeastOneFileSpecified = true;
 						try {
 							files.push_back(new BinaryInputStream(arg));
 						} catch(const IOException& ex) {
@@ -170,7 +176,7 @@ namespace jdecompiler {
 				#undef requireValue
 				#undef printErrorAndExit
 
-				instance = new JDecompiler(progName, files, indentWidth, indent, failOnError, useRawConstants, useHexNumbers, classes);
+				instance = new JDecompiler(progName, files, atLeastOneFileSpecified, indentWidth, indent, failOnError, useRawConstants, useHexNumbers, classes);
 
 				return true;
 			}
@@ -228,95 +234,6 @@ namespace jdecompiler {
 	};
 
 	const JDecompiler* JDecompiler::instance = nullptr;
-
-
-	struct Stringified {
-		public:
-			virtual string toString(const ClassInfo& classinfo) const = 0;
-
-			virtual ~Stringified() {}
-	};
-
-
-	struct ClassElement: Stringified {
-		public:
-			virtual bool canStringify(const ClassInfo& classinfo) const = 0;
-	};
-
-
-	struct ClassInfo {
-		public:
-			const Class& clazz;
-
-			const ClassType& thisType, & superType;
-			const ConstantPool& constPool;
-			const Attributes& attributes;
-			const uint16_t modifiers;
-
-			ClassInfo(const Class& clazz, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool,
-					const Attributes& attributes, uint16_t modifiers):
-					clazz(clazz), thisType(thisType), superType(superType), constPool(constPool), attributes(attributes),
-					modifiers(modifiers) {}
-
-		private:
-			mutable set<const ClassType*> imports;
-
-			mutable uint16_t indentWidth = 0;
-			mutable const char* indent = new char[1] {'\0'};
-
-		public:
-			bool addImport(const ClassType* clazz) const;
-
-			string importsToString() const;
-
-			/*inline void setFormatting(uint16_t indentWidth, const char* indent, const set<const ClassType*>& imports) const {
-				this->indentWidth = indentWidth;
-				this->indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth);
-				this->imports = imports;
-			}*/
-
-			inline void copyFormattingFrom(const ClassInfo& other) const {
-				indentWidth = other.indentWidth;
-				indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth);
-				imports = other.imports;
-			}
-
-			inline void resetFormatting() const {
-				indentWidth = 0;
-				indent = new char[1] {'\0'};
-				imports.clear();
-			}
-
-		public:
-			inline const char* getIndent() const {
-				return indent;
-			}
-
-			void increaseIndent() const {
-				delete[] indent;
-				indent = repeatString(JDecompiler::getInstance().getIndent(), ++indentWidth);
-			}
-
-			void increaseIndent(uint16_t count) const {
-				delete[] indent;
-				indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth += count);
-			}
-
-			void reduceIndent() const {
-				delete[] indent;
-				indent = repeatString(JDecompiler::getInstance().getIndent(), --indentWidth);
-			}
-
-			void reduceIndent(uint16_t count) const {
-				delete[] indent;
-				indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth -= count);
-			}
-
-
-			ClassInfo(const ClassInfo&) = delete;
-
-			ClassInfo& operator=(const ClassInfo&) = delete;
-	};
 }
 
 #endif

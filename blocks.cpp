@@ -48,18 +48,6 @@ namespace jdecompiler {
 
 
 		struct IfBlock: Block {
-			enum IfType { IF, TERNARY, WHILE, FOR };
-
-			static string to_string(const IfType type) {
-				switch(type) {
-					case IF:      return "if";
-					case TERNARY: return "ternary operator";
-					case WHILE:   return "while";
-					case FOR:     return "for";
-					default:      return "(ScopeType)" + std::to_string((uint32_t)type);
-				}
-			}
-
 
 			struct ElseBlock: Block {
 				const IfBlock* const ifBlock;
@@ -75,74 +63,31 @@ namespace jdecompiler {
 			};
 
 
-			const index_t conditionStartIndex;
-
-
-			mutable IfType type = IF;
-
 			mutable const ElseBlock* elseBlock = nullptr;
 
 			const Operation* ternaryTrueOperation = nullptr;
 
 
 			IfBlock(const DisassemblerContext& context, offset_t offset):
-					Block(context.index, context.posToIndex(context.getPos() + offset) - 1, context), conditionStartIndex(context.exprStartIndex) {}
+					Block(context.index, context.posToIndex(context.getPos() + offset) - 1, context) {}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override final {
 				const ConditionOperation* const condition = getCondition(context)->invert();
-				switch(type) {
-					case IF:
-						if(elseBlock != nullptr && /*code.empty() && !elseScope->code.empty() &&*/ !context.stack.empty()) {
-							const Operation* trueCase = context.stack.pop();
-							const Operation* falseCase = context.stack.pop();
-							return new TernaryOperatorOperation(condition, trueCase, falseCase);
-						}
-
-						return elseBlock != nullptr ? new IfScope(context, endIndex, condition, elseBlock->endIndex) :
-								new IfScope(context, endIndex, condition);
-
-					case WHILE: return new WhileScope(context, startIndex, endIndex, condition);
-					case FOR:   return new ForScope(context, startIndex, endIndex, condition);
-
-					default:
-						throw IllegalStateException("Illegal type of IfBlock " + to_string(type));
-				}
+				return elseBlock != nullptr ? new IfScope(context, endIndex, condition, elseBlock->endIndex) :
+						new IfScope(context, endIndex, condition);
 			}
 
 			virtual const ConditionOperation* getCondition(const DecompilationContext& context) const = 0;
-
-			inline bool isLoop() const {
-				return type == WHILE || type == FOR;
-			}
-
-			inline bool isFor() const {
-				return type == FOR;
-			}
-
-			inline bool isTernary() const {
-				return type == TERNARY;
-			}
 
 
 			void addElseBlock(const DisassemblerContext& context, index_t endIndex) const {
 				if(elseBlock != nullptr)
 					throw IllegalStateException("Else block already added");
 
-				if(type != IF)
-					throw IllegalStateException("Cannot add else block to " + to_string(type));
-
 				//this->endIndex = endIndex;
 
 				elseBlock = new ElseBlock(this, context, endIndex);
 				context.addBlock(elseBlock);
-			}
-
-			void makeItLoop(const DisassemblerContext& context) const {
-				if(type == IF && !isLoop())
-				/*const Operation* inital = startIndex == 0 ? nullptr : context.getCurrentScope()->code[startIndex - 1];
-					throw IllegalStateException("Cannot make loop from " + to_string(type));
-				logf("startIndex = %d", startIndex);*/
-				type = WHILE;
 			}
 		};
 
@@ -195,12 +140,23 @@ namespace jdecompiler {
 			}
 		};
 
+
 		struct EmptyInfiniteLoopBlock: Block {
 			EmptyInfiniteLoopBlock(const DisassemblerContext& context):
 					Block(context.getIndex(), context.getIndex(), context) {}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override {
 				return new EmptyInfiniteLoopScope(context);
+			}
+		};
+
+		struct InfiniteLoopBlock: Block {
+			InfiniteLoopBlock(const DisassemblerContext& context, index_t index):
+					Block(index, context.getIndex(), context) {}
+
+
+			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				return new InfiniteLoopScope(context, startIndex, endIndex);
 			}
 		};
 	}

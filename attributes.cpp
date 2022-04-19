@@ -101,8 +101,8 @@ namespace jdecompiler {
 			return value->toString(classinfo);
 		}*/
 
-		const Operation* getInitializer() const {
-			return value->toOperation();
+		const Operation* getInitializer(const FieldInfo& fieldinfo) const {
+			return value->toOperation(&fieldinfo);
 		}
 	};
 
@@ -393,7 +393,7 @@ namespace jdecompiler {
 	};
 
 
-	struct SignatureAttribute: Attribute {
+	/*struct SignatureAttribute: Attribute {
 		const ClassSignature* classSignature;
 
 		SignatureAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
@@ -401,7 +401,7 @@ namespace jdecompiler {
 
 			if(length != 2) throw IllegalAttributeException("Length of Signature attribute must be 2");
 		}
-	};
+	};*/
 
 
 	struct BootstrapMethod {

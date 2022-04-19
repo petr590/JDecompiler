@@ -9,17 +9,34 @@ namespace jdecompiler {
 		const string name;
 		const Type& type;
 
-		inline FieldDescriptor(const string& name, const Type& type): name(name), type(type) {}
+		FieldDescriptor(const string& name, const Type& type): name(name), type(type) {}
 
-		inline FieldDescriptor(const string& name, const Type* type): FieldDescriptor(name, *type) {}
+		FieldDescriptor(const string& name, const Type* type): FieldDescriptor(name, *type) {}
 
-		inline FieldDescriptor(const string& name, const string& descriptor): FieldDescriptor(name, parseType(descriptor)) {}
+		FieldDescriptor(const string& name, const string& descriptor): FieldDescriptor(name, parseType(descriptor)) {}
 
 		FieldDescriptor(const NameAndTypeConstant* nameAndType): FieldDescriptor(*nameAndType->name, *nameAndType->descriptor) {}
 
 		string toString() const {
 			return type.getName() + ' ' + name;
 		}
+
+		inline friend bool operator== (const FieldDescriptor& descriptor1, const FieldDescriptor& descriptor2) {
+			return &descriptor1 == &descriptor2 || (descriptor1.name == descriptor2.name && descriptor1.type == descriptor2.type);
+		}
+
+		inline friend bool operator!= (const FieldDescriptor& descriptor1, const FieldDescriptor& descriptor2) {
+			return !(descriptor1 == descriptor2);
+		}
+	};
+
+
+	struct FieldInfo {
+		const ClassType& clazz;
+		const FieldDescriptor& descriptor;
+
+		FieldInfo(const ClassType& clazz, const FieldDescriptor& descriptor):
+				clazz(clazz), descriptor(descriptor) {}
 	};
 
 
@@ -38,7 +55,7 @@ namespace jdecompiler {
 		public:
 			Field(uint16_t modifiers, const FieldDescriptor& descriptor, const Attributes& attributes, const ClassInfo& classinfo): modifiers(modifiers),
 					descriptor(descriptor), attributes(attributes), constantValueAttribute(attributes.get<ConstantValueAttribute>()),
-					initializer(constantValueAttribute == nullptr ? nullptr : constantValueAttribute->getInitializer()),
+					initializer(constantValueAttribute == nullptr ? nullptr : constantValueAttribute->getInitializer({classinfo.thisType, descriptor})),
 					context(initializer == nullptr ? nullptr : classinfo.getFieldStringifyContext()) {
 				if(initializer != nullptr)
 					initializer->castReturnTypeTo(&descriptor.type);
@@ -56,7 +73,8 @@ namespace jdecompiler {
 					str += annotationsAttribute->toString(classinfo);
 
 				return str + classinfo.getIndent() + (string)(modifiersToString(modifiers) + descriptor.type.toString(classinfo)) + ' ' + descriptor.name +
-						(initializer != nullptr ? " = " + initializer->toString(*context) : EMPTY_STRING);
+						(initializer != nullptr ? " = " + (JDecompiler::getInstance().canUseShortArrayInitializing() ?
+						initializer->toArrayInitString(*context) : initializer->toString(*context)) : EMPTY_STRING);
 			}
 
 			virtual bool canStringify(const ClassInfo& classinfo) const override {

@@ -87,6 +87,11 @@ namespace jdecompiler {
 		public:
 			static const Class* readClass(BinaryInputStream& instream);
 
+
+			inline const vector<const Field*>& getFields() const {
+				return fields;
+			}
+
 			const Field* getField(const string& name) const {
 				for(const Field* field : fields)
 					if(field->descriptor.name == name)
@@ -94,6 +99,10 @@ namespace jdecompiler {
 				return nullptr;
 			}
 
+
+			inline const vector<const Method*>& getMethods() const {
+				return methods;
+			}
 
 			/*const Method* getMethod(const MethodDescriptor& descriptor, bool isStatic) const {
 				for(const Method* method : methods)
@@ -232,6 +241,15 @@ namespace jdecompiler {
 	};
 
 
+	inline const vector<const Method*>& ClassInfo::getMethods() const {
+		return clazz.methods;
+	}
+
+	inline const vector<const Field*>& ClassInfo::getFields() const {
+		return clazz.fields;
+	}
+
+
 	struct EnumClass final: Class {
 		protected:
 			struct EnumField: Field {
@@ -262,6 +280,10 @@ namespace jdecompiler {
 				/*virtual bool canStringify(const ClassInfo& classinfo) const override {
 					return !factualArguments.empty() && MethodDescriptor::canStringify(classinfo);
 				}*/
+
+				virtual string toString(const StringifyContext& context) const override {
+					return MethodDescriptor::toString(context, 2);
+				}
 			};
 
 			vector<const EnumField*> enumFields;

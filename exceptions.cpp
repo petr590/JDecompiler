@@ -3,6 +3,7 @@
 
 #include "util/hex.cpp"
 #include "util/exception.cpp"
+#include "util/index-out-of-bounds-exception.cpp"
 
 namespace jdecompiler {
 
@@ -24,19 +25,6 @@ namespace jdecompiler {
 		DecompilationException(const string& message): Exception(message) {}
 	};
 
-
-	struct IndexOutOfBoundsException: DecompilationException {
-		public:
-			IndexOutOfBoundsException(const string& message): DecompilationException(message) {}
-
-			IndexOutOfBoundsException(abstract_index_t<uint32_t> index, uint32_t length):
-					DecompilationException("Index " + to_string(index) + " is out of bounds for length " + to_string(length)) {}
-
-		protected:
-			IndexOutOfBoundsException(abstract_index_t<uint32_t> index, uint32_t length, const string& name):
-					DecompilationException(name + " index " + to_string(index) + " is out of bounds for length " + to_string(length)) {}
-	};
-
 	struct BytecodeIndexOutOfBoundsException: IndexOutOfBoundsException {
 		BytecodeIndexOutOfBoundsException(abstract_index_t<uint32_t> index, uint32_t length): IndexOutOfBoundsException(index, length, "Bytecode") {}
 	};
@@ -44,10 +32,6 @@ namespace jdecompiler {
 	struct BytecodePosOutOfBoundsException: IndexOutOfBoundsException {
 		BytecodePosOutOfBoundsException(abstract_index_t<uint32_t> index, uint32_t length):
 				IndexOutOfBoundsException("Bytecode pos " + to_string(index) + " is out of bounds for length " + to_string(length)) {}
-	};
-
-	struct StackIndexOutOfBoundsException: IndexOutOfBoundsException {
-		StackIndexOutOfBoundsException(abstract_index_t<uint32_t> index, uint32_t length): IndexOutOfBoundsException(index, length, "Stack") {}
 	};
 
 	struct ConstantPoolIndexOutOfBoundsException: IndexOutOfBoundsException {
@@ -79,17 +63,6 @@ namespace jdecompiler {
 
 	struct IllegalMethodDescriptorException: DecompilationException {
 		IllegalMethodDescriptorException(const string& descriptor): DecompilationException(descriptor) {}
-	};
-
-
-	struct IllegalStackStateException: DecompilationException {
-		IllegalStackStateException() {}
-		IllegalStackStateException(const string& message): DecompilationException(message) {}
-	};
-
-	struct EmptyStackException: IllegalStackStateException {
-		EmptyStackException() {}
-		EmptyStackException(const string& message): IllegalStackStateException(message) {}
 	};
 
 

@@ -139,6 +139,17 @@ namespace jdecompiler {
 				inline void castOperandsTo(const Type* requiredType) {
 					operand1->castReturnTypeTo(requiredType);
 					operand2->castReturnTypeTo(requiredType);
+
+					const Type* generalType = operand1->getReturnType()->castNoexcept(operand2->getReturnType());
+					if(generalType == nullptr)
+						generalType = operand2->getReturnType()->castNoexcept(operand1->getReturnType());
+
+					if(generalType == nullptr)
+						throw DecompilationException("incopatible types for operator " + compareType.getOperator(false) +
+								": " + operand1->getReturnType()->toString() + " and " + operand2->getReturnType()->toString());
+
+					operand1->castReturnTypeTo(generalType);
+					operand2->castReturnTypeTo(generalType);
 				}
 
 			public:
@@ -167,7 +178,11 @@ namespace jdecompiler {
 			CompareWithZeroOperation(const Operation* operand, const CompareType& compareType): CompareOperation(compareType), operand(operand) {}
 
 			virtual string toString(const StringifyContext& context) const override {
-				return operand->getReturnType()->isSubtypeOf(BOOLEAN) && compareType.isEqualsCompareType ? // write `!bool` instead of `bool == false`
+				const Type* const operandType = operand->getReturnType();
+
+				return operandType->isSubtypeOf(BOOLEAN) && !operandType->isSubtypeOf(INT)
+						&& compareType.isEqualsCompareType ? // write `!bool` instead of `bool == false`
+
 						((const EqualsCompareType&)compareType).getUnaryOperator(inverted) +
 								toStringPriority(operand, context, Associativity::RIGHT) :
 						toStringPriority(operand, context, Associativity::LEFT) + ' ' + compareType.getOperator(inverted) + " 0";
@@ -265,8 +280,14 @@ namespace jdecompiler {
 					        instanceof<const IConstOperation*>(falseCase) && static_cast<const IConstOperation*>(falseCase)->value == 0) {}
 
 			virtual string toString(const StringifyContext& context) const override {
-				return isShort ? condition->toString(context) :
+				return isShort && trueCase->getReturnType()->isSubtypeOf(BOOLEAN) && falseCase->getReturnType()->isSubtypeOf(BOOLEAN) ?
+						condition->toString(context) :
 						condition->toString(context) + " ? " + trueCase->toString(context) + " : " + falseCase->toString(context);
+			}
+
+			virtual void onCastReturnType(const Type* newType) const override {
+				trueCase->castReturnTypeTo(newType);
+				falseCase->castReturnTypeTo(newType);
 			}
 
 			virtual Priority getPriority() const override {
@@ -290,6 +311,13 @@ namespace jdecompiler {
 
 
 		struct IfScope: ConditionScope {
+			protected:
+				inline void setCondition(const ConditionOperation* condition) const {
+					this->condition = condition;
+				}
+
+				friend struct instructions::IfBlock;
+
 			private:
 				struct ElseScope: Scope {
 					public:
@@ -345,19 +373,26 @@ namespace jdecompiler {
 
 				};
 
+			private:
+				mutable index_t bodyStartIndex;
+				friend struct instructions::IfBlock;
 
 				const ElseScope* const elseScope;
 				mutable bool isTernary = false;
 				mutable const Operation* ternaryTrueCase = nullptr;
 
+				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition,
+						const function<const ElseScope*()>& elseScopeGetter):
+						ConditionScope(context.exprStartIndex, endIndex, context, condition), bodyStartIndex(context.index + 1),
+						elseScope(elseScopeGetter()) {}
+
 			public:
 				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition):
-						ConditionScope(context.exprStartIndex, endIndex, context, condition), elseScope(nullptr) {
-				}
+						IfScope(context, endIndex, condition, [] () { return nullptr; }) {}
 
 				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition, index_t elseScopeEndIndex):
-						ConditionScope(context.exprStartIndex, endIndex, context, condition),
-						elseScope(new ElseScope(context, elseScopeEndIndex, this)) {
+						IfScope(context, endIndex, condition,
+							[&context, elseScopeEndIndex, this] () { return new ElseScope(context, elseScopeEndIndex, this); }) {
 					context.addScope(elseScope);
 				}
 

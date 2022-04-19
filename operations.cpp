@@ -215,10 +215,15 @@ namespace jdecompiler {
 				const T value;
 
 				static const Type* const TYPE;
-				static const ClassType& CLASS;
+				static const ClassType& WRAPPER_CLASS;
 
 			protected:
-				static const Operation* valueOf(T);
+				static const Operation* valueOf(T, const FieldInfo* fieldinfo = nullptr);
+
+				static bool canUseConstant(const FieldInfo* fieldinfo, const ClassType& clazz, const FieldDescriptor& descriptor) {
+					return fieldinfo == nullptr || fieldinfo->clazz != clazz || fieldinfo->descriptor != descriptor;
+				};
+
 				friend struct IConstOperation;
 				friend struct LConstOperation;
 
@@ -233,12 +238,12 @@ namespace jdecompiler {
 		};
 
 		template<typename T>
-		const Type* const ConstOperation<T>::TYPE = TypeByBuiltinType<T>::value;
+		const Type* const ConstOperation<T>::TYPE = typeByBuiltinType<T>();
 
-		template<> const ClassType& ConstOperation<int32_t>::CLASS = javase::java::lang::Integer;
-		template<> const ClassType& ConstOperation<int64_t>::CLASS = javase::java::lang::Long;
-		template<> const ClassType& ConstOperation<float>  ::CLASS = javase::java::lang::Float;
-		template<> const ClassType& ConstOperation<double> ::CLASS = javase::java::lang::Double;
+		template<> const ClassType& ConstOperation<int32_t>::WRAPPER_CLASS = javase::java::lang::Integer;
+		template<> const ClassType& ConstOperation<int64_t>::WRAPPER_CLASS = javase::java::lang::Long;
+		template<> const ClassType& ConstOperation<float>  ::WRAPPER_CLASS = javase::java::lang::Float;
+		template<> const ClassType& ConstOperation<double> ::WRAPPER_CLASS = javase::java::lang::Double;
 
 
 		struct IConstOperation: ConstOperation<int32_t> {
@@ -264,8 +269,8 @@ namespace jdecompiler {
 				IConstOperation(int32_t value): ConstOperation(getTypeByValue(value), value) {}
 
 			public:
-				static const Operation* valueOf(int32_t value) {
-					const Operation* result = ConstOperation<int32_t>::valueOf(value);
+				static const Operation* valueOf(int32_t value, const FieldInfo* fieldinfo = nullptr) {
+					const Operation* result = ConstOperation<int32_t>::valueOf(value, fieldinfo);
 					return result == nullptr ? new IConstOperation(value) : result;
 				}
 
@@ -289,12 +294,12 @@ namespace jdecompiler {
 				LConstOperation(int64_t value): ConstOperation(value) {}
 
 			public:
-				static const Operation* valueOf(int64_t);
+				static const Operation* valueOf(int64_t, const FieldInfo* fieldinfo = nullptr);
 		};
 
 
-		const Operation* LConstOperation::valueOf(int64_t value) {
-			const Operation* result = ConstOperation<int64_t>::valueOf(value);
+		const Operation* LConstOperation::valueOf(int64_t value, const FieldInfo* fieldinfo) {
+			const Operation* result = ConstOperation<int64_t>::valueOf(value, fieldinfo);
 			return result == nullptr ? new LConstOperation(value) : result;
 		}
 
@@ -305,7 +310,7 @@ namespace jdecompiler {
 			static_assert(is_floating_point<T>::value, "Only float or double allowed");
 
 			public:
-				static const Operation* valueOf(T value);
+				static const Operation* valueOf(T value, const FieldInfo* fieldinfo = nullptr);
 
 				FPConstOperation(T value): ConstOperation<T>(value) {}
 		};
@@ -323,7 +328,7 @@ namespace jdecompiler {
 				const uint16_t index;
 				const CT* const value;
 
-				LdcOperation(uint16_t index, const CT* value): ReturnableOperation(TypeByBuiltinType<RT>::value), index(index), value(value) {
+				LdcOperation(uint16_t index, const CT* value): ReturnableOperation(typeByBuiltinType<RT>()), index(index), value(value) {
 					if(returnType->getSize() != size)
 						throw TypeSizeMismatchException(TypeSize_nameOf(size), TypeSize_nameOf(returnType->getSize()), returnType->toString());
 				}
@@ -388,17 +393,23 @@ namespace jdecompiler {
 		};
 
 
-		struct ArrayLoadOperation: ReturnableOperation<> {
+		struct ArrayLoadOperation: Operation {
 			public:
 				const Operation *const index, *const array;
+				const Type* const returnType;
 
 			protected:
-				ArrayLoadOperation(const Type* returnType, const DecompilationContext& context):
-						ReturnableOperation(returnType), index(context.stack.popAs(INT)), array(getArray(context, returnType)) {}
+				ArrayLoadOperation(const Type* elementType, const DecompilationContext& context):
+						index(context.stack.popAs(INT)), array(context.stack.pop()),
+						returnType(array->getReturnTypeAs(new ArrayType(elementType))->elementType) {}
 
 			public:
 				virtual string toString(const StringifyContext& context) const override {
 					return array->toString(context) + '[' + index->toString(context) + ']';
+				}
+
+				virtual const Type* getReturnType() const override {
+					return returnType;
 				}
 		};
 
@@ -474,28 +485,39 @@ namespace jdecompiler {
 
 
 		struct BinaryOperatorOperation: OperatorOperation {
-			const Operation *const operand2, *const operand1;
+			public:
+				const Operation *const operand2, *const operand1;
 
-			BinaryOperatorOperation(char32_t charOperator, Priority priority, const Type* type1, const Type* type2, const DecompilationContext& context):
-						OperatorOperation(charOperator, priority, type1),
-						operand2(context.stack.popAs(type2)), operand1(context.stack.popAs(type1)) {}
-
-				BinaryOperatorOperation(char32_t charOperator, Priority priority, const Type* type, const DecompilationContext& context):
-						OperatorOperation(charOperator, priority, type), operand2(context.stack.pop()),
-							operand1(context.stack.pop()) {
+			private:
+				inline void castOperands(const Type* type) {
 					const Type* requiredType = operand1->getReturnType()->twoWayCastTo(operand2->getReturnType())->castTo(type);
 					operand1->twoWayCastReturnTypeTo(requiredType);
 					operand2->twoWayCastReturnTypeTo(requiredType);
 				}
 
-			virtual string toString(const StringifyContext& context) const override {
-				return toStringPriority(operand1, context, Associativity::LEFT) + ' ' + stringOperator + ' ' +
-						toStringPriority(operand2, context, Associativity::RIGHT);
-			}
+			public:
+				BinaryOperatorOperation(char32_t charOperator, Priority priority, const Type* type1, const Type* type2, const DecompilationContext& context):
+							OperatorOperation(charOperator, priority, type1),
+							operand2(context.stack.popAs(type2)), operand1(context.stack.popAs(type1)) {}
 
-			string toShortFormString(const StringifyContext& context, const Variable& variable) const {
-				return context.getCurrentScope()->getNameFor(variable) + ' ' + stringOperator + "= " + operand2->toString(context);
-			}
+				BinaryOperatorOperation(char32_t charOperator, Priority priority, const Type* type, const DecompilationContext& context):
+						OperatorOperation(charOperator, priority, type), operand2(context.stack.pop()), operand1(context.stack.pop()) {
+					castOperands(type);
+				}
+
+				BinaryOperatorOperation(char32_t charOperator, Priority priority, const Type* type, const Operation* operand1, const Operation* operand2):
+						OperatorOperation(charOperator, priority, type), operand2(operand2), operand1(operand1) {
+					castOperands(type);
+				}
+
+				virtual string toString(const StringifyContext& context) const override {
+					return toStringPriority(operand1, context, Associativity::LEFT) + ' ' + stringOperator + ' ' +
+							toStringPriority(operand2, context, Associativity::RIGHT);
+				}
+
+				string toShortFormString(const StringifyContext& context, const Variable& variable) const {
+					return context.getCurrentScope()->getNameFor(variable) + ' ' + stringOperator + "= " + operand2->toString(context);
+				}
 		};
 
 
@@ -508,6 +530,9 @@ namespace jdecompiler {
 
 			BinaryOperatorOperationImpl(const Type* type, const DecompilationContext& context):
 					BinaryOperatorOperation(charOperator, priority_parameter, type, context) {}
+
+			BinaryOperatorOperationImpl(const Type* type, const Operation* operand1, const Operation* operand2):
+					BinaryOperatorOperation(charOperator, priority_parameter, type, operand1, operand2) {}
 		};
 
 
@@ -598,7 +623,7 @@ namespace jdecompiler {
 								const AbstractConstOperation* constOperation = dynamic_cast<const AbstractConstOperation*>(binaryOperator->operand2);
 
 								if(returnType == VOID && constOperation != nullptr) { // post increment
-									int_fast32_t incValue = instanceof<const AddOperatorOperation*>(binaryOperator)  ?  1 :
+									int_fast32_t incValue = instanceof<const AddOperatorOperation*>(binaryOperator) ? 1 :
 												instanceof<const SubOperatorOperation*>(binaryOperator) ? -1 : 0;
 
 									if(incValue != 0) {
@@ -619,7 +644,7 @@ namespace jdecompiler {
 												postInc = incValue;
 											} else {
 												revokeIncrementOperation = constOperation;
-												context.warning("Cannot decompile bytecode exactly: it contains post-increment by a number, other than one");
+												context.warning("Cannot decompile bytecode exactly: it contains post-increment by a number, other than one or minus one");
 											}
 										}
 									}
@@ -631,13 +656,18 @@ namespace jdecompiler {
 
 				virtual string toString(const StringifyContext& context) const override {
 					return (canDeclare ? variable.getType()->toString(context.classinfo) + ' ' : EMPTY_STRING) +
+							// Increment
 							(shortFormOperator != nullptr ?
 								(postInc != 0 ? (context.getCurrentScope()->getNameFor(variable) + (postInc > 0 ? "++" : "--")) :
 								revokeIncrementOperation != nullptr ?
 								'(' + shortFormOperator->toShortFormString(context, variable) + ") " + // x++ is equivalent (x += 1) - 1
 										shortFormOperator->getOppositeOperator() + ' ' + revokeIncrementOperation->toString(context) :
 								shortFormOperator->toShortFormString(context, variable)) :
-							context.getCurrentScope()->getNameFor(variable) + " = " + value->toString(context));
+
+							context.getCurrentScope()->getNameFor(variable) + " = " +
+
+							// Short form array
+							(canDeclare && JDecompiler::getInstance().canUseShortArrayInitializing() ? value->toArrayInitString(context) : value->toString(context)));
 				}
 
 				virtual Priority getPriority() const override {
@@ -704,8 +734,20 @@ namespace jdecompiler {
 				const Operation* const value;
 				const Type* const type;
 
+			private:
+				static inline const Operation* getValue(const Operation* value, const Type* type) {
+					if((type == BYTE || type == SHORT || type == CHAR) && instanceof<const CastOperation<true>*>(value)) {
+						const CastOperation<true>* castValue = static_cast<const CastOperation<true>*>(value);
+						if(castValue->type == INT)
+						return castValue->value;
+					}
+
+					return value;
+				}
+
+			public:
 				CastOperation(const Operation* value, const Type* type):
-						value(value), type(type) {}
+						value(getValue(value, type)), type(type) {}
 
 				CastOperation(const DecompilationContext& context, const Type* requiredType, const Type* type):
 						CastOperation(context.stack.popAs(requiredType), type) {}
@@ -715,7 +757,7 @@ namespace jdecompiler {
 				}
 
 				virtual string toString(const StringifyContext& context) const override {
-					return required ? '(' + type->toString(context.classinfo) + ')' + toStringPriority(value, context, Associativity::LEFT) :
+					return required ? '(' + type->toString(context.classinfo) + ')' + toStringPriority(value, context, Associativity::RIGHT) :
 							value->toString(context);
 				}
 
@@ -896,8 +938,6 @@ namespace jdecompiler {
 				GetFieldOperation(const ClassType& clazz, const FieldDescriptor& descriptor):
 						FieldOperation(clazz, descriptor) {}
 
-				GetFieldOperation(const DecompilationContext& context, uint16_t index): FieldOperation(context, index) {}
-
 			public:
 				virtual const Type* getReturnType() const override {
 					return &descriptor.type;
@@ -909,9 +949,24 @@ namespace jdecompiler {
 				GetStaticFieldOperation(const ClassType& clazz, const FieldDescriptor& descriptor):
 						GetFieldOperation(clazz, descriptor) {}
 
-				GetStaticFieldOperation(const DecompilationContext& context, uint16_t index): GetFieldOperation(context, index) {}
+				GetStaticFieldOperation(const FieldrefConstant* fieldref):
+						GetStaticFieldOperation(fieldref->clazz, fieldref->nameAndType) {}
 
 				virtual string toString(const StringifyContext& context) const override {
+					static const FieldDescriptor TypeField("TYPE", CLASS);
+
+					if(descriptor == TypeField) {
+						if(clazz == javase::java::lang::Void) return "void.class";
+						if(clazz == javase::java::lang::Byte) return "byte.class";
+						if(clazz == javase::java::lang::Short) return "short.class";
+						if(clazz == javase::java::lang::Character) return "char.class";
+						if(clazz == javase::java::lang::Integer) return "int.class";
+						if(clazz == javase::java::lang::Long) return "long.class";
+						if(clazz == javase::java::lang::Float) return "float.class";
+						if(clazz == javase::java::lang::Double) return "double.class";
+						if(clazz == javase::java::lang::Boolean) return "boolean.class";
+					}
+
 					return staticFieldToString(context);
 				}
 		};
@@ -923,8 +978,8 @@ namespace jdecompiler {
 				GetInstanceFieldOperation(const DecompilationContext& context, const ClassType& clazz, const FieldDescriptor& descriptor):
 						GetFieldOperation(clazz, descriptor), object(context.stack.popAs(&clazz)) {}
 
-				GetInstanceFieldOperation(const DecompilationContext& context, uint16_t index):
-						GetFieldOperation(context, index), object(context.stack.popAs(&clazz)) {}
+				GetInstanceFieldOperation(const DecompilationContext& context, const FieldrefConstant* fieldref):
+						GetInstanceFieldOperation(context, fieldref->clazz, fieldref->nameAndType) {}
 
 				virtual string toString(const StringifyContext& context) const override {
 					return instanceFieldToString(context, object);
@@ -939,8 +994,8 @@ namespace jdecompiler {
 			protected:
 				const Type* returnType;
 
-				PutFieldOperation(const DecompilationContext& context, uint16_t index):
-						FieldOperation(context, index), value(context.stack.popAs(&descriptor.type)) {
+				PutFieldOperation(const DecompilationContext& context, const ClassType& clazz, const FieldDescriptor& descriptor):
+						FieldOperation(clazz, descriptor), value(context.stack.popAs(&descriptor.type)) {
 					if(const LoadOperation* loadOperation = dynamic_cast<const LoadOperation*>(value->getOriginalOperation()))
 						loadOperation->variable.addName(descriptor.name);
 				}
@@ -957,9 +1012,13 @@ namespace jdecompiler {
 
 		struct PutStaticFieldOperation: PutFieldOperation {
 			public:
-				PutStaticFieldOperation(const DecompilationContext& context, uint16_t index): PutFieldOperation(context, index) {
+				PutStaticFieldOperation(const DecompilationContext& context, const ClassType& clazz, const FieldDescriptor& descriptor):
+						PutFieldOperation(context, clazz, descriptor) {
 					returnType = getDupReturnType<Dup1Operation, Dup2Operation>(context, value);
 				}
+
+				PutStaticFieldOperation(const DecompilationContext& context, const MethodrefConstant* methodref):
+						PutStaticFieldOperation(context, methodref->clazz, methodref->nameAndType) {}
 
 				virtual string toString(const StringifyContext& context) const override {
 					return staticFieldToString(context) + " = " + value->toString(context);
@@ -970,10 +1029,13 @@ namespace jdecompiler {
 			public:
 				const Operation* const object;
 
-				PutInstanceFieldOperation(const DecompilationContext& context, uint16_t index):
-						PutFieldOperation(context, index), object(context.stack.popAs(&clazz)) {
+				PutInstanceFieldOperation(const DecompilationContext& context, const ClassType& clazz, const FieldDescriptor& decriptor):
+						PutFieldOperation(context, clazz, decriptor), object(context.stack.popAs(&clazz)) {
 					returnType = getDupReturnType<DupX1Operation, Dup2X1Operation>(context, value);
 				}
+
+				PutInstanceFieldOperation(const DecompilationContext& context, const MethodrefConstant* methodref):
+						PutInstanceFieldOperation(context, methodref->clazz, methodref->nameAndType) {}
 
 				virtual string toString(const StringifyContext& context) const override {
 					return instanceFieldToString(context, object) + " = " + value->toString(context);
@@ -1069,34 +1131,47 @@ namespace jdecompiler {
 
 		struct InvokespecialOperation: InvokeNonStaticOperation {
 			public:
-				const bool isConstructor, isSuperConstructor;
+				const bool isConstructor, isSuperConstructor, isEnumSuperConstructor;
 
 				const Type* const returnType;
 
 			private:
-				inline const Type* getReturnType(const DecompilationContext& context) {
-					return isConstructor && checkDup<Dup1Operation>(context, object) ?
-							object->getReturnType() : InvokeNonStaticOperation::getReturnType();
-				}
-
 				inline bool getIsConstructor() {
 					return descriptor.type == MethodDescriptor::MethodType::CONSTRUCTOR;
 				}
 
-				inline bool getIsSuperConstructor(const DecompilationContext& context) {
+				inline bool getIsSuperConstructor(const DecompilationContext& context) const {
 					return (!(context.modifiers & ACC_STATIC) && // check that we invoking this (or super) constructor
 							instanceof<const ALoadOperation*>(object) && static_cast<const ALoadOperation*>(object)->index == 0 &&
 							descriptor.clazz == context.classinfo.superType);
 				}
 
+				inline bool getIsEnumSuperConstructor(const DecompilationContext& context) const {
+					return isSuperConstructor && context.classinfo.modifiers & ACC_ENUM;
+				}
+
+				inline const Type* getReturnType(const DecompilationContext& context) const {
+					return isConstructor && checkDup<Dup1Operation>(context, object) ?
+							object->getReturnType() : InvokeNonStaticOperation::getReturnType();
+				}
+
+
+				inline void checkEnumSuperConstructor(const DecompilationContext& context) const {
+					if((isEnumSuperConstructor && arguments.size() != 2) || *descriptor.arguments[0] != *STRING || *descriptor.arguments[1] != *INT) {
+						context.warning("invocation of non-standart enum super constructor");
+					}
+				}
+
 			public:
 				InvokespecialOperation(const DecompilationContext& context, const MethodDescriptor& descriptor):
 						InvokeNonStaticOperation(context, descriptor),
-						isConstructor(getIsConstructor()), isSuperConstructor(getIsSuperConstructor(context)), returnType(getReturnType(context)) {}
+						isConstructor(getIsConstructor()), isSuperConstructor(getIsSuperConstructor(context)),
+						isEnumSuperConstructor(getIsEnumSuperConstructor(context)), returnType(getReturnType(context)) {}
 
 				InvokespecialOperation(const DecompilationContext& context, const Operation* object, const MethodDescriptor& descriptor):
 						InvokeNonStaticOperation(context, object, descriptor),
-						isConstructor(getIsConstructor()), isSuperConstructor(getIsSuperConstructor(context)), returnType(getReturnType(context)) {}
+						isConstructor(getIsConstructor()), isSuperConstructor(getIsSuperConstructor(context)),
+						isEnumSuperConstructor(getIsEnumSuperConstructor(context)), returnType(getReturnType(context)) {}
 
 				virtual string toString(const StringifyContext& context) const override {
 					if(isConstructor) {
@@ -1129,7 +1204,7 @@ namespace jdecompiler {
 				}
 
 				virtual bool canAddToCode() const override {
-					return !(isSuperConstructor && arguments.empty());
+					return !(isSuperConstructor && arguments.empty()) && !(isEnumSuperConstructor && arguments.size() == 2);
 				}
 		};
 
@@ -1206,8 +1281,8 @@ namespace jdecompiler {
 			}
 
 			virtual string toString(const StringifyContext& context) const override {
-				return join<StringOperand>(operands, [&context] (const StringOperand operand) {
-					return operand.type == StringOperand::OPERATION ? operand.value.operation->toString(context) :
+				return join<StringOperand>(operands, [&context, this] (const StringOperand operand) {
+					return operand.type == StringOperand::OPERATION ? toStringPriority(operand.value.operation, context, Associativity::RIGHT) :
 							stringToLiteral(*operand.value.stringConstant);
 				}, " + ");
 			}
@@ -1251,19 +1326,27 @@ namespace jdecompiler {
 					return arrayType;
 				}
 
-				virtual string toString(const StringifyContext& context) const override {
-					if(initializer.empty()) {
-						return "new " + arrayType->memberType->toString(context.classinfo) + join<const Operation*>(lengths,
-								[&context] (auto length) { return length == nullptr ? "[]" : '[' + length->toString(context) + ']'; }, EMPTY_STRING);
-					}
+			protected:
+				bool canInitAsList() const {
+					return !initializer.empty() || ((lengths.size() == 1 || (lengths.size() > 1 && lengths[1] == nullptr)) &&
+							instanceof<const IConstOperation*>(lengths[0]) && static_cast<const IConstOperation*>(lengths[0])->value == 0);
+				}
 
-					return "new " + arrayType->toString(context.classinfo) + ' ' + toArrayInitString(context);
+			public:
+				virtual string toString(const StringifyContext& context) const override {
+					return canInitAsList() ? "new " + arrayType->toString(context.classinfo) + ' ' + toArrayInitString(context) : toArrayInitString(context) ;
 				}
 
 				virtual string toArrayInitString(const StringifyContext& context) const override {
-					const bool isOneDimensional = arrayType->nestingLevel == 1;
-					return (isOneDimensional ? "{ " : "{") + join<const Operation*>(initializer,
-							[&context] (const Operation* element) { return element->toArrayInitString(context); }) + (isOneDimensional ? " }" : "}");
+
+					if(canInitAsList()) {
+						const bool useSpaces = arrayType->nestingLevel == 1 && !initializer.empty();
+						return (useSpaces ? "{ " : "{") + join<const Operation*>(initializer,
+								[&context] (const Operation* element) { return element->toArrayInitString(context); }) + (useSpaces ? " }" : "}");
+					}
+
+					return "new " + arrayType->memberType->toString(context.classinfo) + join<const Operation*>(lengths,
+								[&context] (auto length) { return length == nullptr ? "[]" : '[' + length->toString(context) + ']'; }, EMPTY_STRING);
 				}
 		};
 
@@ -1294,7 +1377,7 @@ namespace jdecompiler {
 
 			public:
 				ArrayStoreOperation(const Type* elementType, const DecompilationContext& context): value(context.stack.popAs(elementType)),
-						index(context.stack.popAs(INT)), array(getArray(context, elementType)) {
+						index(context.stack.popAs(INT)), array(context.stack.popAs(new ArrayType(elementType))) {
 
 					//checkDup<Dup1Operation>(context, array);
 
@@ -1419,29 +1502,42 @@ namespace jdecompiler {
 
 
 		template<typename T>
-		const Operation* ConstOperation<T>::valueOf(T value) {
+		const Operation* ConstOperation<T>::valueOf(T value, const FieldInfo* fieldinfo) {
+
 			if constexpr(is_floating_point<T>()) {
+
+				static const FieldDescriptor
+						NaNField("NaN", TYPE),
+						PositiveInfinityField("POSITIVE_INFINITY", TYPE),
+						NegativeInfinityField("NEGATIVE_INFINITY", TYPE);
+
 				if(isnan(value)) {
-					static const FieldDescriptor NaNField("NaN", TYPE);
-					return new GetStaticFieldOperation(CLASS, NaNField);
+					return JDecompiler::getInstance().canUseNaNAndInfinity() && canUseConstant(fieldinfo, WRAPPER_CLASS, NaNField) ?
+							(const Operation*)new GetStaticFieldOperation(WRAPPER_CLASS, NaNField) :
+							new DivOperatorOperation(TYPE, new ConstOperation<T>(0), new ConstOperation<T>(0));
 				}
 
-				if(!isfinite(value)) {
-					static const FieldDescriptor
-							PositiveInfinityField("POSITIVE_INFINITY", TYPE),
-							NegativeInfinityField("NEGATIVE_INFINITY", TYPE);
-					return new GetStaticFieldOperation(CLASS, value > 0 ? PositiveInfinityField : NegativeInfinityField);
+				if(value == numeric_limits<T>::infinity()) {
+					return JDecompiler::getInstance().canUseNaNAndInfinity() && canUseConstant(fieldinfo, WRAPPER_CLASS, PositiveInfinityField) ?
+						(const Operation*)new GetStaticFieldOperation(WRAPPER_CLASS, PositiveInfinityField) :
+						new DivOperatorOperation(TYPE, new ConstOperation<T>(1), new ConstOperation<T>(0));
+				}
+
+				if(value == -numeric_limits<T>::infinity()) {
+					return JDecompiler::getInstance().canUseNaNAndInfinity() && canUseConstant(fieldinfo, WRAPPER_CLASS, NegativeInfinityField) ?
+						(const Operation*)new GetStaticFieldOperation(WRAPPER_CLASS, PositiveInfinityField) :
+						new DivOperatorOperation(TYPE, new ConstOperation<T>(-1), new ConstOperation<T>(0));
 				}
 
 				if(JDecompiler::getInstance().canUseConstants()) {
 					static const FieldDescriptor DenormMinValueField("MIN_VALUE", TYPE);
 
-					if(value == numeric_limits<T>::denorm_min()) {
-						return new GetStaticFieldOperation(CLASS, DenormMinValueField);
+					if(value == numeric_limits<T>::denorm_min() && canUseConstant(fieldinfo, WRAPPER_CLASS, DenormMinValueField)) {
+						return new GetStaticFieldOperation(WRAPPER_CLASS, DenormMinValueField);
 					}
 
-					if(value == -numeric_limits<T>::denorm_min()) {
-						return new NegOperatorOperation(TYPE, new GetStaticFieldOperation(CLASS, DenormMinValueField));
+					if(value == -numeric_limits<T>::denorm_min() && canUseConstant(fieldinfo, WRAPPER_CLASS, DenormMinValueField)) {
+						return new NegOperatorOperation(TYPE, new GetStaticFieldOperation(WRAPPER_CLASS, DenormMinValueField));
 					}
 				}
 			}
@@ -1451,21 +1547,21 @@ namespace jdecompiler {
 						MaxValueField("MAX_VALUE", TYPE),
 						MinValueField(is_floating_point<T>() ? "MIN_NORMAL" : "MIN_VALUE", TYPE);
 
-				if(value == numeric_limits<T>::max()) {
-					return new GetStaticFieldOperation(CLASS, MaxValueField);
+				if(value == numeric_limits<T>::max() && canUseConstant(fieldinfo, WRAPPER_CLASS, MaxValueField)) {
+					return new GetStaticFieldOperation(WRAPPER_CLASS, MaxValueField);
 				}
 
-				if(value == -numeric_limits<T>::max()) {
-					return new NegOperatorOperation(TYPE, new GetStaticFieldOperation(CLASS, MaxValueField));
+				if(value == -numeric_limits<T>::max() && canUseConstant(fieldinfo, WRAPPER_CLASS, MaxValueField)) {
+					return new NegOperatorOperation(TYPE, new GetStaticFieldOperation(WRAPPER_CLASS, MaxValueField));
 				}
 
-				if(value == numeric_limits<T>::min()) {
-					return new GetStaticFieldOperation(CLASS, MinValueField);
+				if(value == numeric_limits<T>::min() && canUseConstant(fieldinfo, WRAPPER_CLASS, MinValueField)) {
+					return new GetStaticFieldOperation(WRAPPER_CLASS, MinValueField);
 				}
 
 				if constexpr(is_floating_point<T>()) {
-					if(value == -numeric_limits<T>::min()) { // For int numbers: MIN_VALUE == -MIN_VALUE
-						return new NegOperatorOperation(TYPE, new GetStaticFieldOperation(CLASS, MinValueField));
+					if(value == -numeric_limits<T>::min() && canUseConstant(fieldinfo, WRAPPER_CLASS, MinValueField)) { // For int and long MIN_VALUE == -MIN_VALUE
+						return new NegOperatorOperation(TYPE, new GetStaticFieldOperation(WRAPPER_CLASS, MinValueField));
 					}
 				}
 			}
@@ -1473,22 +1569,23 @@ namespace jdecompiler {
 		}
 
 		template<typename T>
-		const Operation* FPConstOperation<T>::valueOf(T value) {
+		const Operation* FPConstOperation<T>::valueOf(T value, const FieldInfo* fieldinfo) {
 			if(JDecompiler::getInstance().canUseConstants()) {
 				static const ClassType MathClass("java/lang/Math");
 
-				if(value == (T)M_PI) {
-					static const FieldDescriptor PIField("PI", DOUBLE);
+				static const FieldDescriptor PIField("PI", DOUBLE);
 
+				if(value == (T)M_PI && ConstOperation<T>::canUseConstant(fieldinfo, MathClass, PIField)) {
 					if constexpr(is_float<T>()) {
 						return new CastOperation<true>(new GetStaticFieldOperation(MathClass, PIField), FLOAT); // cast Math.PI to float
 					} else {
 						return new GetStaticFieldOperation(MathClass, PIField);
 					}
 				}
-				if(value == (T)M_E) {
-					static const FieldDescriptor EField("E", DOUBLE);
 
+				static const FieldDescriptor EField("E", DOUBLE);
+
+				if(value == (T)M_E && ConstOperation<T>::canUseConstant(fieldinfo, MathClass, EField)) {
 					if constexpr(is_float<T>()) {
 						return new CastOperation<true>(new GetStaticFieldOperation(MathClass, EField), FLOAT); // cast Math.E to float
 					} else {
@@ -1497,20 +1594,20 @@ namespace jdecompiler {
 				}
 			}
 
-			const Operation* result = ConstOperation<T>::valueOf(value);
+			const Operation* result = ConstOperation<T>::valueOf(value, fieldinfo);
 			return result == nullptr ? new FPConstOperation<T>(value) : result;
 		}
 
 	}
 
-	const Operation* StringConstant::toOperation()       const { return new operations::StringConstOperation(this); }
-	const Operation* ClassConstant::toOperation()        const { return new operations::ClassConstOperation(this); }
-	const Operation* IntegerConstant::toOperation()      const { return operations::IConstOperation::valueOf(value); }
-	const Operation* FloatConstant::toOperation()        const { return operations::FConstOperation::valueOf(value); }
-	const Operation* LongConstant::toOperation()         const { return operations::LConstOperation::valueOf(value); }
-	const Operation* DoubleConstant::toOperation()       const { return operations::DConstOperation::valueOf(value); }
-	const Operation* MethodTypeConstant::toOperation()   const { return new operations::MethodTypeConstOperation(this); }
-	const Operation* MethodHandleConstant::toOperation() const { return new operations::MethodHandleConstOperation(this); }
+	const Operation* StringConstant::toOperation(const FieldInfo* fieldinfo)  const { return new operations::StringConstOperation(this); }
+	const Operation* ClassConstant::toOperation(const FieldInfo* fieldinfo)   const { return new operations::ClassConstOperation(this); }
+	const Operation* IntegerConstant::toOperation(const FieldInfo* fieldinfo) const { return operations::IConstOperation::valueOf(value, fieldinfo); }
+	const Operation* FloatConstant::toOperation(const FieldInfo* fieldinfo)   const { return operations::FConstOperation::valueOf(value, fieldinfo); }
+	const Operation* LongConstant::toOperation(const FieldInfo* fieldinfo)    const { return operations::LConstOperation::valueOf(value, fieldinfo); }
+	const Operation* DoubleConstant::toOperation(const FieldInfo* fieldinfo)  const { return operations::DConstOperation::valueOf(value, fieldinfo); }
+	const Operation* MethodTypeConstant::toOperation(const FieldInfo* fieldinfo) const { return new operations::MethodTypeConstOperation(this); }
+	const Operation* MethodHandleConstant::toOperation(const FieldInfo* fieldinfo) const { return new operations::MethodHandleConstOperation(this); }
 
 
 	void StaticInitializerScope::addOperation(const Operation* operation, const StringifyContext& context) const {

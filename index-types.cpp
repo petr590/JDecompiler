@@ -20,7 +20,7 @@ namespace jdecompiler {
 
 	template<typename T>
 	struct abstract_index_t {
-		static_assert(is_integral<T>::value, "Type must be integral");
+		static_assert(is_integral<T>(), "Type must be integral");
 
 		protected:
 			T value;

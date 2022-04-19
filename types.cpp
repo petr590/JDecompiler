@@ -176,6 +176,14 @@ namespace jdecompiler {
 			inline friend bool operator!= (const Type& type1, const Type& type2) {
 				return !(type1 == type2);
 			}
+
+			inline friend ostream& operator<< (ostream& out, const Type& type) {
+				return out << type.toString();
+			}
+
+			inline friend ostream& operator<< (ostream& out, const Type* type) {
+				return out << type->toString();
+			}
 	};
 
 
@@ -430,7 +438,7 @@ namespace jdecompiler {
 			}
 
 			virtual string getVarName() const override {
-				return memberType->getVarName() + "Array";
+				return (memberType->isPrimitive() ? memberType->getName() : memberType->getVarName()) + "Array";
 			}
 
 		protected:
@@ -441,7 +449,7 @@ namespace jdecompiler {
 
 				const ArrayType* arrayType = dynamic_cast<const ArrayType*>(other);
 
-				return arrayType != nullptr && (this->nestingLevel == arrayType->nestingLevel && this->memberType->isSubtypeOf(arrayType->memberType)
+				return arrayType != nullptr && ((this->nestingLevel == arrayType->nestingLevel && this->memberType->isSubtypeOf(arrayType->memberType))
 						|| this->elementType->isSubtypeOf(arrayType->elementType));
 			}
 	};
@@ -779,10 +787,10 @@ namespace jdecompiler {
 
 
 	static const AmbigousType
-			*const ANY_INT_OR_BOOLEAN(new AmbigousType({BOOLEAN, INT, SHORT, CHAR, BYTE})),
+			*const ANY_INT_OR_BOOLEAN(new AmbigousType({INT, SHORT, CHAR, BYTE, BOOLEAN})),
 			*const ANY_INT(new AmbigousType({INT, SHORT, CHAR, BYTE})),
-			*const BYTE_OR_BOOLEAN(new AmbigousType({BOOLEAN, BYTE})),
-			*const INT_OR_BOOLEAN(new AmbigousType({BOOLEAN, INT}));
+			*const BYTE_OR_BOOLEAN(new AmbigousType({BYTE, BOOLEAN})),
+			*const INT_OR_BOOLEAN(new AmbigousType({INT, BOOLEAN}));
 
 
 	struct ExcludingType final: SpecialType {

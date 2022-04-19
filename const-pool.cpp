@@ -30,7 +30,7 @@ namespace jdecompiler {
 		private:
 			Constant** const pool;
 
-			#define checkTemplate() static_assert(is_base_of<Constant, T>::value,\
+			#define checkTemplate() static_assert(is_base_of<Constant, T>(),\
 					"template type T of method ConstantPool::get is not subclass of class Constant")
 
 		public:
@@ -107,7 +107,7 @@ namespace jdecompiler {
 
 		virtual string toString(const ClassInfo& classinfo) const = 0;
 
-		virtual const Operation* toOperation() const = 0;
+		virtual const Operation* toOperation(const FieldInfo* = nullptr) const = 0;
 	};
 
 
@@ -123,14 +123,17 @@ namespace jdecompiler {
 
 
 	struct IntegerConstant: NumberConstant<int32_t> { IntegerConstant(const int32_t value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Integer);
-		virtual const Operation* toOperation() const override;
+		virtual const Operation* toOperation(const FieldInfo*) const override;
 	};
 	struct FloatConstant:   NumberConstant<float>   {   FloatConstant(const   float value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Float);
-		virtual const Operation* toOperation() const override;};
+		virtual const Operation* toOperation(const FieldInfo*) const override;
+	};
 	struct LongConstant:    NumberConstant<int64_t> {    LongConstant(const int64_t value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Long);
-		virtual const Operation* toOperation() const override;};
+		virtual const Operation* toOperation(const FieldInfo*) const override;
+	};
 	struct DoubleConstant:  NumberConstant<double>  {  DoubleConstant(const  double value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Double);
-		virtual const Operation* toOperation() const override;};
+		virtual const Operation* toOperation(const FieldInfo*) const override;
+	};
 
 
 	struct ClassConstant: ConstValueConstant {
@@ -149,7 +152,7 @@ namespace jdecompiler {
 
 		virtual string toString(const ClassInfo&) const override;
 
-		virtual const Operation* toOperation() const override;
+		virtual const Operation* toOperation(const FieldInfo*) const override;
 	};
 
 
@@ -174,7 +177,7 @@ namespace jdecompiler {
 			return stringToLiteral(*value);
 		}
 
-		virtual const Operation* toOperation() const override;
+		virtual const Operation* toOperation(const FieldInfo*) const override;
 	};
 
 
@@ -270,7 +273,7 @@ namespace jdecompiler {
 				return "#MethodHandle#";
 			}
 
-			virtual const Operation* toOperation() const override;
+			virtual const Operation* toOperation(const FieldInfo*) const override;
 	};
 
 
@@ -292,7 +295,7 @@ namespace jdecompiler {
 
 		virtual string toString(const ClassInfo&) const override;
 
-		virtual const Operation* toOperation() const override;
+		virtual const Operation* toOperation(const FieldInfo*) const override;
 	};
 
 	struct InvokeDynamicConstant: Constant {

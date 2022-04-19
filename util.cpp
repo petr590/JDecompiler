@@ -15,6 +15,7 @@
 #include "index-types.cpp"
 #include "exceptions.cpp"
 #include "util/binary-input-stream.cpp"
+#include "util/stack.cpp"
 
 #define log(...) logFunc("[ jdecompiler/" __FILE__ " ]:", __VA_ARGS__)
 #define logf(pattern, ...) printf("[ jdecompiler/" __FILE__ " ]: " pattern, __VA_ARGS__)
@@ -22,7 +23,7 @@
 namespace jdecompiler {
 
 	template<typename Arg, typename... Args>
-	static inline void logFunc(Arg arg, Args... args) {
+	static inline void logFunc(const Arg& arg, const Args&... args) {
 		cout << arg;
 		if constexpr(sizeof...(Args) > 0) {
 			cout << ' ';
@@ -155,7 +156,7 @@ namespace jdecompiler {
 
 
 	template<typename T>
-	static string rjoin(const vector<T>& array, const function<string(T)> func, const string& separator = ", ") {
+	static string rjoin(const vector<T>& array, const function<string(T)>& func, const string& separator = ", ") {
 		string result;
 		size_t i = array.size();
 
@@ -278,8 +279,8 @@ namespace jdecompiler {
 	}
 
 	static string primitiveToString(float num) {
-		if(isnan(num)) return "Float.NaN";
-		if(!isfinite(num)) return num > 0 ? "Float.POSITIVE_INFINITY" : "Float.NEGATIVE_INFINITY";
+		if(isnan(num)) return "(0.0f / 0.0f)";
+		if(!isfinite(num)) return num > 0 ? "(1.0f / 0.0f)" : "(-1.0f / 0.0f)";
 
 		ostringstream out;
 		out.precision(9);
@@ -293,8 +294,8 @@ namespace jdecompiler {
 	}
 
 	static string primitiveToString(double num) {
-		if(isnan(num)) return "Double.NaN";
-		if(!isfinite(num)) return num > 0 ? "Double.POSITIVE_INFINITY" : "Double.NEGATIVE_INFINITY";
+		if(isnan(num)) return "(0.0 / 0.0)";
+		if(!isfinite(num)) return num > 0 ? "(1.0 / 0.0)" : "(-1.0 / 0.0)";
 
 		ostringstream out;
 		out.precision(17);
@@ -346,6 +347,23 @@ namespace jdecompiler {
 	}
 
 
+	template<typename T>
+	inline bool has(const vector<T>& array, const T& element) {
+		return find(array.begin(), array.end(), element) != array.end();
+	}
+
+
+	template<typename T>
+	inline bool has(const vector<T*>& array, const T* element) {
+		return find(array.begin(), array.end(), element) != array.end();
+	}
+
+	template<typename T>
+	static inline bool has_if(const vector<T>& array, const function<bool(T)>& predicate) {
+		return find_if(array.begin(), array.end(), predicate) != array.end();
+	}
+
+
 	template<bool v>
 	struct bool_type {
 		static constexpr bool value = v;
@@ -382,92 +400,5 @@ namespace jdecompiler {
 	static inline uint64_t toRawBits(double d) {
 		return *(uint64_t*)&d;
 	}
-
-
-
-	template<typename T>
-	struct Stack {
-		private:
-			class Entry {
-				public:
-					const T value;
-					const Entry* const next;
-
-					Entry(T value, const Entry* next): value(value), next(next) {}
-
-					void deleteNext() const {
-						if(next != nullptr) {
-							next->deleteNext();
-							delete next;
-						}
-					}
-			};
-
-			const Entry* firstEntry;
-			uint16_t length;
-
-		protected:
-			inline void checkEmptyStack() const {
-				if(firstEntry == nullptr)
-					throw EmptyStackException();
-			}
-
-		public:
-			Stack(): firstEntry(nullptr), length(0) {}
-
-			Stack(T value): firstEntry(new Entry(value, nullptr)), length(1) {}
-
-			void push(T value) {
-				firstEntry = new Entry(value, firstEntry);
-				length++;
-			}
-
-			inline void push(T value, T operations...) {
-				push(value);
-				push(operations);
-			}
-
-			T pop() {
-				checkEmptyStack();
-
-				const Entry copiedEntry = *firstEntry;
-				delete firstEntry;
-				firstEntry = copiedEntry.next;
-				length--;
-				return copiedEntry.value;
-			}
-
-			T top() const {
-				checkEmptyStack();
-				return firstEntry->value;
-			}
-
-			T lookup(uint16_t index) const {
-				checkEmptyStack();
-
-				if(index >= length)
-					throw StackIndexOutOfBoundsException(index, length);
-
-				const Entry* currentEntry = firstEntry;
-				for(uint16_t i = 0; i < index; i++)
-					currentEntry = currentEntry->next;
-				return currentEntry->value;
-			}
-
-			inline uint16_t size() const {
-				return length;
-			}
-
-			inline bool empty() const {
-				return length == 0;
-			}
-
-			~Stack() {
-				if(firstEntry != nullptr) {
-					firstEntry->deleteNext();
-					delete firstEntry;
-				}
-			}
-	};
 }
 #endif

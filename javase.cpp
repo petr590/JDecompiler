@@ -7,6 +7,7 @@ namespace jdecompiler {
 		namespace java {
 			namespace lang {
 				const ClassType
+						&Void = ClassType("java/lang/Void"),
 						&Byte = ClassType("java/lang/Byte"),
 						&Character = ClassType("java/lang/Character"),
 						&Short = ClassType("java/lang/Short"),

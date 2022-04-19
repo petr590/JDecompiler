@@ -47,7 +47,7 @@ namespace jdecompiler {
 
 		template<typename T>
 		struct NumberConstInstruction: Instruction {
-			static_assert(is_fundamental<T>::value, "template type T of struct NumberConstInstruction is not primitive");
+			static_assert(is_fundamental<T>(), "template type T of struct NumberConstInstruction is not primitive");
 
 			const T value;
 
@@ -483,31 +483,51 @@ namespace jdecompiler {
 		};
 
 
-		struct GetStaticFieldInstruction: InstructionWithIndex {
-			GetStaticFieldInstruction(uint16_t index): InstructionWithIndex(index) {}
+		struct FieldInstruction: Instruction {
+			const ClassType clazz;
+			const FieldDescriptor descriptor;
 
-			virtual const Operation* toOperation(const DecompilationContext& context) const override { return new GetStaticFieldOperation(context, index); }
+			FieldInstruction(const FieldrefConstant* fieldref):
+				clazz(fieldref->clazz), descriptor(fieldref->nameAndType) {}
+
+			FieldInstruction(const DisassemblerContext& context, uint16_t index):
+				FieldInstruction(context.constPool.get<FieldrefConstant>(index)) {}
 		};
 
 
-		struct PutStaticFieldInstruction: InstructionWithIndex {
-			PutStaticFieldInstruction(uint16_t index): InstructionWithIndex(index) {}
+		struct GetStaticFieldInstruction: FieldInstruction {
+			GetStaticFieldInstruction(const DisassemblerContext& context, uint16_t index): FieldInstruction(context, index) {}
 
-			virtual const Operation* toOperation(const DecompilationContext& context) const override { return new PutStaticFieldOperation(context, index); }
+			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				return new GetStaticFieldOperation(clazz, descriptor);
+			}
 		};
 
 
-		struct GetInstanceFieldInstruction: InstructionWithIndex {
-			GetInstanceFieldInstruction(uint16_t index): InstructionWithIndex(index) {}
+		struct PutStaticFieldInstruction: FieldInstruction {
+			PutStaticFieldInstruction(const DisassemblerContext& context, uint16_t index): FieldInstruction(context, index) {}
 
-			virtual const Operation* toOperation(const DecompilationContext& context) const override { return new GetInstanceFieldOperation(context, index); }
+			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				return new PutStaticFieldOperation(context, clazz, descriptor);
+			}
 		};
 
 
-		struct PutInstanceFieldInstruction: InstructionWithIndex {
-			PutInstanceFieldInstruction(uint16_t index): InstructionWithIndex(index) {}
+		struct GetInstanceFieldInstruction: FieldInstruction {
+			GetInstanceFieldInstruction(const DisassemblerContext& context, uint16_t index): FieldInstruction(context, index) {}
 
-			virtual const Operation* toOperation(const DecompilationContext& context) const override { return new PutInstanceFieldOperation(context, index); }
+			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				return new GetInstanceFieldOperation(context, clazz, descriptor);
+			}
+		};
+
+
+		struct PutInstanceFieldInstruction: FieldInstruction {
+			PutInstanceFieldInstruction(const DisassemblerContext& context, uint16_t index): FieldInstruction(context, index) {}
+
+			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				return new PutInstanceFieldOperation(context, clazz, descriptor);
+			}
 		};
 
 
@@ -588,10 +608,10 @@ namespace jdecompiler {
 				switch(bootstrapMethod->methodHandle->kindType) {
 					case KindType::FIELD:
 						switch(bootstrapMethod->methodHandle->referenceKind) {
-							case RefKind::GETFIELD: return new GetInstanceFieldOperation(context, index);
-							case RefKind::GETSTATIC: return new GetStaticFieldOperation(context, index);
-							case RefKind::PUTFIELD: return new PutInstanceFieldOperation(context, index);
-							case RefKind::PUTSTATIC: return new PutStaticFieldOperation(context, index);
+							case RefKind::GETFIELD: return new GetInstanceFieldOperation(context, context.constPool.get<FieldrefConstant>(index));
+							case RefKind::GETSTATIC: return new GetStaticFieldOperation(context.constPool.get<FieldrefConstant>(index));
+							case RefKind::PUTFIELD: return new PutInstanceFieldOperation(context, context.constPool.get<MethodrefConstant>(index));
+							case RefKind::PUTSTATIC: return new PutStaticFieldOperation(context, context.constPool.get<MethodrefConstant>(index));
 							default: throw IllegalStateException((string)"Illegal referenceConstant kind " +
 									to_string((unsigned int)bootstrapMethod->methodHandle->referenceKind));
 						}
@@ -731,7 +751,9 @@ namespace jdecompiler {
 
 			public: MultiANewArrayInstruction(uint16_t index, uint16_t dimensions): InstructionWithIndex(index), dimensions(dimensions) {}
 
-			virtual const Operation* toOperation(const DecompilationContext& context) const override { return new MultiANewArrayOperation(context, index, dimensions); }
+			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				return new MultiANewArrayOperation(context, index, dimensions);
+			}
 		};
 
 

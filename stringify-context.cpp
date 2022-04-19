@@ -10,7 +10,7 @@ namespace jdecompiler {
 		public:
 			const ClassInfo& classinfo;
 			const ConstantPool& constPool;
-			CodeStack& stack;
+			//CodeStack& stack;
 			MethodScope& methodScope;
 
 		private:
@@ -29,7 +29,7 @@ namespace jdecompiler {
 			StringifyContext(const DisassemblerContext& disassemblerContext, const ClassInfo& classinfo, MethodScope& methodScope,
 					uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, const map<uint32_t, index_t>& exprIndexTable):
 					disassemblerContext(disassemblerContext), classinfo(classinfo), constPool(classinfo.constPool),
-					stack(*new CodeStack()), methodScope(methodScope), currentScope((const Scope*)&methodScope),
+					/*stack(*new CodeStack()),*/ methodScope(methodScope), currentScope((const Scope*)&methodScope),
 					modifiers(modifiers), descriptor(descriptor), attributes(attributes), exprIndexTable(exprIndexTable) {}
 
 		public:
@@ -96,7 +96,7 @@ namespace jdecompiler {
 			}
 
 			~StringifyContext() {
-				delete &stack;
+				/*delete &stack;*/
 			}
 
 

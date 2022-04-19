@@ -6,12 +6,12 @@
 namespace jdecompiler {
 
 	string ClassConstant::toString(const ClassInfo& classinfo) const {
-		return (new ClassType(*name))->toString(classinfo) + ".class";
+		return parseReferenceType(*name)->toString(classinfo) + ".class";
 	}
 
 
 	namespace BuiltinTypes {
-		/* Serves as a marker for the struct TypeByBuiltinType */
+		/* Serves as a marker for the struct typeByBuiltinType */
 		struct MarkerStruct {
 			MarkerStruct() = delete;
 			MarkerStruct(const MarkerStruct&) = delete;
@@ -26,31 +26,18 @@ namespace jdecompiler {
 	};
 
 	template<typename T>
-	struct TypeByBuiltinType {
-		static_assert(is_one_of<T, bool, int32_t, int64_t, float, double, BuiltinTypes::MarkerStruct>::value, "illegal builtin type");
-	};
+	static const Type* typeByBuiltinType();
 
-	template<> struct TypeByBuiltinType<bool>    { static const Type* const value; };
-	template<> struct TypeByBuiltinType<int32_t> { static const Type* const value; };
-	template<> struct TypeByBuiltinType<int64_t> { static const Type* const value; };
-	template<> struct TypeByBuiltinType<float>   { static const Type* const value; };
-	template<> struct TypeByBuiltinType<double>  { static const Type* const value; };
-	template<> struct TypeByBuiltinType<BuiltinTypes::Object>       { static const Type* const value; };
-	template<> struct TypeByBuiltinType<BuiltinTypes::String>       { static const Type* const value; };
-	template<> struct TypeByBuiltinType<BuiltinTypes::Class>        { static const Type* const value; };
-	template<> struct TypeByBuiltinType<BuiltinTypes::MethodType>   { static const Type* const value; };
-	template<> struct TypeByBuiltinType<BuiltinTypes::MethodHandle> { static const Type* const value; };
-
-	const Type* const TypeByBuiltinType<bool>::value =    BOOLEAN;
-	const Type* const TypeByBuiltinType<int32_t>::value = ANY_INT_OR_BOOLEAN;
-	const Type* const TypeByBuiltinType<int64_t>::value = LONG;
-	const Type* const TypeByBuiltinType<float>::value =   FLOAT;
-	const Type* const TypeByBuiltinType<double>::value =  DOUBLE;
-	const Type* const TypeByBuiltinType<BuiltinTypes::Object>::value =       AnyObjectType::getInstance();
-	const Type* const TypeByBuiltinType<BuiltinTypes::String>::value =       STRING;
-	const Type* const TypeByBuiltinType<BuiltinTypes::Class>::value =        CLASS;
-	const Type* const TypeByBuiltinType<BuiltinTypes::MethodType>::value =   METHOD_TYPE;
-	const Type* const TypeByBuiltinType<BuiltinTypes::MethodHandle>::value = METHOD_HANDLE;
+	template<> inline const Type* typeByBuiltinType<bool>() { return BOOLEAN; }
+	template<> inline const Type* typeByBuiltinType<int32_t>() { return ANY_INT_OR_BOOLEAN; }
+	template<> inline const Type* typeByBuiltinType<int64_t>() { return LONG; }
+	template<> inline const Type* typeByBuiltinType<float>() { return FLOAT; }
+	template<> inline const Type* typeByBuiltinType<double>() { return DOUBLE; }
+	template<> inline const Type* typeByBuiltinType<BuiltinTypes::Object>() { return AnyObjectType::getInstance(); }
+	template<> inline const Type* typeByBuiltinType<BuiltinTypes::String>() { return STRING; }
+	template<> inline const Type* typeByBuiltinType<BuiltinTypes::Class>() { return CLASS; }
+	template<> inline const Type* typeByBuiltinType<BuiltinTypes::MethodType>() { return METHOD_TYPE; }
+	template<> inline const Type* typeByBuiltinType<BuiltinTypes::MethodHandle>() { return METHOD_HANDLE; }
 
 
 	enum class Associativity { LEFT, RIGHT };
@@ -79,8 +66,6 @@ namespace jdecompiler {
 
 	struct Operation {
 		protected:
-			static inline const Operation* getArray(const DecompilationContext& context, const Type* elementType);
-
 			Operation() noexcept {}
 
 			virtual ~Operation() {}
@@ -220,6 +205,8 @@ namespace jdecompiler {
 			friend struct operations::StoreOperation;
 			friend struct operations::IIncOperation;*/
 
+			mutable bool typeSettingLocked = false;
+
 
 
 		public:
@@ -228,18 +215,26 @@ namespace jdecompiler {
 				castTypeTo(operation->getReturnType());
 			}
 
+			const Type* getType() const {
+				return type;
+			}
+
 			const Type* setType(const Type* newType) const {
+				if(typeSettingLocked) // To avoid infinite recursion
+					return this->type;
+
+				typeSettingLocked = true;
+
 				for(const Operation* operation : bindedOperations)
 					newType = operation->getReturnTypeAs(newType);
+
+				typeSettingLocked = false;
+
 				return this->type = newType;
 			}
 
 			inline const Type* castTypeTo(const Type* requiredType) const {
 				return setType(type->castTo(requiredType));
-			}
-
-			const Type* getType() const {
-				return type;
 			}
 
 			bool isDeclared() const {
@@ -377,12 +372,12 @@ namespace jdecompiler {
 
 	struct CodeStack: Stack<const Operation*> {
 		const Operation* popAs(const Type* type) {
-			checkEmptyStack();
-
 			const Operation* operation = this->pop();
 			operation->castReturnTypeTo(type);
 			return operation;
 		}
+
+		CodeStack() {}
 
 		inline const Operation* pop() {
 			return Stack<const Operation*>::pop();
@@ -397,6 +392,9 @@ namespace jdecompiler {
 				return t;
 			throw DecompilationException("Illegal operation type " + typeNameOf<O>() + " for operation " + typeNameOf(*operation));
 		}
+
+		CodeStack(const CodeStack&) = delete;
+		CodeStack& operator=(const CodeStack&) = delete;
 	};
 }
 
@@ -404,11 +402,6 @@ namespace jdecompiler {
 #include "stringify-context.cpp"
 
 namespace jdecompiler {
-
-	const Operation* Operation::getArray(const DecompilationContext& context, const Type* elementType) {
-		return context.stack.popAs(new ArrayType(elementType));
-	}
-
 
 	template<class D, class... Ds>
 	bool Operation::checkDup(const DecompilationContext& context, const Operation* operation) {
@@ -527,7 +520,7 @@ namespace jdecompiler {
 
 			void addVariable(Variable* var) {
 				if(lastAddedVarIndex >= variables.size())
-					throw IllegalStateException("cannot add variable: no free place");
+					throw IllegalStateException("cannot add variable to " + this->toDebugString() + ": no free place");
 
 				variables[lastAddedVarIndex] = var;
 				switch(var->getType()->getSize()) {
@@ -542,6 +535,11 @@ namespace jdecompiler {
 			}
 
 			string getNameFor(const Variable* var) const {
+				if(!has(variables, var)) {
+					return parentScope != nullptr ? parentScope->getNameFor(var) :
+							throw IllegalStateException("Variable " + var->getType()->toString() + " is not found");
+				}
+
 				const auto varName = varNames.find(var);
 				if(varName != varNames.end()) {
 					return varName->second;

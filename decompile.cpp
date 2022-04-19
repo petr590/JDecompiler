@@ -182,10 +182,10 @@ namespace jdecompiler {
 			case 0xAF: return new DReturnInstruction();
 			case 0xB0: return new AReturnInstruction();
 			case 0xB1: return VReturn::getInstance();
-			case 0xB2: return new GetStaticFieldInstruction(nextUShort());
-			case 0xB3: return new PutStaticFieldInstruction(nextUShort());
-			case 0xB4: return new GetInstanceFieldInstruction(nextUShort());
-			case 0xB5: return new PutInstanceFieldInstruction(nextUShort());
+			case 0xB2: return new GetStaticFieldInstruction(*this, nextUShort());
+			case 0xB3: return new PutStaticFieldInstruction(*this, nextUShort());
+			case 0xB4: return new GetInstanceFieldInstruction(*this, nextUShort());
+			case 0xB5: return new PutInstanceFieldInstruction(*this, nextUShort());
 			case 0xB6: return new InvokevirtualInstruction(nextUShort(), constPool);
 			case 0xB7: return new InvokespecialInstruction(nextUShort(), constPool);
 			case 0xB8: return new InvokestaticInstruction(nextUShort(), constPool);
@@ -215,8 +215,7 @@ namespace jdecompiler {
 				//case 0xA9: i+=2 ; return ret;
 				default: throw IllegalOpcodeError("Illegal wide opcode " + hexWithPrefix(current()));
 			}
-			case 0xC5: { uint8_t dimensions = nextUByte();
-				return new MultiANewArrayInstruction(nextUShort(), dimensions); }
+			case 0xC5: return new MultiANewArrayInstruction(nextUShort(), nextUByte());
 			case 0xC6: return new IfNullInstruction(nextShort());
 			case 0xC7: return new IfNonNullInstruction(nextShort());
 			case 0xC8: return new GotoInstruction(nextInt());

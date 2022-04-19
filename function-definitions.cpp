@@ -134,8 +134,8 @@ namespace jdecompiler {
 
 	/* Returns true if we can write simple class name */
 	bool ClassInfo::addImport(const ClassType* clazz) const {
-		if(clazz->simpleName == thisType.simpleName && *clazz != thisType) {
-			return false;
+		if(clazz->simpleName == thisType.simpleName) {
+			return *clazz == thisType;
 		}
 
 		if(any_of(imports.begin(), imports.end(), [clazz] (const ClassType* imp) { return *clazz == *imp; })) { // find class
@@ -143,7 +143,7 @@ namespace jdecompiler {
 		} else {
 			if(all_of(imports.begin(), imports.end(), [clazz] (const ClassType* imp)
 					{ return imp->simpleName != clazz->simpleName; })) { // check has no class with same name
-				imports.insert(clazz);
+				imports.push_back(clazz);
 				return true;
 			}
 			return false;

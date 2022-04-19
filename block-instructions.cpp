@@ -27,7 +27,9 @@ namespace jdecompiler {
 
 				const index_t index = context.posToIndex(context.getPos() + offset) - 1;
 
-				if(const IfBlock* ifBlock = dynamic_cast<const IfBlock*>(currentBlock)) {
+				if(instanceof<const IfBlock*>(currentBlock)) {
+					const IfBlock* ifBlock = static_cast<const IfBlock*>(currentBlock);
+
 					if(offset > 0) {
 						//log(context.index, index, ifBlock->end());
 
@@ -50,7 +52,9 @@ namespace jdecompiler {
 
 				const index_t index = context.posToIndex(context.pos + offset);
 
-				if(const IfScope* ifScope = dynamic_cast<const IfScope*>(currentScope)) {
+				if(instanceof<const IfScope*>(currentScope)) {
+					const IfScope* ifScope = static_cast<const IfScope*>(currentScope);
+
 					if(offset > 0) {
 						if(index - 1 == ifScope->end()) {
 							//ifScope->condition = new AndOperation(ifScope->condition, getCondition(context)->invert()); // TODO
@@ -191,12 +195,12 @@ namespace jdecompiler {
 					const IfBlock* ifBlock = static_cast<const IfBlock*>(currentBlock);
 
 					// Here goto instruction creates else Block
-					if(offset > 0 && context.getIndex() == ifBlock->end() /* check if goto instruction in the end of ifBlock */) {
+					if(offset > 0 && context.index == ifBlock->end() /* check if goto instruction in the end of ifBlock */) {
 						const Block* parentBlock = ifBlock->parentBlock;
+						assert(parentBlock != nullptr);
 
 						/* I don't remember why there is index minus 1 instead of index,
 						   but since I wrote that, then it should be so :) */
-						assert(parentBlock != nullptr);
 						if(index - 1 <= parentBlock->end()) {
 							ifBlock->addElseBlock(context, index - 1);
 							return nullptr;
@@ -216,6 +220,20 @@ namespace jdecompiler {
 				}
 
 				if(offset < 0) {
+					const Block* block = currentBlock;
+
+					do {
+						if(instanceof<const InfiniteLoopBlock*>(block)) {
+							const InfiniteLoopBlock* loopBlock = static_cast<const InfiniteLoopBlock*>(block);
+
+							//log(loopBlock->endIndex, context.index);
+
+							loopBlock->endIndex = max(loopBlock->endIndex, context.index);
+						}
+
+						block = block->parentBlock;
+					} while(block != nullptr);
+
 					return new InfiniteLoopBlock(context, index);
 				}
 

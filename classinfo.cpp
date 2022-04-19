@@ -31,11 +31,13 @@ namespace jdecompiler {
 					clazz(clazz), thisType(thisType), superType(superType), constPool(constPool), attributes(attributes),
 					modifiers(modifiers) {}
 
+			const char* const EMPTY_INDENT = "";
+
 		private:
-			mutable set<const ClassType*> imports;
+			mutable vector<const ClassType*> imports;
 
 			mutable uint16_t indentWidth = 0;
-			mutable const char* indent = new char[1] {'\0'};
+			mutable const char* indent = EMPTY_INDENT;
 
 		public:
 			bool addImport(const ClassType* clazz) const;
@@ -56,7 +58,7 @@ namespace jdecompiler {
 
 			inline void resetFormatting() const {
 				indentWidth = 0;
-				indent = new char[1] {'\0'};
+				indent = EMPTY_INDENT;
 				imports.clear();
 			}
 
@@ -65,24 +67,33 @@ namespace jdecompiler {
 			}
 
 			void increaseIndent() const {
-				delete[] indent;
+				if(indent != EMPTY_INDENT)
+					delete[] indent;
 				indent = repeatString(JDecompiler::getInstance().getIndent(), ++indentWidth);
 			}
 
 			void increaseIndent(uint16_t count) const {
-				delete[] indent;
+				if(indent != EMPTY_INDENT)
+					delete[] indent;
 				indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth += count);
 			}
 
 			void reduceIndent() const {
-				delete[] indent;
+				if(indent != EMPTY_INDENT)
+					delete[] indent;
 				indent = repeatString(JDecompiler::getInstance().getIndent(), --indentWidth);
 			}
 
 			void reduceIndent(uint16_t count) const {
-				delete[] indent;
+				if(indent != EMPTY_INDENT)
+					delete[] indent;
 				indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth -= count);
 			}
+
+
+			const vector<const Method*>& getMethods() const;
+
+			const vector<const Field*>& getFields() const;
 
 		private:
 			mutable const StringifyContext* fieldStringifyContext = nullptr;

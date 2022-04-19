@@ -19,22 +19,28 @@ namespace jdecompiler {
 			const vector<BinaryInputStream*> files;
 			const bool atLeastOneFileSpecified;
 
-			const uint16_t indentWidth = 4;
-			const char* const indent = "    ";
+			const char* const indent;
 
 			const bool failOnError;
-			const bool useRawConstants;
+
+			enum class UseConstants { ALWAYS, MINIMAL, NEVER };
+
+			const UseConstants useConstants;
 
 			enum class UseHex { ALWAYS, AUTO, NEVER };
 
 			const UseHex useHexNumbers;
 
+			const bool useShortArrayInitializing;
+
 			mutable map<string, const Class*> classes;
 
-			JDecompiler(const string progName, const vector<BinaryInputStream*>& files, bool atLeastOneFileSpecified, uint16_t indentWidth, const char* indent,
-					bool failOnError, bool useRawConstants, UseHex useHexNumbers, map<string, const Class*>& classes):
-					progName(progName), files(files), atLeastOneFileSpecified(atLeastOneFileSpecified), indentWidth(indentWidth), indent(indent),
-					failOnError(failOnError), useRawConstants(useRawConstants), useHexNumbers(useHexNumbers), classes(classes) {}
+			JDecompiler(const string progName, const vector<BinaryInputStream*>& files, bool atLeastOneFileSpecified, const char* indent,
+					bool failOnError, UseConstants useConstants, UseHex useHexNumbers, bool useShortArrayInitializing, map<string, const Class*>& classes):
+
+					progName(progName), files(files), atLeastOneFileSpecified(atLeastOneFileSpecified), indent(indent),
+					failOnError(failOnError), useConstants(useConstants), useHexNumbers(useHexNumbers),
+					useShortArrayInitializing(useShortArrayInitializing), classes(classes) {}
 
 
 
@@ -54,12 +60,14 @@ namespace jdecompiler {
 
 				vector<BinaryInputStream*> files;
 
-				uint16_t indentWidth = 4;
+				int_fast32_t indentWidth = 4;
 				const char* indent = "    ";
 
 				bool failOnError = false;
-				bool useRawConstants = false;
+				UseConstants useConstants = UseConstants::ALWAYS;
 				UseHex useHexNumbers = UseHex::NEVER;
+
+				bool useShortArrayInitializing = true;
 
 				map<string, const Class*> classes;
 
@@ -109,17 +117,27 @@ namespace jdecompiler {
 
 						if(option == "-h" || option == "--help" || option == "-?") {
 							cout << "Usage: " << progName << " [options] <class-files>\n"
+								"\n"
 								"  -h, --help, -?                      show this message and exit\n"
 								"  -f, --fail-on-error                 fail on error\n"
 								"  -w=<width>, --indent-width=<width>  set indent width (by default 4)\n"
 								"  -i=<indent>, --indent=<indent>      set indent (by default four spaces)\n"
-								"  -r, --use-raw-constants             do not use constants from classes Integer, Float,\n"
-								"                                        Double etc., such as MAX_VALUE\n"
+								"\n"
+								"  --use-constants=auto|minimal|never  use constants:\n"
+								"                                auto    use for all standart constants (MAX_VALUE, MIN_VALUE, etc.)\n"
+								"                             minimal    use for only POSITIVE_INFINITY, NEGATIVE_INFINITY and NaN\n"
+								"                               never    don't use constants at all\n"
+								"  -mc, --use-min-constants            the same as --use-constants=minimal\n"
+								"  -nc, --not-use-constants            the same as --use-constants=never\n"
 								"  --hex[=always|auto|never]           use hex numbers:\n"
 								"                              always    always use\n"
 								"                                auto    only use for values like 0x7F, 0x80 and 0xFF\n"
-								"                               never    do not use (by default)" << endl;
+								"                               never    do not use (by default)\n"
+								"\n"
+								"  --no-short-array-init               do not use short array initialization in the variable declaration" << endl;
+
 							return false;
+
 						} else if(option == "-f" || option == "--fail-on-error") {
 							failOnError = true;
 
@@ -146,8 +164,23 @@ namespace jdecompiler {
 							value = unescapeString(value);
 							indent = repeatString(value, isIndentWidthSpecified || value != "\t" ? indentWidth : (indentWidth = 1));
 
-						} else if(option == "-r" || option == "--use-raw-constants") {
-							useRawConstants = true;
+						} else if(option == "--use-constants") {
+							requireValue();
+
+							if(value == "always")
+								useConstants = UseConstants::ALWAYS;
+							else if(value == "minimal" || value == "min")
+								useConstants = UseConstants::MINIMAL;
+							else if(value == "never")
+								useConstants = UseConstants::NEVER;
+							else
+								printErrorAndExit("invalid value for option " << option << ": only valid always, minimal or never");
+
+						} else if(option == "-mc" || option == "--use-min-constants") {
+							useConstants = UseConstants::MINIMAL;
+
+						} else if(option == "-nc" || option == "--not-use-constants") {
+							useConstants = UseConstants::NEVER;
 
 						} else if(option == "--hex") {
 							if(hasValueWeak) {
@@ -159,6 +192,8 @@ namespace jdecompiler {
 								useHexNumbers = UseHex::AUTO;
 							}
 
+						} else if(option == "--no-short-array-init") {
+							useShortArrayInitializing = false;
 						} else {
 							printErrorAndExit("Unknown argument " << arg << "\n"
 								"Use " << progName << " --help for more information");
@@ -176,18 +211,27 @@ namespace jdecompiler {
 				#undef requireValue
 				#undef printErrorAndExit
 
-				instance = new JDecompiler(progName, files, atLeastOneFileSpecified, indentWidth, indent, failOnError, useRawConstants, useHexNumbers, classes);
+				instance = new JDecompiler(progName, files, atLeastOneFileSpecified, indent,
+						failOnError, useConstants, useHexNumbers, useShortArrayInitializing, classes);
 
 				return true;
 			}
 
+
+			inline const char* getIndent() const {
+				return indent;
+			}
 
 			inline bool isFailOnError() const {
 				return failOnError;
 			}
 
 			inline bool canUseConstants() const {
-				return !useRawConstants;
+				return useConstants == UseConstants::ALWAYS;
+			}
+
+			inline bool canUseNaNAndInfinity() const {
+				return useConstants == UseConstants::ALWAYS || useConstants == UseConstants::MINIMAL;
 			}
 
 			inline bool canUseHexNumbers() const {
@@ -198,8 +242,8 @@ namespace jdecompiler {
 				return useHexNumbers == UseHex::ALWAYS;
 			}
 
-			inline const char* getIndent() const {
-				return indent;
+			inline bool canUseShortArrayInitializing() const {
+				return useShortArrayInitializing;
 			}
 
 			inline const vector<BinaryInputStream*>& getFiles() const {

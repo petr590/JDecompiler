@@ -73,6 +73,23 @@ namespace jdecompiler {
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override final {
 				const ConditionOperation* const condition = getCondition(context)->invert();
+
+				const IfScope* ifScope = dynamic_cast<const IfScope*>(context.getCurrentScope());
+
+				if(ifScope != nullptr) {
+					if(ifScope->bodyStartIndex == startIndex - 1 && ifScope->endIndex == endIndex) {
+						ifScope->setCondition(new AndOperation(ifScope->getCondition(), condition));
+
+						ifScope->bodyStartIndex = context.index + 1;
+
+						return nullptr;
+					}
+
+					/*if(ifScope->endIndex >= endIndex && endIndex <= ifScope->parentScope->endIndex) {
+
+					}*/
+				}
+
 				return elseBlock != nullptr ? new IfScope(context, endIndex, condition, elseBlock->endIndex) :
 						new IfScope(context, endIndex, condition);
 			}
@@ -110,7 +127,7 @@ namespace jdecompiler {
 			IfICmpBlock(const DisassemblerContext& context, offset_t offset, const CompareType& compareType): IfCmpBlock(context, offset, compareType) {}
 
 			virtual const ConditionOperation* getCondition(const DecompilationContext& context) const override {
-				return new CompareBinaryOperation(context, INT, compareType);
+				return new CompareBinaryOperation(context, ANY_INT_OR_BOOLEAN, compareType);
 			}
 		};
 

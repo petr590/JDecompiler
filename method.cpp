@@ -86,13 +86,14 @@ namespace jdecompiler {
 					clazz(clazz), name(name), returnType(returnType), arguments(arguments), type(typeForName(name)) {}
 
 
-			string toString(const StringifyContext& context) const {
+		protected:
+			string toString(const StringifyContext& context, size_t argsStart) const {
 				const bool isNonStatic = !(context.modifiers & ACC_STATIC);
 
 				string str = type == MethodType::CONSTRUCTOR ? context.classinfo.thisType.simpleName :
 						returnType->toString(context.classinfo) + ' ' + name;
 
-				uint32_t offset = (uint32_t)isNonStatic;
+				uint32_t offset = argsStart + (uint32_t)isNonStatic;
 
 				const auto getVarName = [&context, &offset] (const Type* type, size_t i) {
 					return context.getCurrentScope()->getNameFor(
@@ -103,15 +104,15 @@ namespace jdecompiler {
 				function<string(const Type*, size_t)> concater;
 
 				if(context.modifiers & ACC_VARARGS) {
-					size_t varargsIndex = -1;
-					for(size_t i = arguments.size(); i > 0; ) {
+					size_t varargsIndex = -1U;
+					for(size_t i = arguments.size(); i > argsStart; ) {
 						if(instanceof<const ArrayType*>(arguments[--i])) {
 							varargsIndex = i;
 							break;
 						}
 					}
 
-					if(varargsIndex == -1) {
+					if(varargsIndex == -1U) {
 						throw IllegalMethodHeaderException("Varargs method " + this->toString() + " must have at least one array argument");
 					}
 
@@ -126,7 +127,12 @@ namespace jdecompiler {
 				}
 
 
-				return str + '(' + join<const Type*>(arguments, concater) + ')';
+				return str + '(' + join<const Type*>(argsStart == 0 ? arguments : vector(arguments.begin() + argsStart, arguments.end()), concater) + ')';
+			}
+
+		public:
+			virtual string toString(const StringifyContext& context) const {
+				return this->toString(context, 0);
 			}
 
 			string toString() const {
@@ -212,19 +218,28 @@ namespace jdecompiler {
 			}
 
 			virtual bool canStringify(const ClassInfo& classinfo) const override {
+
+				const function<bool()> hasNoOtherConstructors = [this, &classinfo] () {
+					return !has_if<const Method*>(classinfo.getMethods(), [this] (const Method* method) {
+						return method != this && method->descriptor.type == MethodType::CONSTRUCTOR;
+					});
+				};
+
 				return !((modifiers & (ACC_SYNTHETIC | ACC_BRIDGE)) ||
 						(descriptor.type == MethodType::STATIC_INITIALIZER && scope.isEmpty()) || // empty static {}
 
-						(descriptor.type == MethodType::CONSTRUCTOR &&
-							(scope.isEmpty() && ((modifiers & ACC_PUBLIC) == ACC_PUBLIC ||
-								(modifiers & ACC_PUBLIC) == (classinfo.modifiers & ACC_PUBLIC)) // constructor by default
+						(descriptor == MethodDescriptor(classinfo.thisType, "<init>", VOID, {}) && hasNoOtherConstructors() &&
+							((scope.isEmpty() && ((modifiers & ACC_PUBLIC) == ACC_PUBLIC ||
+								(modifiers & ACC_PUBLIC) == (classinfo.modifiers & ACC_PUBLIC))) // constructor by default
 							|| classinfo.thisType.isAnonymous)) // anonymous class constructor
 						||
 
 						(classinfo.modifiers & ACC_ENUM && (
+							(scope.isEmpty() && modifiers & ACC_PRIVATE &&
+								descriptor == MethodDescriptor(classinfo.thisType, "<init>", VOID, {STRING, INT}) // enum constructor by default
+								&& hasNoOtherConstructors()) ||
 							descriptor == MethodDescriptor(classinfo.thisType, "valueOf", &classinfo.thisType, {STRING}) || // Enum valueOf(String name)
-							descriptor == MethodDescriptor(classinfo.thisType, "values", new ArrayType(classinfo.thisType), {}) || // Enum[] values()
-							(modifiers & ACC_PRIVATE && descriptor == MethodDescriptor(classinfo.thisType, "<init>", VOID, {})) // enum constructor by default
+							descriptor == MethodDescriptor(classinfo.thisType, "values", new ArrayType(classinfo.thisType), {}) // Enum[] values()
 						)));
 			}
 

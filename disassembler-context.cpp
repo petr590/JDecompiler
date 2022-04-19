@@ -25,8 +25,6 @@ namespace jdecompiler {
 				if(length == 0)
 					return;
 
-				int32_t stackContent = 0;
-
 				while(available()) {
 					indexMap[pos] = index;
 					posMap[index] = pos;

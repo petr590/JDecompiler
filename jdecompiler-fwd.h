@@ -54,6 +54,8 @@ namespace jdecompiler {
 	using std::ostringstream;
 
 	using std::to_string;
+	using std::find;
+	using std::find_if;
 	using std::memcpy;
 
 	using std::is_same;
@@ -150,7 +152,7 @@ namespace jdecompiler {
 	struct ClassInfo;
 
 
-	// jdecompiler-types
+	// types.cpp
 
 	enum class TypeSize;
 
@@ -189,31 +191,25 @@ namespace jdecompiler {
 
 	static vector<const ReferenceType*> parseParameters(const char* str);
 
-	// jdecompiler-main
+	// field.cpp
 
+	struct FieldDescriptor;
 	struct Field;
+	struct FieldInfo;
+
+	// method.cpp
 
 	struct MethodDescriptor;
-
 	struct Method;
 
 	struct Class;
 
-
-	template<typename T>
-	struct Stack;
 
 	struct DisassemblerContext;
 
 	struct DecompilationContext;
 
 	struct StringifyContext;
-
-	// types.cpp
-
-	enum class TypeSize;
-
-	struct Type;
 
 
 	// operations.cpp

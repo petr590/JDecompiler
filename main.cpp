@@ -14,9 +14,17 @@ int main(int argc, const char* args[]) {
 
 	JDecompiler::getInstance().readClassFiles();
 
-	for(const auto& clazz : JDecompiler::getInstance().getClasses()) {
-		if(clazz.second->canStringify())
-			cout << clazz.second->toString() << endl;
+	for(const auto& nameAndClass : JDecompiler::getInstance().getClasses()) {
+		if(nameAndClass.second->canStringify()) {
+			/*if(!JDecompiler::getInstance().isFailOnError())
+
+			try {*/
+				cout << nameAndClass.second->toString() << endl;
+			/*} catch(const exception& ex) {
+				cerr << "Exception while decompiling class " << nameAndClass.first << ": " << typeNameOf(ex) << ": " << ex.what() << endl;
+				throw;
+			}*/
+		}
 	}
 
 	return 0;

@@ -95,6 +95,8 @@ namespace jdecompiler {
 
 			const vector<const Field*>& getFields() const;
 
+			const vector<const Field*>& getConstants() const;
+
 		private:
 			mutable const StringifyContext* fieldStringifyContext = nullptr;
 			mutable const DisassemblerContext* emptyDisassemblerContext = nullptr;

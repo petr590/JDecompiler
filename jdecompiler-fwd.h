@@ -39,7 +39,11 @@ namespace jdecompiler {
 	using std::vector;
 	using std::map;
 	using std::set;
+
 	using std::tuple;
+	using std::get;
+	using std::index_sequence;
+	using std::index_sequence_for;
 
 	using std::min;
 	using std::max;
@@ -60,10 +64,19 @@ namespace jdecompiler {
 
 	using std::is_same;
 	using std::is_base_of;
+	using std::is_arithmetic;
 	using std::is_integral;
 	using std::is_floating_point;
 	using std::is_fundamental;
 	using std::is_pointer;
+	using std::is_const;
+	using std::is_volatile;
+
+	using std::remove_pointer_t;
+	using std::remove_const_t;
+	using std::remove_volatile_t;
+	using std::remove_cv_t;
+	using std::make_unsigned_t;
 
 	using std::initializer_list;
 
@@ -89,9 +102,10 @@ namespace jdecompiler {
 			ACC_INTERFACE    = 0x0200, // class
 			ACC_ABSTRACT     = 0x0400, // class, method
 			ACC_STRICT       = 0x0800, // class, non-abstract method
-			ACC_SYNTHETIC    = 0x1000, // method
+			ACC_SYNTHETIC    = 0x1000, // class, field, method
 			ACC_ANNOTATION   = 0x2000, // class
-			ACC_ENUM         = 0x4000; // class
+			ACC_ENUM         = 0x4000, // class
+			ACC_ACCESS_FLAGS = ACC_VISIBLE | ACC_PUBLIC | ACC_PRIVATE | ACC_PROTECTED;
 
 
 	// jdecompiler-util
@@ -162,7 +176,6 @@ namespace jdecompiler {
 	struct SpecialType;
 
 
-	template<TypeSize>
 	struct PrimitiveType;
 
 	struct ReferenceType;
@@ -196,6 +209,14 @@ namespace jdecompiler {
 	struct FieldDescriptor;
 	struct Field;
 	struct FieldInfo;
+
+	struct ConstantDecompilationContext {
+		const ClassInfo& classinfo;
+		const FieldInfo* fieldinfo;
+
+		ConstantDecompilationContext(const ClassInfo& classinfo, const FieldInfo* fieldinfo = nullptr):
+				classinfo(classinfo), fieldinfo(fieldinfo) {}
+	};
 
 	// method.cpp
 
@@ -271,7 +292,7 @@ namespace jdecompiler {
 
 		struct IIncOperation;
 
-		template<bool required> struct CastOperation;
+		struct CastOperation;
 
 		struct CheckCastOperation;
 

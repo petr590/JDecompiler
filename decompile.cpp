@@ -250,7 +250,7 @@ namespace jdecompiler {
 			}
 		}
 
-		MethodScope* methodScope = descriptor.type == MethodDescriptor::MethodType::STATIC_INITIALIZER ?
+		MethodScope* methodScope = descriptor.isStaticInitializer() ?
 				new StaticInitializerScope(0, methodScopeEndPos, localsCount) : new MethodScope(0, methodScopeEndPos, localsCount);
 
 		if(isNonStatic)

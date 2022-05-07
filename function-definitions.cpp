@@ -14,13 +14,21 @@ namespace jdecompiler {
 		}
 
 		if(JDecompiler::getInstance().canUseHexNumbers()) {
+			if(value < 0 && value != numeric_limits<T>::min()) {
+				return '-' + numberConstantToString(-value);
+			}
+
 			if(value == 0x0F) return "0x0F";
 			if(value == 0x7F) return "0x7F";
+			if(value == 0x80) return "0x80";
+
 			if constexpr((T)0x7FFF > 0) { // short, int, long
 				if(value == 0x80)   return "0x80";
 				if(value == 0xFF)   return "0xFF";
 				if(value == 0x7FFF) return "0x7FFF";
+				if(value == 0x8000) return "0x8000";
 			}
+
 			if constexpr((T)0x7FFFFFFF > 0) { // int, long
 				if(value == 0x8000)     return "0x8000";
 				if(value == 0xFFFF)     return "0xFFFF";
@@ -28,7 +36,9 @@ namespace jdecompiler {
 				if(value == 0x800000)   return "0x800000";
 				if(value == 0xFFFFFF)   return "0xFFFFFF";
 				if(value == 0x7FFFFFFF) return "0x7FFFFFFF";
+				if(value == 0x80000000) return "0x80000000";
 			}
+
 			if constexpr((T)0x7FFFFFFFFFFFFFFF > 0) { // long
 				if(value == 0x80000000ll)         return "0x80000000";
 				if(value == 0xFFFFFFFFll)         return "0xFFFFFFFF";
@@ -42,8 +52,10 @@ namespace jdecompiler {
 				if(value == 0x80000000000000ll)   return "0x80000000000000";
 				if(value == 0xFFFFFFFFFFFFFFll)   return "0xFFFFFFFFFFFFFF";
 				if(value == 0x7FFFFFFFFFFFFFFFll) return "0x7FFFFFFFFFFFFFFF";
+				if(value == 0x8000000000000000ll) return "0x8000000000000000";
 			}
 		}
+
 		return to_string(value);
 	}
 
@@ -168,6 +180,9 @@ namespace jdecompiler {
 						error(typeNameOf(ex), ": ", ex.what());
 					} catch(const DecompilationException& ex) {
 						error(typeNameOf(ex), ": ", ex.what());
+					} catch(const exception& ex) {
+						error(typeNameOf(ex), ": ", ex.what());
+						throw;
 					}
 				} else {
 					const Class* clazz = Class::readClass(*file);

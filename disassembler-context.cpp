@@ -21,7 +21,9 @@ namespace jdecompiler {
 			map<index_t, pos_t> posMap;
 
 		public:
-			DisassemblerContext(const ConstantPool& constPool, uint32_t length, const uint8_t bytes[]): constPool(constPool), length(length), bytes(bytes) {
+			DisassemblerContext(const ConstantPool& constPool, uint32_t length, const uint8_t bytes[]):
+					constPool(constPool), length(length), bytes(bytes) {
+
 				if(length == 0)
 					return;
 

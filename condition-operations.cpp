@@ -303,6 +303,9 @@ namespace jdecompiler {
 				ConditionScope(index_t startIndex, index_t endIndex, const DecompilationContext& context, const ConditionOperation* condition):
 						Scope(startIndex, endIndex, context), condition(condition) {}
 
+				ConditionScope(index_t startIndex, index_t endIndex, const Scope* parentScope, const ConditionOperation* condition):
+						Scope(startIndex, endIndex, parentScope), condition(condition) {}
+
 			public:
 				inline const ConditionOperation* getCondition() const {
 					return condition;
@@ -382,16 +385,17 @@ namespace jdecompiler {
 				mutable const Operation* ternaryTrueCase = nullptr;
 
 				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition,
-						const function<const ElseScope*()>& elseScopeGetter):
-						ConditionScope(context.exprStartIndex, endIndex, context, condition), bodyStartIndex(context.index + 1),
+						const Scope* parentScope, const function<const ElseScope*()>& elseScopeGetter):
+						ConditionScope(context.exprStartIndex, endIndex, parentScope, condition), bodyStartIndex(context.index + 1),
 						elseScope(elseScopeGetter()) {}
 
 			public:
-				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition):
-						IfScope(context, endIndex, condition, [] () { return nullptr; }) {}
+				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition, const Scope* parentScope):
+						IfScope(context, endIndex, condition, parentScope, [] () { return nullptr; }) {}
 
-				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition, index_t elseScopeEndIndex):
-						IfScope(context, endIndex, condition,
+				IfScope(const DecompilationContext& context, index_t endIndex, const ConditionOperation* condition, const Scope* parentScope,
+						index_t elseScopeEndIndex):
+						IfScope(context, endIndex, condition, parentScope,
 							[&context, elseScopeEndIndex, this] () { return new ElseScope(context, elseScopeEndIndex, this); }) {
 					context.addScope(elseScope);
 				}
@@ -443,17 +447,13 @@ namespace jdecompiler {
 
 
 		struct LoopScope: ConditionScope {
-			protected:
-				mutable bool hasLabel = false;
 
 			public:
 				LoopScope(const DecompilationContext& context, index_t startIndex, index_t endIndex, const ConditionOperation* condition):
 						ConditionScope(startIndex, endIndex, context, condition) {}
 
-				string getLabel() const {
-					if(!hasLabel)
-						hasLabel = true;
-					return "Label1";
+				virtual string getLabelName() const override {
+					return "Loop";
 				}
 
 				virtual bool isBreakable() const override {
@@ -546,6 +546,7 @@ namespace jdecompiler {
 						const IfScope* ifScope = static_cast<const IfScope*>(code[0]);
 						condition = ifScope->getCondition();
 						code = ifScope->getCode();
+						variables = ifScope->getVariables();
 					}
 				}
 		};
@@ -629,6 +630,27 @@ namespace jdecompiler {
 
 			virtual string toStringImpl(const StringifyContext&) const override {
 				return "while(true) {}";
+			}
+		};
+
+		struct BreakOperation: VoidOperation {
+			const Scope* const scope;
+			bool hasLabel;
+
+			BreakOperation(const DecompilationContext& context, const Scope* scope):
+					scope(scope), hasLabel([&context, scope] () {
+						for(const Scope* currentScope = context.getCurrentScope(); currentScope != nullptr; currentScope = currentScope->parentScope) {
+							if(currentScope->isBreakable() && currentScope != scope)
+								return true;
+						}
+						return false;
+					}()) {
+						if(hasLabel)
+							scope->makeLabel();
+					}
+
+			virtual string toString(const StringifyContext&) const override {
+				return hasLabel ? "break " + scope->getLabel() : "break";
 			}
 		};
 	}

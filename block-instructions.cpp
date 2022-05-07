@@ -30,18 +30,8 @@ namespace jdecompiler {
 				if(instanceof<const IfBlock*>(currentBlock)) {
 					const IfBlock* ifBlock = static_cast<const IfBlock*>(currentBlock);
 
-					if(offset > 0) {
-						//log(context.index, index, ifBlock->end());
-
-						if(index - 1 == ifBlock->end()) {
-							return nullptr;
-						}
-
-						if(context.getIndex() == ifBlock->end()) {
-							ifBlock->endIndex = index;
-							return nullptr;
-						}
-					}
+					/*if(offset > 0) {
+					}*/
 				}
 
 				return createBlock(context);
@@ -55,15 +45,8 @@ namespace jdecompiler {
 				if(instanceof<const IfScope*>(currentScope)) {
 					const IfScope* ifScope = static_cast<const IfScope*>(currentScope);
 
-					if(offset > 0) {
-						if(index - 1 == ifScope->end()) {
-							//ifScope->condition = new AndOperation(ifScope->condition, getCondition(context)->invert()); // TODO
-						}
-
-						if(context.index == ifScope->end()) {
-							//ifScope->condition = new OrOperation(ifScope->condition->invert(), getCondition(context)->invert()); // TODO
-						}
-					}
+					/*if(offset > 0) {
+					}*/
 				}
 
 				return nullptr;
@@ -178,75 +161,115 @@ namespace jdecompiler {
 
 
 		struct GotoInstruction: BlockInstruction {
-			const offset_t offset;
+			public:
+				const offset_t offset;
 
-			GotoInstruction(offset_t offset): offset(offset) {}
+				GotoInstruction(offset_t offset): offset(offset) {}
 
+			protected:
+				mutable bool accepted = false;
 
-			virtual const Block* toBlock(const DisassemblerContext& context) const override {
-				if(offset == 0) return new EmptyInfiniteLoopBlock(context);
+				inline void setAccepted() const {
+					accepted = true;
+				}
 
-				const index_t index = context.posToIndex(context.getPos() + offset);
-
-				const Block* const currentBlock = context.getCurrentBlock();
-
-
-				if(instanceof<const IfBlock*>(currentBlock)) {
-					const IfBlock* ifBlock = static_cast<const IfBlock*>(currentBlock);
-
-					// Here goto instruction creates else Block
-					if(offset > 0 && context.index == ifBlock->end() /* check if goto instruction in the end of ifBlock */) {
-						const Block* parentBlock = ifBlock->parentBlock;
-						assert(parentBlock != nullptr);
-
-						/* I don't remember why there is index minus 1 instead of index,
-						   but since I wrote that, then it should be so :) */
-						if(index - 1 <= parentBlock->end()) {
-							ifBlock->addElseBlock(context, index - 1);
-							return nullptr;
-						}
-
-						const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(context.getInstruction(parentBlock->end()));
-						if(gotoInstruction != nullptr && context.posToIndex(context.indexToPos(parentBlock->end()) + gotoInstruction->offset) == index) {
-							ifBlock->addElseBlock(context, parentBlock->end() - 1);
-							return nullptr;
-						}
+			public:
+				virtual const Block* toBlock(const DisassemblerContext& context) const override {
+					if(offset == 0) {
+						setAccepted();
+						return new EmptyInfiniteLoopBlock(context);
 					}
-				} else if(instanceof<const TryBlock*>(currentBlock)) {
-					const TryBlock* tryBlock = static_cast<const TryBlock*>(currentBlock);
 
-					if(context.getIndex() == tryBlock->end()) return nullptr;
-						//return new CatchBlock(context, tryBlock);
-				}
+					const index_t index = context.posToIndex(context.getPos() + offset);
 
-				if(offset < 0) {
-					const Block* block = currentBlock;
+					const Block* const currentBlock = context.getCurrentBlock();
 
-					do {
-						if(instanceof<const InfiniteLoopBlock*>(block)) {
-							const InfiniteLoopBlock* loopBlock = static_cast<const InfiniteLoopBlock*>(block);
 
-							//log(loopBlock->endIndex, context.index);
+					if(instanceof<const IfBlock*>(currentBlock)) {
+						const IfBlock* ifBlock = static_cast<const IfBlock*>(currentBlock);
 
-							loopBlock->endIndex = max(loopBlock->endIndex, context.index);
+						// Here goto instruction creates else Block
+						if(offset > 0 && context.index == ifBlock->end() /* check if goto instruction in the end of ifBlock */) {
+							const Block* parentBlock = ifBlock->parentBlock;
+							assert(parentBlock != nullptr);
+
+							/* I don't remember why there is index minus 1 instead of index,
+							   but since I wrote that, then it should be so :) */
+							logerr(index - 1, parentBlock->end());
+							if(index - 1 <= parentBlock->end()) {
+								ifBlock->addElseBlock(context, index - 1);
+								setAccepted();
+								return nullptr;
+							}
+
+							const GotoInstruction* gotoInstruction = dynamic_cast<const GotoInstruction*>(context.getInstruction(parentBlock->end()));
+							if(gotoInstruction != nullptr && gotoInstruction != this &&
+									context.posToIndex(context.indexToPos(parentBlock->end()) + gotoInstruction->offset) == index) {
+
+								ifBlock->addElseBlock(context, parentBlock->end() - 1);
+								setAccepted();
+								return nullptr;
+							}
 						}
+					} else if(instanceof<const TryBlock*>(currentBlock)) {
+						const TryBlock* tryBlock = static_cast<const TryBlock*>(currentBlock);
 
-						block = block->parentBlock;
-					} while(block != nullptr);
+						if(context.getIndex() == tryBlock->end()) {
+							setAccepted();
+							return nullptr;
+						}
+							//return new CatchBlock(context, tryBlock);
+					}
 
-					return new InfiniteLoopBlock(context, index);
-				}
+					if(offset < 0) {
+						const Block* block = currentBlock;
 
-				if(offset > 0 && index >= currentBlock->start() && index - 1 <= currentBlock->end()) { // goto in the borders of current Block
-					const_cast<DisassemblerContext&>(context).skip(offset);
+						do {
+							if(instanceof<const InfiniteLoopBlock*>(block)) {
+								const InfiniteLoopBlock* loopBlock = static_cast<const InfiniteLoopBlock*>(block);
+
+								//log(loopBlock->endIndex, context.index);
+
+								loopBlock->endIndex = max(loopBlock->endIndex, context.index);
+							}
+
+							block = block->parentBlock;
+						} while(block != nullptr);
+
+						setAccepted();
+						return new InfiniteLoopBlock(context, index);
+					}
+
+					// UNSAFE BEHIAVOR
+					/*if(offset > 0 && index >= currentBlock->start() && index - 1 <= currentBlock->end()) { // goto in the borders of current Block
+						const_cast<DisassemblerContext&>(context).skip(offset);
+						setAccepted();
+						return nullptr;
+					}*/
+
+					/*throw DecompilationException("Illegal using of goto instruction: goto from " +
+							to_string(context.getPos()) + " to " + to_string(context.getPos() + offset));*/
+
 					return nullptr;
 				}
 
-				throw DecompilationException("Illegal using of goto instruction: goto from " +
-						to_string(context.getPos()) + " to " + to_string(context.getPos() + offset));
-			}
+				virtual const Operation* toOperation(const DecompilationContext& context) const override {
 
-			/*virtual const Operation* toOperation(const DecompilationContext& context) const override {}*/
+					const index_t index = context.posToIndex(context.pos + offset);
+
+					for(const Scope* currentScope = context.getCurrentScope(); currentScope != nullptr; currentScope = currentScope->parentScope) {
+						if(index - 1 == currentScope->endIndex && currentScope->isBreakable()) {
+							setAccepted();
+							return new BreakOperation(context, currentScope);
+						}
+					}
+
+					if(!accepted)
+						throw DecompilationException("Illegal using of goto instruction: goto from " +
+								to_string(context.index) + " to " + to_string(context.posToIndex(context.pos + offset)));
+
+					return nullptr;
+				}
 		};
 	}
 }

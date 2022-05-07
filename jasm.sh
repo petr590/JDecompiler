@@ -52,15 +52,18 @@ FLAGS=(
 		ACC_SUPER ACC_SYNCHRONIZED ACC_VOLATILE ACC_TRANSIENT ACC_BRIDGE ACC_VARARGS ACC_NATIVE ACC_STRICT ACC_SYNTHETIC
 )
 
-CP_REFERENCE_COLOR='\033[1;4;34m'    # blue underline
-CP_REFERENCE_BASE_COLOR='\033[1;34m' # blue
-KEYWORD_COLOR='\033[1;32m'   # light green
-OPCODE_COLOR='\033[1;1m'     # white
-STRING_COLOR='\033[0;33m'    # yellow
-NUMBER_COLOR='\033[1;34m'    # blue
-COMMENT_COLOR='\033[1;30m'   # gray
-ATTRIBUTE_COLOR='\033[1;35m' # purple
-FLAG_COLOR='\033[1;1m'       # white
+CP_REFERENCE_COLOR='\033[1;4;34m'        # blue underline
+CP_REFERENCE_BASE_COLOR='\033[1;34m'     # blue
+KEYWORD_COLOR='\033[1;32m'               # light green
+OPCODE_COLOR='\033[1;1m'                 # white
+STRING_COLOR='\033[0;33m'                # yellow
+NUMBER_COLOR='\033[1;34m'                # blue
+COMMENT_COLOR='\033[1;30m'               # gray
+OPCODE_COMMENT_NAME_COLOR='\033[0;36m'   # cyan
+OPCODE_COMMENT_COLOR='\033[0;32m'        # green
+OPCODE_STRING_COMMENT_COLOR='\033[0;40m' # dark background
+ATTRIBUTE_COLOR='\033[1;35m'             # purple
+FLAG_COLOR='\033[1;1m'                   # white
 DEFAULT_COLOR='\033[0m'
 
 CP_REFERENCE_SEDCOLOR="\\$CP_REFERENCE_COLOR"
@@ -70,6 +73,9 @@ OPCODE_SEDCOLOR="\\$OPCODE_COLOR"
 STRING_SEDCOLOR="\\$STRING_COLOR"
 NUMBER_SEDCOLOR="\\$NUMBER_COLOR"
 COMMENT_SEDCOLOR="\\$COMMENT_COLOR"
+OPCODE_COMMENT_NAME_SEDCOLOR="\\$OPCODE_COMMENT_NAME_COLOR"
+OPCODE_COMMENT_SEDCOLOR="\\$OPCODE_COMMENT_COLOR"
+OPCODE_STRING_COMMENT_SEDCOLOR="\\$OPCODE_STRING_COMMENT_COLOR"
 ATTRIBUTE_SEDCOLOR="\\$ATTRIBUTE_COLOR"
 FLAG_SEDCOLOR="\\$FLAG_COLOR"
 DEFAULT_SEDCOLOR="\\$DEFAULT_COLOR"
@@ -77,32 +83,35 @@ DEFAULT_SEDCOLOR="\\$DEFAULT_COLOR"
 COLOR_REGEX='\\033\[\([0-9]\+\;\)*[0-9]\+m'
 
 regex="\
-s/\b-\?[0-9]\+\(\.[0-9]\+\)\?[lfd]\?\b/$NUMBER_SEDCOLOR&$DEFAULT_SEDCOLOR/g;\
-s/\b-\?\.[0-9]\+[fd]\?\b/$NUMBER_SEDCOLOR&$DEFAULT_SEDCOLOR/g;\
+s/\b-\?[0-9]\+\(\.[0-9]\+\([eE][+\-]\?[0-9]\+\)\?\)\?[lfd]\?\b/$NUMBER_SEDCOLOR&$DEFAULT_SEDCOLOR/g;\
+s/\b-\?\.[0-9]\+\([eE][+\-]\?[0-9]\+\)\?[fd]\?\b/$NUMBER_SEDCOLOR&$DEFAULT_SEDCOLOR/g;\
 s/\b-\?0x[0-9a-fA-F]\+\b/$NUMBER_SEDCOLOR&$DEFAULT_SEDCOLOR/g;\
 s/\b-\?0b[01]\+\b/$NUMBER_SEDCOLOR&$DEFAULT_SEDCOLOR/g;\
 \
-
 s/\(\#\?\)$COLOR_REGEX\([0-9]\+\)$COLOR_REGEX\([\.:]\)\#$COLOR_REGEX\([0-9]\+\)\b/\
 $CP_REFERENCE_SEDCOLOR\1\3$DEFAULT_SEDCOLOR$CP_REFERENCE_BASE_SEDCOLOR\5$DEFAULT_SEDCOLOR$CP_REFERENCE_SEDCOLOR#\7$DEFAULT_SEDCOLOR/g;\
 s/\#$COLOR_REGEX\([0-9]\+\)$COLOR_REGEX\b/$CP_REFERENCE_SEDCOLOR#\2$DEFAULT_SEDCOLOR/g;\
 \
 s/\"[^\"]*\"/$STRING_SEDCOLOR&$DEFAULT_SEDCOLOR/g;\
-s/\/\/.*/$COMMENT_SEDCOLOR&$DEFAULT_SEDCOLOR/g;s/\/\*.*\*\//$COMMENT_SEDCOLOR&$DEFAULT_SEDCOLOR/g;\
-s/^\(\s*\)\([A-Za-z][A-Za-z0-9_ \-]*\):/\1$ATTRIBUTE_SEDCOLOR\2$DEFAULT_SEDCOLOR:/g"
+s/\/\/.*/$COMMENT_SEDCOLOR&$DEFAULT_SEDCOLOR/g;s/\/\*.*\*\//$COMMENT_SEDCOLOR&$DEFAULT_SEDCOLOR/g"
 
 
 for kwd in "${KEYWORDS[@]}"; do
 	regex+=";s/\b$kwd\b/$KEYWORD_SEDCOLOR$kwd$DEFAULT_SEDCOLOR/g"
 done
 
+opcodeRegex=";s/\/\/ \(Field\|Method\) \(.*\)/\/\/ $OPCODE_COMMENT_NAME_SEDCOLOR\1$DEFAULT_SEDCOLOR $OPCODE_COMMENT_SEDCOLOR\2$DEFAULT_SEDCOLOR/g;\
+s/\/\/ \(String\) \(.*\)/\/\/ $OPCODE_COMMENT_NAME_SEDCOLOR\1$DEFAULT_SEDCOLOR $OPCODE_STRING_COMMENT_SEDCOLOR\2$DEFAULT_SEDCOLOR/g"
+
 for opcode in "${OPCODES[@]}"; do
-	regex+=";s/\b$opcode\b/$OPCODE_SEDCOLOR$opcode$DEFAULT_SEDCOLOR/g"
+	opcodeRegex+=";s/\b$opcode\b/$OPCODE_SEDCOLOR$opcode$DEFAULT_SEDCOLOR/g"
 done
 
 for flag in "${FLAGS[@]}"; do
 	regex+=";s/\b$flag\b/$FLAG_SEDCOLOR$flag$DEFAULT_SEDCOLOR/g"
 done
+
+regex+=";s/^\(\s*\)\([A-Za-z][A-Za-z0-9_ \-]*\):/\1$ATTRIBUTE_SEDCOLOR\2$DEFAULT_SEDCOLOR:/g" # attributes
 
 
 lineNum=-1
@@ -111,6 +120,11 @@ padding=3
 
 printLine() {
 	echo -e "$(sed "$regex" <<< "$1")"
+}
+
+printCodeLine() {
+	echo -ne "    $([ $1 -lt 10 ] && echo -n '  ' || { [ $1 -lt 100 ] && echo -n ' '; })$NUMBER_COLOR$1$DEFAULT_COLOR"
+	echo -e "$(sed "$regex$opcodeRegex" <<< "${3:$2}")"
 }
 
 printCodeHeader() {
@@ -136,19 +150,27 @@ while IFS= read line; do
 		padding=3
 
 	elif [ $lineNum -ge 0 ]; then
-		if [[ ! "$line" =~ ^' '{4,}[0-9]+: ]]; then
+		if [[ "$line" =~ ^' '{4,}[0-9]+:' '(tableswitch|lookupswitch)' '+\{ ]]; then
+			printCodeLine $lineNum $padding "$line"
+			oldLineNum=$lineNum
+			lineNum=-2
+			continue
+		elif [[ ! "$line" =~ ^' '{4,}[0-9]+: ]]; then
 			lineNum=-1
 		fi
+
 	fi
-
 	if [ $lineNum -ge 0 ]; then
-		echo -ne "    $([ $lineNum -lt 10 ] && echo -n '  ' || { [ $lineNum -lt 100 ] && echo -n ' '; })$NUMBER_COLOR$lineNum$DEFAULT_COLOR"
-		line="${line:$padding}"
-	fi
-
-	printLine "$line"
-
-	if [ $lineNum -ge 0 ]; then
+		printCodeLine $lineNum $padding "$line"
 		let lineNum++
+	else
+		if [ $lineNum -eq -2 ]; then
+			echo -n '  ';
+			if [[ "$line" =~ ^' '+\} ]]; then
+				lineNum=$oldLineNum
+				oldLineNum=-1
+			fi
+		fi
+		printLine "$line"
 	fi
 done

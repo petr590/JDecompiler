@@ -32,9 +32,20 @@ namespace jdecompiler {
 
 	template<typename T>
 	static inline constexpr string typeNameOf() {
-		return undecorateTypeName(typeid(T).name());
+		if constexpr(is_pointer<T>())
+			return typeNameOf<remove_pointer_t<T>>() + '*';
+		else if constexpr(is_const<T>())
+			return "const " + typeNameOf<remove_const_t<T>>();
+		else if constexpr(is_volatile<T>())
+			return "volatile " + typeNameOf<remove_volatile_t<T>>();
+		else
+			return undecorateTypeName(typeid(T).name());
 	}
 
+
+	template<> inline string typeNameOf<void>() {
+		return "void";
+	}
 
 	template<> inline string typeNameOf<char>() {
 		return "char";
@@ -107,11 +118,15 @@ namespace jdecompiler {
 
 
 	template<class T>
-	static inline string typeNameOf(const T& value) {
-		if constexpr(is_pointer<T>::value)
-			return typeNameOf(*value) + '*';
-		else if constexpr(is_fundamental<T>::value || is_same<T, void*>::value || is_same<T, const void*>::value)
+	static inline string typeNameOf(T& value) {
+		if constexpr(is_fundamental<T>() || is_same<remove_cv_t<remove_pointer_t<T>>, void>() /* const or volatile void* */)
 			return typeNameOf<T>();
+		else if constexpr(is_pointer<T>())
+			return typeNameOf<remove_pointer_t<T>>(*value) + '*';
+		else if constexpr(is_const<T>())
+			return "const " + typeNameOf<remove_const_t<T>>(const_cast<remove_const_t<T>&>(value));
+		else if constexpr(is_volatile<T>())
+			return "volatile " + typeNameOf<remove_volatile_t<T>>(const_cast<remove_volatile_t<T>&>(value));
 		else
 			return undecorateTypeName(typeid(value).name());
 	}

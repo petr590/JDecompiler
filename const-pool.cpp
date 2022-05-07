@@ -17,9 +17,11 @@ namespace jdecompiler {
 	struct Constant {
 		virtual const char* getConstantName() const = 0;
 
-		virtual void init(const ConstantPool& constPool) {};
-
 		virtual ~Constant() {}
+	};
+
+	struct InterConstant {
+		virtual const Constant* createConstant(const ConstantPool& constPool) const = 0;
 	};
 
 
@@ -28,61 +30,95 @@ namespace jdecompiler {
 			const uint16_t size;
 
 		private:
-			Constant** const pool;
-
-			#define checkTemplate() static_assert(is_base_of<Constant, T>(),\
-					"template type T of method ConstantPool::get is not subclass of class Constant")
+			const Constant** pool;
+			const InterConstant** interPool;
 
 		public:
-			ConstantPool(const uint16_t size): size(size), pool(new Constant*[size]) {
-				for(uint16_t i = 0; i < size; i++)
-					pool[i] = nullptr;
-			}
+			ConstantPool(BinaryInputStream& instream);
 
 		private:
+			template<typename C>
+			static inline constexpr void checkTemplate() {
+				static_assert(is_base_of<Constant, C>(), "template type C of method ConstantPool::get is not subclass of class Constant");
+			}
+
 			inline void checkIndex(uint16_t index) const {
 				if(index >= size)
 					throw ConstantPoolIndexOutOfBoundsException(index, size);
 			}
 
-			template<class T>
-			inline const T* get0(uint16_t index) const {
+
+			mutable stack<uint16_t> backtrace;
+
+			void initInterConstant(uint16_t index) const {
+				if(pool[index] != nullptr)
+					return;
+
+				if(backtrace.has(index)) {
+					string backtraceString;
+
+					for(const uint16_t backtraceIndex : backtrace)
+						backtraceString += "\n#" + to_string(backtraceIndex);
+
+					throw ConstantPoolInitializingException("Recursion detected while initializing a constant pool: " + backtraceString);
+				}
+
+				if(interPool[index] == nullptr)
+					throw ConstantPoolInitializingException("Cannot initialize constant #" + to_string(index) + ": inter constant is null");
+
+				pool[index] = interPool[index]->createConstant(*this);
+			}
+
+
+			template<class C>
+			const C* get0(uint16_t index) const {
+				checkTemplate<C>();
+				checkIndex(index);
+
 				const Constant* const constant = pool[index];
-				if(instanceof<const T*>(constant))
-					return static_cast<const T*>(constant);
+
+				if(instanceof<const C*>(constant))
+					return static_cast<const C*>(constant);
+
 				throw InvalidConstantPoolReferenceException("Invalid constant pool reference " + hexWithPrefix<4>(index) +
-						": expected " + T::CONSTANT_NAME + ", got " + (constant == nullptr ? "null" : constant->getConstantName()));
-						//": expected " + typeNameOf(T) + ", got " + (constant == nullptr ? "null" : typeNameOf(*constant)));
+						": expected " + C::CONSTANT_NAME + ", got " + (constant == nullptr ? "null" : constant->getConstantName()));
+						//": expected " + typeNameOf(C) + ", got " + (constant == nullptr ? "null" : typeNameOf(*constant)));
 			}
 
 		public:
-
-			Constant*& operator[] (uint16_t index) const {
+			const Constant*& operator[] (uint16_t index) const {
 				checkIndex(index);
 				return pool[index];
 			}
 
-			template<class T>
-			const T* getNullablle(uint16_t index) const {
-				checkTemplate();
-				checkIndex(index);
-				return dynamic_cast<const T*>(pool[index]);
+
+			template<class C>
+			const C* getInter(uint16_t index) const {
+				initInterConstant(index);
+
+				return get0<C>(index);
 			}
 
-			template<class T>
-			const T* get(uint16_t index) const {
-				checkTemplate();
-				checkIndex(index);
-				return get0<T>(index);
+			inline const Utf8Constant& getInterUtf8Constant(uint16_t index) const {
+				return *getInter<Utf8Constant>(index);
 			}
 
-			template<class T>
-			const T* getOrDefault(uint16_t index, function<const T*()> defaultValueGetter) const {
-				checkTemplate();
-				checkIndex(index);
+
+			template<class C>
+			const C* getNullablle(uint16_t index) const {
+				return index == 0 ? nullptr : get0<C>(index);
+			}
+
+			template<class C>
+			const C* get(uint16_t index) const {
+				return get0<C>(index);
+			}
+
+			template<class C>
+			const C* getOrDefault(uint16_t index, function<const C*()> defaultValueGetter) const {
 				if(index == 0)
 					return defaultValueGetter();
-				return get0<T>(index);
+				return get0<C>(index);
 			}
 
 			inline const Utf8Constant& getUtf8Constant(uint16_t index) const {
@@ -107,7 +143,7 @@ namespace jdecompiler {
 
 		virtual string toString(const ClassInfo& classinfo) const = 0;
 
-		virtual const Operation* toOperation(const FieldInfo* = nullptr) const = 0;
+		virtual const Operation* toOperation(const ConstantDecompilationContext) const = 0;
 	};
 
 
@@ -123,61 +159,48 @@ namespace jdecompiler {
 
 
 	struct IntegerConstant: NumberConstant<int32_t> { IntegerConstant(const int32_t value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Integer);
-		virtual const Operation* toOperation(const FieldInfo*) const override;
+		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
 	};
 	struct FloatConstant:   NumberConstant<float>   {   FloatConstant(const   float value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Float);
-		virtual const Operation* toOperation(const FieldInfo*) const override;
+		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
 	};
 	struct LongConstant:    NumberConstant<int64_t> {    LongConstant(const int64_t value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Long);
-		virtual const Operation* toOperation(const FieldInfo*) const override;
+		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
 	};
 	struct DoubleConstant:  NumberConstant<double>  {  DoubleConstant(const  double value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Double);
-		virtual const Operation* toOperation(const FieldInfo*) const override;
+		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
 	};
 
 
 	struct ClassConstant: ConstValueConstant {
 		DEFINE_CONSTANT_NAME(Class);
 
-		const uint16_t nameRef;
-		const Utf8Constant* name;
+		const Utf8Constant& name;
 
-		ClassConstant(uint16_t nameRef): nameRef(nameRef) {}
+		ClassConstant(const Utf8Constant& name): name(name) {}
 
-		ClassConstant(const Utf8Constant* name): nameRef(0), name(name) {}
-
-		virtual void init(const ConstantPool& constPool) override {
-			name = constPool.get<Utf8Constant>(nameRef);
-		}
+		ClassConstant(const ConstantPool& constPool, uint16_t index): name(constPool.getInterUtf8Constant(index)) {}
 
 		virtual string toString(const ClassInfo&) const override;
 
-		virtual const Operation* toOperation(const FieldInfo*) const override;
+		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
 	};
 
 
 	struct StringConstant: ConstValueConstant {
 		DEFINE_CONSTANT_NAME(String);
 
-		const uint16_t valueRef;
-		const Utf8Constant* value;
+		const Utf8Constant& value;
 
-		StringConstant(uint16_t valueRef): valueRef(valueRef) {}
+		StringConstant(const Utf8Constant& value): value(value) {}
 
-		StringConstant(uint16_t valueRef, const ConstantPool& constPool):
-				valueRef(valueRef), value(constPool.get<Utf8Constant>(valueRef)) {}
-
-		StringConstant(const Utf8Constant* value): valueRef(0), value(value) {}
-
-		virtual void init(const ConstantPool& constPool) override {
-			value = constPool.get<Utf8Constant>(valueRef);
-		}
+		StringConstant(const ConstantPool& constPool, uint16_t index): value(constPool.getInterUtf8Constant(index)) {}
 
 		virtual string toString(const ClassInfo&) const override {
-			return stringToLiteral(*value);
+			return stringToLiteral(value);
 		}
 
-		virtual const Operation* toOperation(const FieldInfo*) const override;
+		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
 	};
 
 
@@ -185,51 +208,41 @@ namespace jdecompiler {
 	struct NameAndTypeConstant: Constant {
 		DEFINE_CONSTANT_NAME(NameAndType);
 
-		const uint16_t nameRef;
-		const uint16_t descriptorRef;
-		const Utf8Constant* name;
-		const Utf8Constant* descriptor;
+		const Utf8Constant & name, & descriptor;
 
-		NameAndTypeConstant(uint16_t nameRef, uint16_t descriptorRef): nameRef(nameRef), descriptorRef(descriptorRef) {}
-
-		virtual void init(const ConstantPool& constPool) override {
-			name = constPool.get<Utf8Constant>(nameRef);
-			descriptor = constPool.get<Utf8Constant>(descriptorRef);
-		}
+		NameAndTypeConstant(const ConstantPool& constPool, uint16_t nameIndex, uint16_t descriptorIndex):
+				name(constPool.getInterUtf8Constant(nameIndex)), descriptor(constPool.getInterUtf8Constant(descriptorIndex)) {}
 	};
 
 	struct ReferenceConstant: Constant {
 		DEFINE_CONSTANT_NAME(Reference);
 
-		const uint16_t classRef;
-		const uint16_t nameAndTypeRef;
-		const ClassConstant* clazz;
-		const NameAndTypeConstant* nameAndType;
+		const ClassConstant* const clazz;
+		const NameAndTypeConstant* const nameAndType;
 
-		ReferenceConstant(uint16_t classRef, uint16_t nameAndTypeRef): classRef(classRef), nameAndTypeRef(nameAndTypeRef) {}
-
-		virtual void init(const ConstantPool& constPool) override {
-			clazz = constPool.get<ClassConstant>(classRef);
-			nameAndType = constPool.get<NameAndTypeConstant>(nameAndTypeRef);
-		}
+		ReferenceConstant(const ConstantPool& constPool, uint16_t classIndex, uint16_t nameAndTypeIndex):
+				clazz(constPool.getInter<ClassConstant>(classIndex)), nameAndType(constPool.getInter<NameAndTypeConstant>(nameAndTypeIndex)) {}
 	};
 
 	struct FieldrefConstant: ReferenceConstant {
 		DEFINE_CONSTANT_NAME(Fieldref);
 
-		FieldrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(classRef, nameAndTypeRef) {}
+		FieldrefConstant(const ConstantPool& constPool, uint16_t classIndex, uint16_t nameAndTypeIndex):
+				ReferenceConstant(constPool, classIndex, nameAndTypeIndex) {}
 	};
 
 	struct MethodrefConstant: ReferenceConstant {
 		DEFINE_CONSTANT_NAME(Methodref);
 
-		MethodrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): ReferenceConstant(classRef, nameAndTypeRef) {}
+		MethodrefConstant(const ConstantPool& constPool, uint16_t classIndex, uint16_t nameAndTypeIndex):
+				ReferenceConstant(constPool, classIndex, nameAndTypeIndex) {}
 	};
 
 	struct InterfaceMethodrefConstant: MethodrefConstant {
 		DEFINE_CONSTANT_NAME(InterfaceMethodref);
 
-		InterfaceMethodrefConstant(uint16_t classRef, uint16_t nameAndTypeRef): MethodrefConstant(classRef, nameAndTypeRef) {}
+		InterfaceMethodrefConstant(const ConstantPool& constPool, uint16_t classIndex, uint16_t nameAndTypeIndex):
+				MethodrefConstant(constPool, classIndex, nameAndTypeIndex) {}
 	};
 
 
@@ -246,8 +259,7 @@ namespace jdecompiler {
 			const ReferenceKind referenceKind;
 			const KindType kindType;
 
-			const uint16_t referenceRef;
-			const ReferenceConstant* referenceConstant;
+			const ReferenceConstant* const referenceConstant;
 
 		private:
 			static KindType getKindType(const ReferenceKind referenceKind) {
@@ -259,60 +271,141 @@ namespace jdecompiler {
 		}
 
 		public:
-			MethodHandleConstant(uint8_t referenceKind, uint16_t referenceRef):
-					referenceKind((ReferenceKind)referenceKind), kindType(getKindType((ReferenceKind)referenceKind)), referenceRef(referenceRef) {
+			MethodHandleConstant(const ConstantPool& constPool, uint8_t referenceKind, uint16_t referenceIndex):
+					referenceKind((ReferenceKind)referenceKind), kindType(getKindType((ReferenceKind)referenceKind)),
+					referenceConstant(constPool.getInter<ReferenceConstant>(referenceIndex)) {
+
 				if(referenceKind < 1 || referenceKind > 9)
 					throw IllegalStateException("referenceKind is " + to_string(referenceKind) + ", must be in the range 1 to 9");
-			}
-
-			virtual void init(const ConstantPool& constPool) override {
-				referenceConstant = constPool.get<ReferenceConstant>(referenceRef);
 			}
 
 			virtual string toString(const ClassInfo& classinfo) const override {
 				return "#MethodHandle#";
 			}
 
-			virtual const Operation* toOperation(const FieldInfo*) const override;
+			virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
 	};
 
 
 	struct MethodTypeConstant: ConstValueConstant {
 		DEFINE_CONSTANT_NAME(MethodType);
 
-		const uint16_t descriptorRef;
+		const Utf8Constant& descriptor;
 
-		const Utf8Constant* descriptor;
+		MethodTypeConstant(const Utf8Constant& descriptor): descriptor(descriptor) {}
 
-		MethodTypeConstant(uint16_t descriptorRef): descriptorRef(descriptorRef) {}
-
-		MethodTypeConstant(uint16_t descriptorRef, const ConstantPool& constPool):
-				descriptorRef(descriptorRef), descriptor(constPool.get<Utf8Constant>(descriptorRef)) {}
-
-		virtual void init(const ConstantPool& constPool) override {
-			descriptor = constPool.get<Utf8Constant>(descriptorRef);
-		}
+		MethodTypeConstant(const ConstantPool& constPool, uint16_t descriptorIndex):
+				descriptor(constPool.getInterUtf8Constant(descriptorIndex)) {}
 
 		virtual string toString(const ClassInfo&) const override;
 
-		virtual const Operation* toOperation(const FieldInfo*) const override;
+		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
 	};
 
 	struct InvokeDynamicConstant: Constant {
 		DEFINE_CONSTANT_NAME(InvokeDynamic);
 
 		const uint16_t bootstrapMethodAttrIndex;
-		const uint16_t nameAndTypeRef;
 
-		const NameAndTypeConstant* nameAndType;
+		const NameAndTypeConstant* const nameAndType;
 
-		InvokeDynamicConstant(uint16_t bootstrapMethodAttrIndex, uint16_t nameAndTypeRef):
-				bootstrapMethodAttrIndex(bootstrapMethodAttrIndex), nameAndTypeRef(nameAndTypeRef) {}
+		InvokeDynamicConstant(const ConstantPool& constPool, uint16_t bootstrapMethodAttrIndex, uint16_t nameAndTypeIndex):
+				bootstrapMethodAttrIndex(bootstrapMethodAttrIndex), nameAndType(constPool.getInter<NameAndTypeConstant>(nameAndTypeIndex)) {}
+	};
 
-		virtual void init(const ConstantPool& constPool) override {
-			nameAndType = constPool.get<NameAndTypeConstant>(nameAndTypeRef);
+
+
+	template<typename Const, typename... Args>
+	struct InterConstantImpl: InterConstant {
+		static_assert(is_base_of<Constant, Const>(), "Const must be inherited from Constant");
+
+		const tuple<Args...> args;
+
+		InterConstantImpl(Args... args): args(args...) {}
+
+		template<size_t... indexes>
+		inline const Constant* createConstant0(const ConstantPool& constPool, const index_sequence<indexes...>&) const {
+			return new Const(constPool, get<indexes>(args)...);
+		}
+
+		virtual const Constant* createConstant(const ConstantPool& constPool) const override {
+			return createConstant0(constPool, index_sequence_for<Args...>());
 		}
 	};
+
+
+
+
+	ConstantPool::ConstantPool(BinaryInputStream& instream): size(instream.readUShort()),
+			pool(new const Constant*[size]), interPool(new const InterConstant*[size]) {
+
+		for(uint16_t i = 0; i < size; i++) {
+			pool[i] = nullptr;
+			interPool[i] = nullptr;
+		}
+
+		for(uint16_t i = 1; i < size; i++) {
+			uint8_t constType = instream.readUByte();
+
+			switch(constType) {
+				case  1: {
+					uint16_t length = instream.readUShort();
+					const char* bytes = instream.readString(length);
+					pool[i] = new Utf8Constant(bytes, length);
+					delete[] bytes;
+					break;
+				}
+				case  3:
+					pool[i] = new IntegerConstant(instream.readInt());
+					break;
+				case  4:
+					pool[i] = new FloatConstant(instream.readFloat());
+					break;
+				case  5:
+					pool[i] = new LongConstant(instream.readLong());
+					i++; // Long and Double constants have historically held two positions in the pool
+					break;
+				case  6:
+					pool[i] = new DoubleConstant(instream.readDouble());
+					i++;
+					break;
+				case  7:
+					interPool[i] = new InterConstantImpl<ClassConstant, uint16_t>(instream.readUShort());
+					break;
+				case  8:
+					interPool[i] = new InterConstantImpl<StringConstant, uint16_t>(instream.readUShort());
+					break;
+				case  9:
+					interPool[i] = new InterConstantImpl<FieldrefConstant, uint16_t, uint16_t>(instream.readUShort(), instream.readUShort());
+					break;
+				case 10:
+					interPool[i] = new InterConstantImpl<MethodrefConstant, uint16_t, uint16_t>(instream.readUShort(), instream.readUShort());
+					break;
+				case 11:
+					interPool[i] = new InterConstantImpl<InterfaceMethodrefConstant, uint16_t, uint16_t>(instream.readUShort(), instream.readUShort());
+					break;
+				case 12:
+					interPool[i] = new InterConstantImpl<NameAndTypeConstant, uint16_t, uint16_t>(instream.readUShort(), instream.readUShort());
+					break;
+				case 15:
+					interPool[i] = new InterConstantImpl<MethodHandleConstant, uint16_t, uint16_t>(instream.readUByte(), instream.readUShort());
+					break;
+				case 16:
+					interPool[i] = new InterConstantImpl<MethodTypeConstant, uint16_t>(instream.readUShort());
+					break;
+				case 18:
+					interPool[i] = new InterConstantImpl<InvokeDynamicConstant, uint16_t, uint16_t>(instream.readUShort(), instream.readUShort());
+					break;
+				default:
+					throw ClassFormatError("Illegal constant type " + hexWithPrefix<2>(constType) + " at index #" + to_string(i) +
+							" at pos " + hexWithPrefix((uint32_t)instream.getPos()));
+			}
+		}
+
+		for(uint16_t i = 1; i < size; i++)
+			this->initInterConstant(i);
+	}
+
 }
 
 #undef DEFINE_CONSTANT_NAME

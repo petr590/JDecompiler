@@ -39,6 +39,11 @@ namespace jdecompiler {
 	};
 
 
+	struct ConstantPoolInitializingException: DecompilationException {
+		ConstantPoolInitializingException(const string& message): DecompilationException(message) {}
+	};
+
+
 	struct InvalidConstantPoolReferenceException: DecompilationException {
 		InvalidConstantPoolReferenceException(const string& message): DecompilationException(message) {}
 	};
@@ -63,6 +68,12 @@ namespace jdecompiler {
 
 	struct IllegalMethodDescriptorException: DecompilationException {
 		IllegalMethodDescriptorException(const string& descriptor): DecompilationException(descriptor) {}
+	};
+
+
+	struct IncopatibleTypesException: DecompilationException {
+		IncopatibleTypesException(const string& message): DecompilationException(message) {}
+		IncopatibleTypesException(const Type*, const Type*);
 	};
 
 

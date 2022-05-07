@@ -15,7 +15,7 @@ namespace jdecompiler {
 
 		FieldDescriptor(const string& name, const string& descriptor): FieldDescriptor(name, parseType(descriptor)) {}
 
-		FieldDescriptor(const NameAndTypeConstant* nameAndType): FieldDescriptor(*nameAndType->name, *nameAndType->descriptor) {}
+		FieldDescriptor(const NameAndTypeConstant* nameAndType): FieldDescriptor(nameAndType->name, nameAndType->descriptor) {}
 
 		string toString() const {
 			return type.getName() + ' ' + name;
@@ -46,8 +46,9 @@ namespace jdecompiler {
 			const FieldDescriptor& descriptor;
 			const Attributes& attributes;
 
+			const ConstantValueAttribute* const constantValueAttribute;
+
 		protected:
-			const ConstantValueAttribute* constantValueAttribute;
 			mutable const Operation* initializer;
 			mutable const StringifyContext* context;
 			friend void StaticInitializerScope::addOperation(const Operation*, const StringifyContext&) const;
@@ -55,7 +56,8 @@ namespace jdecompiler {
 		public:
 			Field(uint16_t modifiers, const FieldDescriptor& descriptor, const Attributes& attributes, const ClassInfo& classinfo): modifiers(modifiers),
 					descriptor(descriptor), attributes(attributes), constantValueAttribute(attributes.get<ConstantValueAttribute>()),
-					initializer(constantValueAttribute == nullptr ? nullptr : constantValueAttribute->getInitializer({classinfo.thisType, descriptor})),
+					initializer(constantValueAttribute == nullptr ? nullptr :
+							constantValueAttribute->getInitializer({classinfo, new FieldInfo(classinfo.thisType, descriptor)})),
 					context(initializer == nullptr ? nullptr : classinfo.getFieldStringifyContext()) {
 				if(initializer != nullptr)
 					initializer->castReturnTypeTo(&descriptor.type);
@@ -69,16 +71,21 @@ namespace jdecompiler {
 			virtual string toString(const ClassInfo& classinfo) const override {
 				string str;
 
+				FormatString comment;
+				if(modifiers & ACC_SYNTHETIC)
+					comment += "synthetic field";
+
 				if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
 					str += annotationsAttribute->toString(classinfo);
 
-				return str + classinfo.getIndent() + (string)(modifiersToString(modifiers) + descriptor.type.toString(classinfo)) + ' ' + descriptor.name +
+				return (str + classinfo.getIndent() + (string)(modifiersToString(modifiers) + descriptor.type.toString(classinfo)) + ' ' + descriptor.name +
 						(initializer != nullptr ? " = " + (JDecompiler::getInstance().canUseShortArrayInitializing() ?
-						initializer->toArrayInitString(*context) : initializer->toString(*context)) : EMPTY_STRING);
+						initializer->toArrayInitString(*context) : initializer->toString(*context)) : EMPTY_STRING)) +
+						(comment.empty() ? EMPTY_STRING : " // " + (string)comment);
 			}
 
 			virtual bool canStringify(const ClassInfo& classinfo) const override {
-				return !(modifiers & ACC_SYNTHETIC);
+				return !(modifiers & ACC_SYNTHETIC && !JDecompiler::getInstance().showSynthetic());
 			}
 
 			inline bool hasInitializer() const {
@@ -89,11 +96,15 @@ namespace jdecompiler {
 				return initializer;
 			}
 
+			inline bool isConstant() const {
+				return constantValueAttribute != nullptr;
+			}
+
 		private:
 			static FormatString modifiersToString(uint16_t modifiers) {
 				FormatString str;
 
-				switch(modifiers & (ACC_VISIBLE | ACC_PUBLIC | ACC_PRIVATE | ACC_PROTECTED)) {
+				switch(modifiers & ACC_ACCESS_FLAGS) {
 					case ACC_VISIBLE: break;
 					case ACC_PUBLIC: str += "public"; break;
 					case ACC_PRIVATE: str += "private"; break;

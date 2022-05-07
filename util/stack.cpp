@@ -8,7 +8,7 @@
 namespace util {
 
 	struct StackIndexOutOfBoundsException: IndexOutOfBoundsException {
-		StackIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length, "Stack") {}
+		StackIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length, "stack") {}
 	};
 
 	struct IllegalStackStateException: Exception {
@@ -23,14 +23,15 @@ namespace util {
 
 
 	template<typename T>
-	struct Stack {
+	struct stack {
+
 		private:
 			class Entry {
 				public:
-					const T value;
-					const Entry* const next;
+					T value;
+					Entry* const next;
 
-					Entry(T value, const Entry* next): value(value), next(next) {}
+					Entry(T value, Entry* next): value(value), next(next) {}
 
 					void deleteNext() const {
 						if(next != nullptr) {
@@ -40,8 +41,53 @@ namespace util {
 					}
 			};
 
-			const Entry* firstEntry;
+
+
+			struct iterator {
+				protected:
+					Entry* entry;
+					friend struct stack;
+
+					constexpr iterator(Entry* entry): entry(entry) {}
+
+				public:
+					T& operator*() {
+						return entry->value;
+					}
+
+					const T& operator*() const {
+						return entry->value;
+					}
+
+					iterator& operator++() {
+						entry = entry->next;
+						return *this;
+					}
+
+					iterator operator++(int) {
+						iterator old(*this);
+						entry = entry->next;
+						return old;
+					}
+
+					iterator& operator=(const iterator& other) {
+						entry = other.entry;
+					}
+
+					friend bool operator==(const iterator& iterator1, const iterator& iterator2) {
+						return iterator1.entry == iterator2.entry;
+					}
+
+					friend bool operator!=(const iterator& iterator1, const iterator& iterator2) {
+						return !(iterator1 == iterator2);
+					}
+			};
+
+
+			Entry* firstEntry;
 			uint16_t length;
+
+			iterator beginIterator;
 
 		protected:
 			inline void checkEmptyStack() const {
@@ -50,13 +96,15 @@ namespace util {
 			}
 
 		public:
-			Stack(): firstEntry(nullptr), length(0) {}
 
-			Stack(T value): firstEntry(new Entry(value, nullptr)), length(1) {}
+			stack(): firstEntry(nullptr), length(0), beginIterator(nullptr) {}
+
+			stack(T value): firstEntry(new Entry(value, nullptr)), length(1), beginIterator(firstEntry) {}
 
 			void push(T value) {
 				firstEntry = new Entry(value, firstEntry);
 				length++;
+				beginIterator.entry = firstEntry;
 			}
 
 			inline void push(T value, T values...) {
@@ -71,6 +119,8 @@ namespace util {
 				delete firstEntry;
 				firstEntry = copiedEntry.next;
 				length--;
+
+				beginIterator.entry = firstEntry;
 
 				return copiedEntry.value;
 			}
@@ -92,6 +142,13 @@ namespace util {
 				return currentEntry->value;
 			}
 
+			bool has(const T& value) const {
+				for(const T& val : *this)
+					if(val == value)
+						return true;
+				return false;
+			}
+
 			inline uint16_t size() const {
 				return length;
 			}
@@ -101,7 +158,7 @@ namespace util {
 			}
 
 
-			friend ostream& operator<< (ostream& out, const Stack& stack) {
+			friend ostream& operator<<(ostream& out, const stack& stack) {
 				out << '[';
 				if(!stack.empty()) {
 					size_t i = 0;
@@ -117,11 +174,34 @@ namespace util {
 			}
 
 
-			~Stack() {
+			~stack() {
 				if(firstEntry != nullptr) {
 					firstEntry->deleteNext();
 					delete firstEntry;
 				}
+			}
+
+
+
+			iterator begin() const {
+				return beginIterator;
+			}
+
+
+			iterator end() const {
+				static const iterator endIterator(nullptr);
+				return endIterator;
+			}
+
+
+
+
+			friend iterator begin(const stack& stck) {
+				return stck.begin();
+			}
+
+			friend iterator end(const stack& stck) {
+				return stck.end();
 			}
 	};
 }

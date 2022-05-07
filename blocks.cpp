@@ -72,12 +72,14 @@ namespace jdecompiler {
 					Block(context.index, context.posToIndex(context.getPos() + offset) - 1, context) {}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override final {
-				const ConditionOperation* const condition = getCondition(context)->invert();
+				const ConditionOperation* condition = getCondition(context)->invert();
 
 				const IfScope* ifScope = dynamic_cast<const IfScope*>(context.getCurrentScope());
+				// TO DO $assertionsDisabled
+				const Scope* ifParentScope = context.getCurrentScope();
 
 				if(ifScope != nullptr) {
-					if(ifScope->bodyStartIndex == startIndex - 1 && ifScope->endIndex == endIndex) {
+					if(ifScope->bodyStartIndex == context.exprStartIndex && ifScope->endIndex == endIndex) {
 						ifScope->setCondition(new AndOperation(ifScope->getCondition(), condition));
 
 						ifScope->bodyStartIndex = context.index + 1;
@@ -85,13 +87,20 @@ namespace jdecompiler {
 						return nullptr;
 					}
 
+					if(endIndex > ifScope->endIndex && context.index == ifScope->endIndex) {
+						condition = new OrOperation(ifScope->condition->invert(), condition);
+						ifParentScope = ifParentScope->parentScope;
+						ifScope->remove();
+					}
+
 					/*if(ifScope->endIndex >= endIndex && endIndex <= ifScope->parentScope->endIndex) {
 
 					}*/
 				}
 
-				return elseBlock != nullptr ? new IfScope(context, endIndex, condition, elseBlock->endIndex) :
-						new IfScope(context, endIndex, condition);
+				return elseBlock != nullptr ?
+						new IfScope(context, endIndex, condition, ifParentScope, elseBlock->endIndex) :
+						new IfScope(context, endIndex, condition, ifParentScope);
 			}
 
 			virtual const ConditionOperation* getCondition(const DecompilationContext& context) const = 0;

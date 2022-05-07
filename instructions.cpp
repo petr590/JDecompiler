@@ -58,25 +58,33 @@ namespace jdecompiler {
 		struct IConstInstruction: NumberConstInstruction<int32_t> {
 			IConstInstruction(int32_t value): NumberConstInstruction(value) {}
 
-			virtual const Operation* toOperation(const DecompilationContext& context) const override { return IConstOperation::valueOf(value); }
+			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				return IConstOperation::valueOf(value, context.classinfo);
+			}
 		};
 
 		struct LConstInstruction: NumberConstInstruction<int64_t> {
 			LConstInstruction(int64_t value): NumberConstInstruction(value) {}
 
-			virtual const Operation* toOperation(const DecompilationContext& context) const override { return LConstOperation::valueOf(value); }
+			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				return LConstOperation::valueOf(value, context.classinfo);
+			}
 		};
 
 		struct FConstInstruction: NumberConstInstruction<float> {
 			FConstInstruction(float value): NumberConstInstruction(value) {}
 
-			virtual const Operation* toOperation(const DecompilationContext& context) const override { return FConstOperation::valueOf(value); }
+			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				return FConstOperation::valueOf(value, context.classinfo);
+			}
 		};
 
 		struct DConstInstruction: NumberConstInstruction<double> {
 			DConstInstruction(double value): NumberConstInstruction(value) {}
 
-			virtual const Operation* toOperation(const DecompilationContext& context) const override { return DConstOperation::valueOf(value); }
+			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				return DConstOperation::valueOf(value, context.classinfo);
+			}
 		};
 
 
@@ -87,7 +95,9 @@ namespace jdecompiler {
 
 				IPushInstruction(T value): value(value) {}
 
-				virtual const Operation* toOperation(const DecompilationContext& context) const override { return IConstOperation::valueOf(value); }
+				virtual const Operation* toOperation(const DecompilationContext& context) const override {
+					return IConstOperation::valueOf(value, context.classinfo);
+				}
 		};
 
 		using BIPushInstruction = IPushInstruction<int8_t>;
@@ -102,7 +112,7 @@ namespace jdecompiler {
 				LdcInstruction(const DisassemblerContext& context, uint16_t index): InstructionWithIndex(index) {}
 
 				virtual const Operation* toOperation(const DecompilationContext& context) const override {
-					return context.constPool.get<ConstValueConstant>(index)->toOperation();
+					return context.constPool.get<ConstValueConstant>(index)->toOperation(context.classinfo);
 				}
 		};
 
@@ -444,7 +454,7 @@ namespace jdecompiler {
 				CastInstruction(const Type* requiredType, const Type* type): requiredType(requiredType), type(type) {}
 
 				virtual const Operation* toOperation(const DecompilationContext& context) const override {
-					return new CastOperation<required>(context, requiredType, type);
+					return new CastOperation(context, requiredType, type, required);
 				}
 		};
 
@@ -600,7 +610,7 @@ namespace jdecompiler {
 				const BootstrapMethod* bootstrapMethod =
 						(*context.classinfo.attributes.getExact<BootstrapMethodsAttribute>())[invokeDynamicConstant->bootstrapMethodAttrIndex];
 
-				const uint16_t index = bootstrapMethod->methodHandle->referenceRef;
+				const ReferenceConstant* const referenceConstant = bootstrapMethod->methodHandle->referenceConstant;
 
 				typedef MethodHandleConstant::ReferenceKind RefKind;
 				typedef MethodHandleConstant::KindType KindType;
@@ -608,16 +618,15 @@ namespace jdecompiler {
 				switch(bootstrapMethod->methodHandle->kindType) {
 					case KindType::FIELD:
 						switch(bootstrapMethod->methodHandle->referenceKind) {
-							case RefKind::GETFIELD: return new GetInstanceFieldOperation(context, context.constPool.get<FieldrefConstant>(index));
-							case RefKind::GETSTATIC: return new GetStaticFieldOperation(context.constPool.get<FieldrefConstant>(index));
-							case RefKind::PUTFIELD: return new PutInstanceFieldOperation(context, context.constPool.get<MethodrefConstant>(index));
-							case RefKind::PUTSTATIC: return new PutStaticFieldOperation(context, context.constPool.get<MethodrefConstant>(index));
+							case RefKind::GETFIELD: return new GetInstanceFieldOperation(context, safe_cast<const FieldrefConstant*>(referenceConstant));
+							case RefKind::GETSTATIC: return new GetStaticFieldOperation(          safe_cast<const FieldrefConstant*>(referenceConstant));
+							case RefKind::PUTFIELD: return new PutInstanceFieldOperation(context, safe_cast<const MethodrefConstant*>(referenceConstant));
+							case RefKind::PUTSTATIC: return new PutStaticFieldOperation( context, safe_cast<const MethodrefConstant*>(referenceConstant));
 							default: throw IllegalStateException((string)"Illegal referenceConstant kind " +
 									to_string((unsigned int)bootstrapMethod->methodHandle->referenceKind));
 						}
 					case KindType::METHOD: {
-						const MethodDescriptor descriptor(*bootstrapMethod->methodHandle->referenceConstant->clazz->name,
-								*invokeDynamicConstant->nameAndType->name, *invokeDynamicConstant->nameAndType->descriptor);
+						const MethodDescriptor descriptor(bootstrapMethod->methodHandle->referenceConstant->clazz->name, invokeDynamicConstant->nameAndType);
 
 						vector<const Operation*> arguments(descriptor.arguments.size());
 
@@ -635,31 +644,57 @@ namespace jdecompiler {
 							MethodDescriptor(bootstrapMethod->methodHandle->referenceConstant) ==
 							MethodDescriptor(STRING_CONCAT_FACTORY, "makeConcatWithConstants", &CALL_SITE, {&LOOKUP, STRING, METHOD_TYPE, STRING, &OBJECT_ARRAY}))
 						{ // String concat
-							// push static arguments on stack
-							for(uint32_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
-								context.stack.push(bootstrapMethod->arguments[i]->toOperation());
+							if(bootstrapMethod->arguments.size() < 1)
+								throw DecompilationException("Method java.lang.invoke.StringConcatFactory::makeConcatWithConstants"
+										" must have one or more static arguments");
+
+
+							const auto getWrongTypeMessage = [&bootstrapMethod] (uint32_t i) {
+								return "Method java.lang.invoke.StringConcatFactory::makeConcatWithConstants"
+										": wrong type of static argument #" + to_string(i) +
+										": expected String, got " + bootstrapMethod->arguments[i]->getConstantName();
+							};
+
+
+							if(!instanceof<const StringConstant*>(bootstrapMethod->arguments[0]))
+								throw DecompilationException(getWrongTypeMessage(0));
+
+							const StringConstOperation* pattern = new StringConstOperation(static_cast<const StringConstant*>(bootstrapMethod->arguments[0]));
+
+
+							const uint32_t argumentsCount = bootstrapMethod->arguments.size();
+							vector<const Operation*> staticArguments;
+							staticArguments.reserve(argumentsCount - 1);
+
+							for(uint32_t i = 1; i < argumentsCount; i++) {
+								if(!instanceof<const StringConstant*>(bootstrapMethod->arguments[i]))
+									throw DecompilationException(getWrongTypeMessage(i));
+
+								staticArguments.push_back(StringConstOperation::valueOf(
+										static_cast<const StringConstant*>(bootstrapMethod->arguments[i]), context.classinfo));
+							}
+
 
 							// push non-static arguments on stack
 							for(const Operation* operation : arguments)
 								context.stack.push(operation);
 
-							return new ConcatStringsOperation(context, *new MethodDescriptor(descriptor));
+							return new ConcatStringsOperation(context, *new MethodDescriptor(descriptor), pattern, staticArguments);
 						}
 
 
 						// push lookup argument
 						context.stack.push(new InvokestaticOperation(context,
-								*new MethodDescriptor(STRING_CONCAT_FACTORY, "publicLookup", CALL_SITE, {})));
+								*new MethodDescriptor(STRING_CONCAT_FACTORY, "publicLookup", CALL_SITE)));
 
-						context.stack.push(new StringConstOperation(
-								new StringConstant(invokeDynamicConstant->nameAndType->nameRef, context.constPool))); // name argument
+						context.stack.push(StringConstOperation::valueOf(invokeDynamicConstant->nameAndType->name, context.classinfo)); // name argument
 
 						context.stack.push(new MethodTypeConstOperation(
-								new MethodTypeConstant(invokeDynamicConstant->nameAndType->descriptorRef, context.constPool))); // type argument
+								new MethodTypeConstant(invokeDynamicConstant->nameAndType->descriptor))); // type argument
 
 						// push static arguments on stack
 						for(uint32_t i = 0, argumentsCount = bootstrapMethod->arguments.size(); i < argumentsCount; i++)
-							context.stack.push(bootstrapMethod->arguments[i]->toOperation());
+							context.stack.push(bootstrapMethod->arguments[i]->toOperation(context.classinfo));
 
 						// push non-static arguments on stack
 						for(const Operation* operation : arguments)

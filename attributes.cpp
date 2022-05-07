@@ -20,7 +20,6 @@ namespace jdecompiler {
 		public:
 			template<class T>
 			const T* get() const {
-				//log(this->size());
 				for(const Attribute* attribute : *this) {
 					if(instanceof<const T*>(attribute)) {
 						return static_cast<const T*>(attribute);
@@ -60,7 +59,8 @@ namespace jdecompiler {
 
 					const Attribute* attribute = readAttribute(instream, constPool, name, length);
 
-					instream.setPosTo(pos);
+					//instream.setPosTo(pos);
+					assert(instream.getPos() == pos);
 
 					this->push_back(attribute);
 				}
@@ -101,8 +101,8 @@ namespace jdecompiler {
 			return value->toString(classinfo);
 		}*/
 
-		const Operation* getInitializer(const FieldInfo& fieldinfo) const {
-			return value->toOperation(&fieldinfo);
+		const Operation* getInitializer(const ConstantDecompilationContext context) const {
+			return value->toOperation(context);
 		}
 	};
 
@@ -295,7 +295,7 @@ namespace jdecompiler {
 			case 's': return *new StringAnnotationValue(instream, constPool);
 			case 'e': return *new EnumAnnotationValue(parseType(constPool.getUtf8Constant(instream.readUShort())),
 					constPool.getUtf8Constant(instream.readUShort()));
-			case 'c': return *new ClassAnnotationValue(parseReferenceType(*constPool.get<ClassConstant>(instream.readUShort())->name));
+			case 'c': return *new ClassAnnotationValue(parseReferenceType(constPool.get<ClassConstant>(instream.readUShort())->name));
 			case '@': return *new AnnotationAnnotationValue(instream, constPool);
 			case '[': return *new ArrayAnnotationValue(instream, constPool);
 			default:
@@ -430,13 +430,58 @@ namespace jdecompiler {
 			vector<const BootstrapMethod*> bootstrapMethods;
 
 		public:
-			BootstrapMethodsAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool): Attribute("BootstrapMethods", length) {
+			BootstrapMethodsAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+					Attribute("BootstrapMethods", length) {
+
 				for(uint16_t i = instream.readUShort(); i > 0; i--)
 					bootstrapMethods.push_back(new BootstrapMethod(instream, constPool));
 			}
 
 			inline const BootstrapMethod* operator[] (uint16_t index) const {
 				return bootstrapMethods[index];
+			}
+	};
+
+
+	struct InnerClass {
+		const ClassType classType;
+		const ClassConstant* const outerClass;
+		const Utf8Constant* const innerName;
+		const uint16_t modifiers;
+
+		InnerClass(BinaryInputStream& instream, const ConstantPool& constPool):
+				classType(constPool.get<ClassConstant>(instream.readUShort())), outerClass(constPool.getNullablle<ClassConstant>(instream.readUShort())),
+				innerName(constPool.getNullablle<Utf8Constant>(instream.readUShort())), modifiers(instream.readUShort()) {}
+	};
+
+
+	struct InnerClassesAttribute: Attribute {
+		public:
+			vector<const InnerClass*> classes;
+
+			InnerClassesAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+					Attribute("InnerClasses", length) {
+
+				for(uint16_t i = instream.readUShort(); i > 0; i--)
+					classes.push_back(new InnerClass(instream, constPool));
+			}
+
+			inline const InnerClass* find(const ClassType& classType) const {
+				const auto result = find_if(classes.begin(), classes.end(),
+						[&classType] (const InnerClass* innerClass) { return innerClass->classType == classType; });
+				return result == classes.end() ? nullptr : *result;
+			}
+	};
+
+
+	struct NestMembersAttribute: Attribute {
+		public:
+			vector<const ClassType*> nestMembers;
+
+			NestMembersAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+					Attribute("NestMembers", length) {
+				for(uint16_t i = instream.readUShort(); i > 0; i--)
+					nestMembers.push_back(new ClassType(constPool.get<ClassConstant>(instream.readUShort())));
 			}
 	};
 
@@ -451,6 +496,8 @@ namespace jdecompiler {
 		if(name == "BootstrapMethods") return new BootstrapMethodsAttribute(length, instream, constPool);
 		if(name == "AnnotationDefault") return new AnnotationDefaultAttribute(length, instream, constPool);
 		if(name == "LocalVariableTable") return new LocalVariableTableAttribute(length, instream, constPool);
+		if(name == "InnerClasses") return new InnerClassesAttribute(length, instream, constPool);
+		if(name == "NestMembers") return new NestMembersAttribute(length, instream, constPool);
 		return new UnknownAttribute(name, length, instream);
 	}
 }

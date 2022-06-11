@@ -12,6 +12,7 @@ namespace jdecompiler {
 
 		friend string to_string(const Version& version) {
 			static const map<uint16_t, const string> versionTable {
+					// I have not found an official indication of version JDK Beta, JDK 1.0 and JDK 1.1 numbers, and I'm too lazy to check it
 					{43, "JDK Beta"}, {44, "JDK 1.0"}, {45, "JDK 1.1"}, {46, "Java 1.2"}, {47, "Java 1.3"}, {48, "Java 1.4"},
 					{49, "Java 5"  }, {50, "Java 6" }, {51, "Java 7" }, {52, "Java 8"  }, {53, "Java 9"  }, {54, "Java 10"},
 					{55, "Java 11" }, {56, "Java 12"}, {57, "Java 13"}, {58, "Java 14" }, {59, "Java 15" }, {60, "Java 16"},
@@ -25,7 +26,7 @@ namespace jdecompiler {
 	struct Class: Stringified {
 		public:
 			const Version version;
-			const ClassType & thisType, & superType;
+			const ClassType &thisType, *const superType;
 			const ConstantPool& constPool;
 			const uint16_t modifiers;
 			const vector<const ClassType*> interfaces;
@@ -35,7 +36,7 @@ namespace jdecompiler {
 			const vector<const Method*> methods;
 
 		protected:
-			Class(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
+			Class(const Version& version, const ClassType& thisType, const ClassType* superType, const ConstantPool& constPool, uint16_t modifiers,
 					const vector<const ClassType*>& interfaces, const Attributes& attributes, const ClassInfo& classinfo,
 					const vector<const Field*>& fields, const vector<const Method*>& methods):
 					version(version), thisType(thisType), superType(superType), constPool(constPool), modifiers(modifiers),
@@ -43,18 +44,18 @@ namespace jdecompiler {
 					fields(fields), constants(getConstants(fields)), methods(methods) {}
 
 		private:
-			const vector<const Field*> createFields(const vector<FieldDataHolder> fieldsData, const ClassInfo& classinfo) const {
+			const vector<const Field*> createFields(const vector<FieldDataHolder>& fieldsData, const ClassInfo& classinfo) const {
 				vector<const Field*> fields;
 				fields.reserve(fieldsData.size());
 
-				for(const FieldDataHolder fieldData : fieldsData) {
+				for(const FieldDataHolder& fieldData : fieldsData) {
 					if(!JDecompiler::getInstance().isFailOnError()) {
 						try {
 							fields.push_back(fieldData.createField(classinfo));
 						} catch(DecompilationException& ex) {
 							const char* message = ex.what();
 							cerr << "Exception while decompiling field " << fieldData.descriptor.toString() << ": "
-									<< typeNameOf(ex) << (*message == '\0' ? EMPTY_STRING : (string)": " + message) << endl;
+									<< typenameof(ex) << (*message == '\0' ? EMPTY_STRING : (string)": " + message) << endl;
 						}
 					} else {
 						fields.push_back(fieldData.createField(classinfo));
@@ -64,22 +65,18 @@ namespace jdecompiler {
 				return fields;
 			}
 
-			static inline const vector<const Field*> getConstants(const vector<const Field*>& fields) {
-				return copy_if<const Field*>(fields, [] (const Field* field) { return field->isConstant(); });
-			}
 
-
-			const vector<const Method*> createMethods(const vector<MethodDataHolder> methodsData, const ClassInfo& classinfo) const {
+			const vector<const Method*> createMethods(const vector<MethodDataHolder>& methodsData, const ClassInfo& classinfo) const {
 				vector<const Method*> methods;
 				methods.reserve(methodsData.size());
-				for(const MethodDataHolder methodData : methodsData) {
+				for(const MethodDataHolder& methodData : methodsData) {
 					if(!JDecompiler::getInstance().isFailOnError()) {
 						try {
 							methods.push_back(methodData.createMethod(classinfo));
 						} catch(DecompilationException& ex) {
 							const char* message = ex.what();
 							cerr << "Exception while decompiling method " << methodData.descriptor.toString() << ": "
-									<< typeNameOf(ex) << (*message == '\0' ? EMPTY_STRING : (string)": " + message) << endl;
+									<< typenameof(ex) << (*message == '\0' ? EMPTY_STRING : (string)": " + message) << endl;
 						}
 					} else {
 						methods.push_back(methodData.createMethod(classinfo));
@@ -90,17 +87,17 @@ namespace jdecompiler {
 
 
 		protected: // Do not do it through constructor delegation, otherwise the fields are not initialized
-			Class(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool,
+			Class(const Version& version, const ClassType& thisType, const ClassType* superType, const ConstantPool& constPool,
 					uint16_t modifiers, const vector<const ClassType*>& interfaces, const Attributes& attributes,
 					const vector<FieldDataHolder>& fieldsData, const vector<MethodDataHolder>& methodsData):
 					version(version), thisType(thisType), superType(superType), constPool(constPool), modifiers(modifiers),
 					interfaces(interfaces), attributes(attributes),
-					classinfo(*new ClassInfo(*this, thisType, superType, constPool, attributes, modifiers)),
+					classinfo(*new ClassInfo(*this, thisType, superType, interfaces, constPool, attributes, modifiers)),
 					fields(createFields(fieldsData, classinfo)), constants(getConstants(fields)), methods(createMethods(methodsData, classinfo)) {}
 
 
 		public:
-			static const Class* readClass(BinaryInputStream& instream);
+			static const Class* readClass(ClassInputStream&);
 
 
 			inline const vector<const Field*>& getFields() const {
@@ -114,17 +111,28 @@ namespace jdecompiler {
 				return nullptr;
 			}
 
+			static inline const vector<const Field*> getConstants(const vector<const Field*>& fields) {
+				return copy_if<const Field*>(fields, [] (const Field* field) { return field->isConstant(); });
+			}
+
 
 			inline const vector<const Method*>& getMethods() const {
 				return methods;
 			}
 
-			/*const Method* getMethod(const MethodDescriptor& descriptor, bool isStatic) const {
-				for(const Method* method : methods)
-					if(method->descriptor == descriptor && (bool)(method->modifiers & ACC_STATIC) == isStatic)
-						return field;
-				return nullptr;
-			}*/
+			inline const vector<const Method*> getMethods(const function<bool(const Method*)>& predicate) const {
+				return copy_if(methods, predicate);
+			}
+
+			const Method* getMethod(const MethodDescriptor& descriptor) const {
+				const auto& result = find_if(methods.begin(), methods.end(),
+						[&descriptor] (const Method* method) { return method->descriptor.equalsIgnoreClass(descriptor); });
+				return result == methods.end() ? nullptr : *result;
+			}
+
+			inline bool hasMethod(const MethodDescriptor& descriptor) const {
+				return getMethod(descriptor) != nullptr;
+			}
 
 
 			virtual string toString(const ClassInfo& classinfo) const override {
@@ -154,7 +162,7 @@ namespace jdecompiler {
 				if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
 					str += annotationsAttribute->toString(classinfo) + '\n';
 
-				str += (isAnonymous ? anonymousDeclarationToString(classinfo) : declarationToString(classinfo)) + " {";
+				str += (isAnonymous ? anonymousDeclarationToString(classinfo) : declarationToString(classinfo)) + " {\n";
 
 				const size_t baseSize = str.size();
 
@@ -168,7 +176,10 @@ namespace jdecompiler {
 
 				classinfo.reduceIndent();
 
-				str += (str.size() == baseSize ? "}" : (str.back() == '\n' ? EMPTY_STRING : "\n") + classinfo.getIndent() + '}');
+				if(str.size() == baseSize)
+					str.back() = '}';
+				else
+					str += (str.back() == '\n' ? EMPTY_STRING : "\n") + classinfo.getIndent() + '}';
 
 
 				return headersToString(classinfo) + str;
@@ -176,15 +187,15 @@ namespace jdecompiler {
 
 
 			template<typename T>
-			inline void warning(T&& message) const {
+			inline void warning(const T& message) const {
 				cerr << thisType.toString() << ": warning: " << message << endl;
 			}
 
 
 		public:
 			inline bool canStringify() const {
-				return !(modifiers & ACC_SYNTHETIC && !JDecompiler::getInstance().showSynthetic() ||
-						thisType.isNested && JDecompiler::getInstance().hasClass(thisType.enclosingClass->getEncodedName()));
+				return !((modifiers & ACC_SYNTHETIC && !JDecompiler::getInstance().showSynthetic()) ||
+						(thisType.isNested && JDecompiler::getInstance().hasClass(thisType.enclosingClass->getEncodedName())));
 			}
 
 
@@ -194,14 +205,14 @@ namespace jdecompiler {
 					throw DecompilationException("Anonymous class " + thisType.getName() + " cannot implement more than one interface");
 
 				if(interfaces.size() == 1) {
-					if(superType.getName() != "java.lang.Object")
+					if(*superType != javaLang::Object)
 						throw DecompilationException("Anonymous class " + thisType.getName() +
 								" cannot implement an interface and simultaneously inherit from something other than java.lang.Object class");
 
 					return interfaces[0]->toString(classinfo) + "()";
 				}
 
-				return superType.toString(classinfo) + "()";
+				return superType->toString(classinfo) + "()";
 			}
 
 
@@ -212,17 +223,17 @@ namespace jdecompiler {
 					str += thisType.isAnonymous ? "/* anonymous class */\n" :
 							"/* nested class of class " + thisType.enclosingClass->getName() + " */\n";
 
-				if(modifiers & ACC_INTERFACE && superType != *OBJECT) {
+				if(modifiers & ACC_INTERFACE && superType != nullptr && *superType != javaLang::Object) {
 					throw DecompilationException("interface " + thisType.getName() + " cannot inherit from other class than java.lang.Object");
 				}
 
 				str += classinfo.getIndent() + modifiersToString(modifiers) + ' ' + thisType.simpleName +
-						(superType.getName() == "java.lang.Object" || (modifiers & ACC_ENUM && superType.getName() == "java.lang.Enum") ?
-								EMPTY_STRING : " extends " + superType.toString(classinfo));
+						(superType == nullptr || *superType == javaLang::Object || (modifiers & ACC_ENUM && *superType == javaLang::Enum) ?
+								EMPTY_STRING : " extends " + superType->toString(classinfo));
 
 				vector<const ClassType*> interfacesToStringify;
 				for(const ClassType* interface : interfaces) {
-					if(modifiers & ACC_ANNOTATION && interface->getName() == "java.lang.annotation.Annotation")
+					if(modifiers & ACC_ANNOTATION && *interface == javaLangAnnotation::Annotation)
 						continue;
 					interfacesToStringify.push_back(interface);
 				}
@@ -370,16 +381,34 @@ namespace jdecompiler {
 	};
 
 
-	inline const vector<const Method*>& ClassInfo::getMethods() const {
-		return clazz.methods;
-	}
-
 	inline const vector<const Field*>& ClassInfo::getFields() const {
 		return clazz.fields;
 	}
 
 	inline const vector<const Field*>& ClassInfo::getConstants() const {
 		return clazz.constants;
+	}
+
+	inline const vector<const Method*>& ClassInfo::getMethods() const {
+		return clazz.methods;
+	}
+
+	inline const vector<const Method*> ClassInfo::getMethods(const function<bool(const Method*)>& predicate) const {
+		return clazz.getMethods(predicate);
+	}
+
+	inline const Method* ClassInfo::getMethod(const MethodDescriptor& descriptor) const {
+		return clazz.getMethod(descriptor);
+	}
+
+	inline bool ClassInfo::hasMethod(const MethodDescriptor& descriptor) const {
+		return clazz.hasMethod(descriptor);
+	}
+
+
+	inline const ClassInfo* JDecompiler::getClassInfo(const string& name) const {
+		const Class* clazz = getClass(name);
+		return clazz != nullptr ? &clazz->classinfo : nullptr;
 	}
 
 
@@ -432,7 +461,7 @@ namespace jdecompiler {
 			}
 
 		public:
-			EnumClass(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
+			EnumClass(const Version& version, const ClassType& thisType, const ClassType* superType, const ConstantPool& constPool, uint16_t modifiers,
 					const vector<const ClassType*>& interfaces, const Attributes& attributes,
 					const vector<FieldDataHolder>& fieldsData, vector<MethodDataHolder>& methodsData);
 
@@ -461,7 +490,7 @@ namespace jdecompiler {
 
 
 
-	const Class* Class::readClass(BinaryInputStream& instream) {
+	const Class* Class::readClass(ClassInputStream& instream) {
 		if(instream.readUInt() != CLASS_SIGNATURE)
 			throw ClassFormatError("Wrong class signature");
 
@@ -475,9 +504,17 @@ namespace jdecompiler {
 
 		const uint16_t modifiers = instream.readUShort();
 
-		const ClassType
-				& thisType = *new ClassType(constPool.get<ClassConstant>(instream.readUShort())->name),
-				& superType = *new ClassType(constPool.get<ClassConstant>(instream.readUShort())->name);
+		const ClassType& thisType = *new ClassType(constPool.get<ClassConstant>(instream.readUShort()));
+		const ClassConstant* superClassConstant = constPool.getNullable<ClassConstant>(instream.readUShort());
+		const ClassType* superType;
+
+		if(superClassConstant == nullptr) {
+			if(thisType != javaLang::Object)
+				throw DecompilationException("Class " + thisType.getName() + " has no super class");
+			superType = nullptr;
+		} else {
+			superType = new ClassType(superClassConstant);
+		}
 
 		const uint16_t interfacesCount = instream.readUShort();
 		vector<const ClassType*> interfaces;

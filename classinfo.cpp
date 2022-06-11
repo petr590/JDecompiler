@@ -21,15 +21,16 @@ namespace jdecompiler {
 		public:
 			const Class& clazz;
 
-			const ClassType &thisType, &superType;
+			const ClassType &thisType, *const superType;
+			const vector<const ClassType*> interfaces;
 			const ConstantPool& constPool;
 			const Attributes& attributes;
 			const uint16_t modifiers;
 
-			ClassInfo(const Class& clazz, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool,
-					const Attributes& attributes, uint16_t modifiers):
-					clazz(clazz), thisType(thisType), superType(superType), constPool(constPool), attributes(attributes),
-					modifiers(modifiers) {}
+			ClassInfo(const Class& clazz, const ClassType& thisType, const ClassType* superType, const vector<const ClassType*>& interfaces,
+					const ConstantPool& constPool, const Attributes& attributes, uint16_t modifiers):
+					clazz(clazz), thisType(thisType), superType(superType), interfaces(interfaces),
+					constPool(constPool), attributes(attributes), modifiers(modifiers) {}
 
 			const char* const EMPTY_INDENT = "";
 
@@ -43,12 +44,6 @@ namespace jdecompiler {
 			bool addImport(const ClassType* clazz) const;
 
 			string importsToString() const;
-
-			/*inline void setFormatting(uint16_t indentWidth, const char* indent, const set<const ClassType*>& imports) const {
-				this->indentWidth = indentWidth;
-				this->indent = repeatString(JDecompiler::getInstance().getIndent(), indentWidth);
-				this->imports = imports;
-			}*/
 
 			inline void copyFormattingFrom(const ClassInfo& other) const {
 				indentWidth = other.indentWidth;
@@ -91,11 +86,15 @@ namespace jdecompiler {
 			}
 
 
-			const vector<const Method*>& getMethods() const;
-
 			const vector<const Field*>& getFields() const;
 
 			const vector<const Field*>& getConstants() const;
+
+			const vector<const Method*>& getMethods() const;
+			const vector<const Method*> getMethods(const function<bool(const Method*)>&) const;
+			const Method* getMethod(const MethodDescriptor&) const;
+			bool hasMethod(const MethodDescriptor&) const;
+
 
 		private:
 			mutable const StringifyContext* fieldStringifyContext = nullptr;

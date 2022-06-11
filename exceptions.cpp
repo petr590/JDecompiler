@@ -20,13 +20,15 @@ namespace jdecompiler {
 	};
 
 
-	struct DecompilationException: Exception {
-		DecompilationException(): Exception() {}
-		DecompilationException(const string& message): Exception(message) {}
+	struct CastException: Exception {
+		CastException(): Exception() {}
+		CastException(const string& message): Exception(message) {}
 	};
 
+
 	struct BytecodeIndexOutOfBoundsException: IndexOutOfBoundsException {
-		BytecodeIndexOutOfBoundsException(abstract_index_t<uint32_t> index, uint32_t length): IndexOutOfBoundsException(index, length, "Bytecode") {}
+		BytecodeIndexOutOfBoundsException(abstract_index_t<uint32_t> index, uint32_t length):
+				IndexOutOfBoundsException(index, length, "Bytecode") {}
 	};
 
 	struct BytecodePosOutOfBoundsException: IndexOutOfBoundsException {
@@ -38,19 +40,26 @@ namespace jdecompiler {
 		ConstantPoolIndexOutOfBoundsException(abstract_index_t<uint32_t> index, uint32_t length): IndexOutOfBoundsException(index, length, "Constant pool") {}
 	};
 
+	// -------------------------------------------------- DecompilationException --------------------------------------------------
 
-	struct ConstantPoolInitializingException: DecompilationException {
-		ConstantPoolInitializingException(const string& message): DecompilationException(message) {}
+	struct DisassemblingException: Exception {
+		DisassemblingException(): Exception() {}
+		DisassemblingException(const string& message): Exception(message) {}
 	};
 
 
-	struct InvalidConstantPoolReferenceException: DecompilationException {
-		InvalidConstantPoolReferenceException(const string& message): DecompilationException(message) {}
+	struct ConstantPoolInitializingException: DisassemblingException {
+		ConstantPoolInitializingException(const string& message): DisassemblingException(message) {}
 	};
 
 
-	struct InvalidTypeNameException: DecompilationException {
-		InvalidTypeNameException(const string& message): DecompilationException(message) {}
+	struct InvalidConstantPoolReferenceException: DisassemblingException {
+		InvalidConstantPoolReferenceException(const string& message): DisassemblingException(message) {}
+	};
+
+
+	struct InvalidTypeNameException: DisassemblingException {
+		InvalidTypeNameException(const string& message): DisassemblingException(message) {}
 	};
 
 	struct InvalidClassNameException: InvalidTypeNameException {
@@ -61,13 +70,22 @@ namespace jdecompiler {
 		InvalidSignatureException(const string& message): InvalidTypeNameException(message) {}
 	};
 
+
+	// -------------------------------------------------- DecompilationException --------------------------------------------------
+
+	struct DecompilationException: Exception {
+		DecompilationException(): Exception() {}
+		DecompilationException(const string& message): Exception(message) {}
+	};
+
+
 	struct IllegalModifiersException: DecompilationException {
 		IllegalModifiersException(uint16_t modifiers): DecompilationException(hexWithPrefix<4>(modifiers)) {}
 			IllegalModifiersException(const string& message): DecompilationException(message) {}
 	};
 
-	struct IllegalMethodDescriptorException: DecompilationException {
-		IllegalMethodDescriptorException(const string& descriptor): DecompilationException(descriptor) {}
+	struct IllegalMethodDescriptorException: DisassemblingException {
+		IllegalMethodDescriptorException(const string& descriptor): DisassemblingException(descriptor) {}
 	};
 
 
@@ -83,6 +101,8 @@ namespace jdecompiler {
 				DecompilationException("Required " + requiredSizeName + ", got " + sizeName + " of type " + typeName) {}
 	};
 
+
+	// -------------------------------------------------- ClassFormatError --------------------------------------------------
 
 	struct ClassFormatError: Exception {
 		ClassFormatError(const string& message): Exception(message) {}
@@ -107,13 +127,6 @@ namespace jdecompiler {
 
 	struct IllegalMethodHeaderException: ClassFormatError {
 		IllegalMethodHeaderException(const string& message): ClassFormatError(message) {}
-	};
-
-
-
-	struct CastException: Exception {
-		CastException(): Exception() {}
-		CastException(const string& message): Exception(message) {}
 	};
 }
 

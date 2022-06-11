@@ -118,21 +118,21 @@ namespace jdecompiler {
 			case 0x80: case 0x81: return new OrOperatorInstruction(current() & 1);
 			case 0x82: case 0x83: return new XorOperatorInstruction(current() & 1);
 			case 0x84: return new IIncInstruction(nextUByte(), nextByte());
-			case 0x85: return new CastInstruction<false>(INT, LONG); // int -> long
-			case 0x86: return new CastInstruction<false>(INT, FLOAT); // int -> float
-			case 0x87: return new CastInstruction<false>(INT, DOUBLE); // int -> double
-			case 0x88: return new CastInstruction<true>(LONG, INT); // long -> int
-			case 0x89: return new CastInstruction<false>(LONG, FLOAT); // long -> float
-			case 0x8A: return new CastInstruction<false>(LONG, DOUBLE); // long -> double
-			case 0x8B: return new CastInstruction<true>(FLOAT, INT); // float -> int
-			case 0x8C: return new CastInstruction<true>(FLOAT, LONG); // float -> long
-			case 0x8D: return new CastInstruction<false>(FLOAT, DOUBLE); // float -> double
-			case 0x8E: return new CastInstruction<true>(DOUBLE, INT); // double -> int
-			case 0x8F: return new CastInstruction<true>(DOUBLE, LONG); // double -> long
-			case 0x90: return new CastInstruction<true>(DOUBLE, FLOAT); // double -> float
-			case 0x91: return new CastInstruction<true>(INT, BYTE); // int -> byte
-			case 0x92: return new CastInstruction<true>(INT, CHAR); // int -> char
-			case 0x93: return new CastInstruction<true>(INT, SHORT); // int -> short
+			case 0x85: return new CastInstruction(INT, LONG, false); // int -> long
+			case 0x86: return new CastInstruction(INT, FLOAT, false); // int -> float
+			case 0x87: return new CastInstruction(INT, DOUBLE, false); // int -> double
+			case 0x88: return new CastInstruction(LONG, INT, true); // long -> int
+			case 0x89: return new CastInstruction(LONG, FLOAT, false); // long -> float
+			case 0x8A: return new CastInstruction(LONG, DOUBLE, false); // long -> double
+			case 0x8B: return new CastInstruction(FLOAT, INT, true); // float -> int
+			case 0x8C: return new CastInstruction(FLOAT, LONG, true); // float -> long
+			case 0x8D: return new CastInstruction(FLOAT, DOUBLE, false); // float -> double
+			case 0x8E: return new CastInstruction(DOUBLE, INT, true); // double -> int
+			case 0x8F: return new CastInstruction(DOUBLE, LONG, true); // double -> long
+			case 0x90: return new CastInstruction(DOUBLE, FLOAT, true); // double -> float
+			case 0x91: return new CastInstruction(INT, BYTE, true); // int -> byte
+			case 0x92: return new CastInstruction(INT, CHAR, true); // int -> char
+			case 0x93: return new CastInstruction(INT, SHORT, true); // int -> short
 			case 0x94:            return new LCmpInstruction();
 			case 0x95: case 0x96: return new FCmpInstruction();
 			case 0x97: case 0x98: return new DCmpInstruction();

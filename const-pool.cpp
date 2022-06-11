@@ -1,10 +1,9 @@
 #ifndef JDECOMPILER_CONST_POOL_CPP
 #define JDECOMPILER_CONST_POOL_CPP
 
-#undef inline
-#include <type_traits>
-#define inline INLINE
 #include "util.cpp"
+#include "jdecompiler-instance.cpp"
+#include "primitive-to-string.cpp"
 
 #define DEFINE_CONSTANT_NAME(name)\
 	static constexpr const char* CONSTANT_NAME = #name;\
@@ -18,6 +17,10 @@ namespace jdecompiler {
 		virtual const char* getConstantName() const = 0;
 
 		virtual ~Constant() {}
+
+		virtual uint8_t getPositions() const {
+			return 1;
+		}
 	};
 
 	struct InterConstant {
@@ -34,12 +37,12 @@ namespace jdecompiler {
 			const InterConstant** interPool;
 
 		public:
-			ConstantPool(BinaryInputStream& instream);
+			ConstantPool(ClassInputStream& instream);
 
 		private:
 			template<typename C>
 			static inline constexpr void checkTemplate() {
-				static_assert(is_base_of<Constant, C>(), "template type C of method ConstantPool::get is not subclass of class Constant");
+				static_assert(is_base_of<Constant, C>(), "template type C of method ConstantPool::get0 is not subclass of class Constant");
 			}
 
 			inline void checkIndex(uint16_t index) const {
@@ -82,7 +85,7 @@ namespace jdecompiler {
 
 				throw InvalidConstantPoolReferenceException("Invalid constant pool reference " + hexWithPrefix<4>(index) +
 						": expected " + C::CONSTANT_NAME + ", got " + (constant == nullptr ? "null" : constant->getConstantName()));
-						//": expected " + typeNameOf(C) + ", got " + (constant == nullptr ? "null" : typeNameOf(*constant)));
+						//": expected " + typenameof(C) + ", got " + (constant == nullptr ? "null" : typenameof(*constant)));
 			}
 
 		public:
@@ -105,12 +108,12 @@ namespace jdecompiler {
 
 
 			template<class C>
-			const C* getNullablle(uint16_t index) const {
+			const C* getNullable(uint16_t index) const {
 				return index == 0 ? nullptr : get0<C>(index);
 			}
 
 			template<class C>
-			const C* get(uint16_t index) const {
+			inline const C* get(uint16_t index) const {
 				return get0<C>(index);
 			}
 
@@ -124,8 +127,6 @@ namespace jdecompiler {
 			inline const Utf8Constant& getUtf8Constant(uint16_t index) const {
 				return *get<Utf8Constant>(index);
 			}
-
-			#undef checkTemplate
 	};
 
 
@@ -158,17 +159,44 @@ namespace jdecompiler {
 	};
 
 
-	struct IntegerConstant: NumberConstant<int32_t> { IntegerConstant(const int32_t value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Integer);
+	struct IntegerConstant: NumberConstant<int32_t> {
+		DEFINE_CONSTANT_NAME(Integer);
+
+		IntegerConstant(const int32_t value): NumberConstant(value) {};
+
 		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
 	};
-	struct FloatConstant:   NumberConstant<float>   {   FloatConstant(const   float value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Float);
+
+	struct FloatConstant: NumberConstant<float> {
+		DEFINE_CONSTANT_NAME(Float);
+
+		FloatConstant(const float value): NumberConstant(value) {};
+
 		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
 	};
-	struct LongConstant:    NumberConstant<int64_t> {    LongConstant(const int64_t value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Long);
+
+	struct LongConstant: NumberConstant<int64_t> {
+		DEFINE_CONSTANT_NAME(Long);
+
+		LongConstant(const int64_t value): NumberConstant(value) {};
+
 		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
+
+		virtual uint8_t getPositions() const override {
+			return 2;
+		}
 	};
-	struct DoubleConstant:  NumberConstant<double>  {  DoubleConstant(const  double value): NumberConstant(value) {}; DEFINE_CONSTANT_NAME(Double);
+
+	struct DoubleConstant: NumberConstant<double> {
+		DEFINE_CONSTANT_NAME(Double);
+
+		DoubleConstant(const  double value): NumberConstant(value) {};
+
 		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
+
+		virtual uint8_t getPositions() const override {
+			return 2;
+		}
 	};
 
 
@@ -336,7 +364,7 @@ namespace jdecompiler {
 
 
 
-	ConstantPool::ConstantPool(BinaryInputStream& instream): size(instream.readUShort()),
+	ConstantPool::ConstantPool(ClassInputStream& instream): size(instream.readUShort()),
 			pool(new const Constant*[size]), interPool(new const InterConstant*[size]) {
 
 		for(uint16_t i = 0; i < size; i++) {
@@ -345,9 +373,9 @@ namespace jdecompiler {
 		}
 
 		for(uint16_t i = 1; i < size; i++) {
-			uint8_t constType = instream.readUByte();
+			uint8_t tag = instream.readUByte();
 
-			switch(constType) {
+			switch(tag) {
 				case  1: {
 					uint16_t length = instream.readUShort();
 					const char* bytes = instream.readString(length);
@@ -397,12 +425,12 @@ namespace jdecompiler {
 					interPool[i] = new InterConstantImpl<InvokeDynamicConstant, uint16_t, uint16_t>(instream.readUShort(), instream.readUShort());
 					break;
 				default:
-					throw ClassFormatError("Illegal constant type " + hexWithPrefix<2>(constType) + " at index #" + to_string(i) +
+					throw ClassFormatError("Illegal constant type " + hexWithPrefix<2>(tag) + " at index #" + to_string(i) +
 							" at pos " + hexWithPrefix((uint32_t)instream.getPos()));
 			}
 		}
 
-		for(uint16_t i = 1; i < size; i++)
+		for(uint16_t i = 1; i < size; i += pool[i]->getPositions())
 			this->initInterConstant(i);
 	}
 

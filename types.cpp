@@ -1,11 +1,8 @@
 #ifndef JDECOMPILER_TYPES_CPP
 #define JDECOMPILER_TYPES_CPP
 
-#undef inline
 #include <cassert>
-#define inline INLINE
 #include "const-pool.cpp"
-#include "jdecompiler-instance.cpp"
 #include "classinfo.cpp"
 
 namespace jdecompiler {
@@ -59,7 +56,7 @@ namespace jdecompiler {
 
 
 			template<bool isNoexcept>
-			const Type* getNullType(const Type* type) const {
+			inline const Type* getNullOrThrowException(const Type* type) const {
 				if constexpr(isNoexcept)
 					return nullptr;
 				else
@@ -90,13 +87,15 @@ namespace jdecompiler {
 
 				const Type* castedType;
 
-				if((castedType = (this->*castImplFunc)(type)) != nullptr)
+				if((castedType = (this->*castImplFunc)(type)) != nullptr) {
 					return castedType;
+				}
 
-				if(this->canReverseCast(type) && (castedType = (type->*reversedCastImplFunc)(this)) != nullptr)
+				if(this->canReverseCast(type) && (castedType = (type->*reversedCastImplFunc)(this)) != nullptr) {
 					return castedType;
+				}
 
-				return getNullType<isNoexcept>(type);
+				return getNullOrThrowException<isNoexcept>(type);
 			}
 
 		public:
@@ -196,6 +195,22 @@ namespace jdecompiler {
 			inline friend ostream& operator<< (ostream& out, const Type& type) {
 				return out << &type;
 			}
+
+			/* The status determines the priority when overloading methods are resolved
+			 * N_STATUS determines that the type has no conversion to another type */
+			typedef uint_fast8_t status_t;
+
+			static constexpr status_t
+					N_STATUS = 0,
+					SAME_STATUS = 1,
+					EXTEND_STATUS = 2,
+					AUTOBOXING_STATUS = 3,
+					OBJECT_AUTOBOXING_STATUS = 4,
+					VARARGS_STATUS = 5;
+
+			virtual status_t implicitCastStatus(const Type* other) const {
+				return *this == *other ? SAME_STATUS : this->isSubtypeOf(other) ? EXTEND_STATUS : N_STATUS;
+			}
 	};
 
 
@@ -294,6 +309,8 @@ namespace jdecompiler {
 			virtual const Type* toAmbigousType() const {
 				return this;
 			}
+
+			virtual status_t implicitCastStatus(const Type*) const override;
 	};
 
 
@@ -313,6 +330,8 @@ namespace jdecompiler {
 
 		virtual TypeSize getSize() const override final { return TypeSize::FOUR_BYTES; }
 
+		virtual status_t implicitCastStatus(const Type*) const override;
+
 		static const BooleanType& getInstance() {
 			static const BooleanType instance;
 			return instance;
@@ -326,6 +345,8 @@ namespace jdecompiler {
 
 		virtual bool isSubtypeOfImpl(const Type*) const override;
 		virtual const Type* toAmbigousType() const override;
+
+		virtual status_t implicitCastStatus(const Type*) const override;
 
 		static const ByteType& getInstance() {
 			static const ByteType instance;
@@ -341,6 +362,8 @@ namespace jdecompiler {
 		virtual bool isSubtypeOfImpl(const Type*) const override;
 		virtual const Type* toAmbigousType() const override;
 
+		virtual status_t implicitCastStatus(const Type*) const override;
+
 		static const CharType& getInstance() {
 			static const CharType instance;
 			return instance;
@@ -355,6 +378,8 @@ namespace jdecompiler {
 		virtual bool isSubtypeOfImpl(const Type*) const override;
 		virtual const Type* toAmbigousType() const override;
 
+		virtual status_t implicitCastStatus(const Type*) const override;
+
 		static const ShortType& getInstance() {
 			static const ShortType instance;
 			return instance;
@@ -365,6 +390,8 @@ namespace jdecompiler {
 		IntType(): PrimitiveType("I", "int", "n") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::FOUR_BYTES; }
+
+		virtual status_t implicitCastStatus(const Type*) const override;
 
 		static const IntType& getInstance() {
 			static const IntType instance;
@@ -377,6 +404,8 @@ namespace jdecompiler {
 
 		virtual TypeSize getSize() const override final { return TypeSize::EIGHT_BYTES; }
 
+		virtual status_t implicitCastStatus(const Type*) const override;
+
 		static const LongType& getInstance() {
 			static const LongType instance;
 			return instance;
@@ -388,6 +417,8 @@ namespace jdecompiler {
 
 		virtual TypeSize getSize() const override final { return TypeSize::FOUR_BYTES; }
 
+		virtual status_t implicitCastStatus(const Type*) const override;
+
 		static const FloatType& getInstance() {
 			static const FloatType instance;
 			return instance;
@@ -398,6 +429,8 @@ namespace jdecompiler {
 		DoubleType(): PrimitiveType("D", "double", "d") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::EIGHT_BYTES; }
+
+		virtual status_t implicitCastStatus(const Type*) const override;
 
 		static const DoubleType& getInstance() {
 			static const DoubleType instance;
@@ -473,8 +506,6 @@ namespace jdecompiler {
 
 				for(uint32_t i = 0; i < length; i++) {
 					char c = name[i];
-					if(isLetterOrDigit(c))
-						continue;
 
 					switch(c) {
 						case '/':
@@ -489,10 +520,13 @@ namespace jdecompiler {
 							parameters = parseParameters(&name[i]);
 							break;
 						case ';': case '\0':
-							name = string(name, 0, i);
-							encodedName = string(encodedName, 0, i);
+							name = name.substr(0, i);
+							encodedName = encodedName.substr(0, i);
 							goto ForEnd;
-						default:
+						case '\t': case '\n': case '\v': case '\f': case '\r': case ' ': case '!': // invalid chars
+						case '"': case '#': case '%': case '&': case '\'': case '(': case ')': case '*': case '+':
+						case ',': case '-': case '.': case ':': case '=': case '?':  case '@': case '[': case '\\':
+						case ']': case '^': case '`': case '{': case '|':  case '}': case '~': case '\x7F':
 							throw InvalidClassNameException(encodedName);
 					}
 				}
@@ -532,6 +566,8 @@ namespace jdecompiler {
 				return toLowerCamelCase(simpleName);
 			}
 
+			virtual status_t implicitCastStatus(const Type*) const override;
+
 		protected:
 			virtual bool isSubtypeOfImpl(const Type* other) const override {
 				return instanceof<const ClassType*>(other);
@@ -543,9 +579,65 @@ namespace jdecompiler {
 			*const OBJECT(new ClassType("java/lang/Object")),
 			*const STRING(new ClassType("java/lang/String")),
 			*const CLASS(new ClassType("java/lang/Class")),
+			*const ENUM(new ClassType("java/lang/Enum")),
 			*const THROWABLE(new ClassType("java/lang/Throwable")),
+			*const EXCEPTION(new ClassType("java/lang/Exception")),
 			*const METHOD_TYPE(new ClassType("java/lang/invoke/MethodType")),
 			*const METHOD_HANDLE(new ClassType("java/lang/invoke/MethodHandle"));
+}
+
+#include "javase.cpp"
+
+namespace jdecompiler {
+
+	Type::status_t PrimitiveType::implicitCastStatus(const Type* other) const {
+		return *other == *OBJECT ? OBJECT_AUTOBOXING_STATUS : Type::implicitCastStatus(other);
+	}
+
+	Type::status_t BooleanType::implicitCastStatus(const Type* other) const {
+		return *other == javaLang::Boolean ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	}
+
+	Type::status_t ByteType::implicitCastStatus(const Type* other) const {
+		return *other == javaLang::Byte ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	}
+
+	Type::status_t CharType::implicitCastStatus(const Type* other) const {
+		return *other == javaLang::Character ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	}
+
+	Type::status_t ShortType::implicitCastStatus(const Type* other) const {
+		return *other == javaLang::Short ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	}
+
+	Type::status_t IntType::implicitCastStatus(const Type* other) const {
+		return *other == javaLang::Integer ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	}
+
+	Type::status_t LongType::implicitCastStatus(const Type* other) const {
+		return *other == javaLang::Long ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	}
+
+	Type::status_t FloatType::implicitCastStatus(const Type* other) const {
+		return *other == javaLang::Float ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	}
+
+	Type::status_t DoubleType::implicitCastStatus(const Type* other) const {
+		return *other == javaLang::Double ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	}
+
+
+	Type::status_t ClassType::implicitCastStatus(const Type* other) const {
+		return ((other == BOOLEAN && *this == javaLang::Boolean) ||
+				(other == BYTE && *this == javaLang::Byte) ||
+				(other == CHAR && *this == javaLang::Character) ||
+				(other == SHORT && *this == javaLang::Short) ||
+				(other == INT && *this == javaLang::Integer) ||
+				(other == LONG && *this == javaLang::Long) ||
+				(other == FLOAT && *this == javaLang::Float) ||
+				(other == DOUBLE && *this == javaLang::Double)) ?
+						AUTOBOXING_STATUS : Type::implicitCastStatus(other);
+	}
 
 
 	struct ArrayType final: ReferenceType {
@@ -713,13 +805,6 @@ namespace jdecompiler {
 						if(type->isSubtypeOf(other))
 							return true;
 
-				/*if(instanceof<const AmbigousType*>(other)) {
-					for(const Type* type1 : types)
-						for(const Type* type2 : static_cast<const AmbigousType*>(other)->types)
-							if(*type1 == *type2)
-								return true;
-				}*/
-
 				return false;
 			}
 
@@ -755,7 +840,8 @@ namespace jdecompiler {
 					vector<const BasicType*> newTypes;
 					for(const BasicType* type : types) {
 						const BasicType* castedType = safe_cast<const BasicType*>(
-								direct ? (type->*castImplFunc)(other) : (other->*castImplFunc)(type));
+								direct ? (type->*castImplFunc)(other) : (other->*reversedCastImplFunc)(type));
+
 						if(castedType != nullptr && find(newTypes.begin(), newTypes.end(), castedType) == newTypes.end()) {
 							newTypes.push_back(castedType);
 						}
@@ -793,6 +879,18 @@ namespace jdecompiler {
 
 			virtual const Type* reversedCastToWidestImpl(const Type* other) const override {
 				return castImpl0<false, true>(other);
+			}
+
+			virtual status_t implicitCastStatus(const Type* other) const override {
+				status_t resultStatus = N_STATUS;
+
+				for(const Type* type : types) {
+					status_t status = type->implicitCastStatus(other);
+					if(status != N_STATUS && (resultStatus == N_STATUS || status < resultStatus))
+						resultStatus = status;
+				}
+
+				return resultStatus;
 			}
 	};
 
@@ -1078,7 +1176,7 @@ namespace jdecompiler {
 			switch(str[i]) {
 				case 'L':
 					parameter = new ClassType(&str[i + 1]);
-					i += parameter->getEncodedName().size() + 2u;
+					i += parameter->getEncodedName().size() + 2U;
 					break;
 				case '[':
 					parameter = new ArrayType(&str[i]);
@@ -1086,7 +1184,7 @@ namespace jdecompiler {
 					break;
 				case 'T':
 					parameter = new ParameterType(&str[i]);
-					i += parameter->getEncodedName().size() + 1u;
+					i += parameter->getEncodedName().size() + 1U;
 					break;
 				case '>':
 					parameters = parseParameters(&str[i]);
@@ -1103,8 +1201,25 @@ namespace jdecompiler {
 
 	IncopatibleTypesException::IncopatibleTypesException(const Type* type1, const Type* type2):
 			DecompilationException("incopatible types: " + type1->toString() + " and " + type2->toString()) {}
-}
 
-#include "javase.cpp"
+
+	static bool typesEquals(const vector<const Type*>& types1, const vector<const Type*>& types2) {
+		return types1.size() == types2.size() &&
+				equal(types1.begin(), types1.end(), types2.begin(),
+					[] (auto arg1, auto arg2) { return *arg1 == *arg2; });
+	}
+
+	static inline bool typesEquals(const vector<const Type*>& types1, initializer_list<const Type*>& types2) {
+		return typesEquals(types1, vector<const Type*>(types2));
+	}
+
+	static inline bool typesEquals(initializer_list<const Type*>& types1, const vector<const Type*>& types2) {
+		return typesEquals(vector<const Type*>(types1), types2);
+	}
+
+	static inline bool typesEquals(initializer_list<const Type*>& types1, initializer_list<const Type*>& types2) {
+		return typesEquals(vector<const Type*>(types1), vector<const Type*>(types2));
+	}
+}
 
 #endif

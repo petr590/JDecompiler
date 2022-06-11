@@ -100,7 +100,7 @@ for kwd in "${KEYWORDS[@]}"; do
 	regex+=";s/\b$kwd\b/$KEYWORD_SEDCOLOR$kwd$DEFAULT_SEDCOLOR/g"
 done
 
-opcodeRegex=";s/\/\/ \(Field\|Method\) \(.*\)/\/\/ $OPCODE_COMMENT_NAME_SEDCOLOR\1$DEFAULT_SEDCOLOR $OPCODE_COMMENT_SEDCOLOR\2$DEFAULT_SEDCOLOR/g;\
+opcodeRegex=";s/\/\/ \(Field\|Method\|InterfaceMethod\|InvokeDynamic\) \(.*\)/\/\/ $OPCODE_COMMENT_NAME_SEDCOLOR\1$DEFAULT_SEDCOLOR $OPCODE_COMMENT_SEDCOLOR\2$DEFAULT_SEDCOLOR/g;\
 s/\/\/ \(String\) \(.*\)/\/\/ $OPCODE_COMMENT_NAME_SEDCOLOR\1$DEFAULT_SEDCOLOR $OPCODE_STRING_COMMENT_SEDCOLOR\2$DEFAULT_SEDCOLOR/g"
 
 for opcode in "${OPCODES[@]}"; do
@@ -134,7 +134,7 @@ printCodeHeader() {
 javap -c -p "$@" |
 while IFS= read line; do
 	if [ $lineNum -lt 0 ] && [ "$line" = "    Code:" ]; then
-		echo -e "$ATTRIBUTE_COLOR$line$DEFAULT_COLOR"
+		echo -e "$ATTRIBUTE_COLOR${line:0:-1}$DEFAULT_COLOR:"
 		IFS= read line
 
 		lineNum=0

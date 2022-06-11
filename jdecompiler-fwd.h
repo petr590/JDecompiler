@@ -1,18 +1,6 @@
 #ifndef JDECOMPILER_H
 #define JDECOMPILER_H
 
-#ifdef NO_INLINE
-#	define INLINE
-#elif defined(FORCE_INLINE)
-#	ifdef __GNUC__ // For gcc
-#		define INLINE inline __attribute__((always_inline))
-#	else
-#		define INLINE inline
-#	endif
-#else
-#	define INLINE inline
-#endif
-
 #ifdef NO_STATIC_ASSERT
 #define static_assert(...)
 #endif
@@ -22,6 +10,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <unordered_set>
 #include <tuple>
 #include <iostream>
 #include "util/binary-input-stream.cpp"
@@ -39,6 +28,8 @@ namespace jdecompiler {
 	using std::vector;
 	using std::map;
 	using std::set;
+	template<typename T>
+	using uset = std::unordered_set<T>;
 
 	using std::tuple;
 	using std::get;
@@ -71,6 +62,8 @@ namespace jdecompiler {
 	using std::is_pointer;
 	using std::is_const;
 	using std::is_volatile;
+	using std::is_signed;
+	using std::is_unsigned;
 
 	using std::remove_pointer_t;
 	using std::remove_const_t;
@@ -79,6 +72,11 @@ namespace jdecompiler {
 	using std::make_unsigned_t;
 
 	using std::initializer_list;
+
+	using std::isinf;
+	using std::isnan;
+
+	using std::nullptr_t;
 
 	using namespace util;
 
@@ -437,7 +435,6 @@ namespace jdecompiler {
 		template<char32_t operation, Priority priority>
 		struct UnaryOperatorInstruction;
 		struct IIncInstruction;
-		template<bool required>
 		struct CastInstruction;
 		struct LCmpInstruction;
 		struct FCmpInstruction;

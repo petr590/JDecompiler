@@ -1,20 +1,21 @@
 #ifndef JDECOMPILER_UTIL_CPP
 #define JDECOMPILER_UTIL_CPP
 
-#undef inline
 #include <fstream>
 #include <cstring>
 #include <functional>
 #include <sstream>
-#include <math.h>
+#define _USE_MATH_DEFINES // constants M_PI, M_E
+#include <cmath>
 #include <algorithm>
-#define inline INLINE
+#include <type_traits>
 
 #include "jdecompiler-fwd.h"
-#include "typename-of.cpp"
+#include "typenameof.cpp"
 #include "index-types.cpp"
 #include "exceptions.cpp"
-#include "util/binary-input-stream.cpp"
+#include "util/file-binary-input-stream.cpp"
+#include "class-input-stream.cpp"
 #include "util/stack.cpp"
 
 #define LOG_POINT "[ jdecompiler/" __FILE__ " ]:"
@@ -49,7 +50,7 @@ namespace jdecompiler {
 	static T safe_cast(B o) {
 		T t = dynamic_cast<T>(o);
 		if(t == nullptr && o != nullptr)
-			throw CastException((string)"cannot cast " + typeNameOf(o) + " to " + typeNameOf<T>());
+			throw CastException((string)"cannot cast " + typenameof(o) + " to " + typenameof<T>());
 		return t;
 	}
 
@@ -174,6 +175,24 @@ namespace jdecompiler {
 		return result;
 	}
 
+
+	template<typename T>
+	static string rjoin(const vector<T>& array, const function<string(T, size_t)>& func, const string& separator = ", ") {
+		string result;
+		size_t i = array.size();
+
+		if(i > 0) {
+			while(true) {
+				i--;
+				result += func(array[i], i);
+				if(i == 0) break;
+				result += separator;
+			}
+		}
+
+		return result;
+	}
+
 	struct IllegalLiteralException: Exception {
 		IllegalLiteralException(): Exception() {}
 		IllegalLiteralException(const char* message): Exception(message) {}
@@ -186,34 +205,34 @@ namespace jdecompiler {
 		private: string value;
 
 		public:
-			FormatString() noexcept {}
+			FormatString() noexcept: value() {}
 			FormatString(const string& value): value(value) {}
 
 
-			friend FormatString operator+ (const FormatString& formatStr, const char* str) {
-				return FormatString(formatStr.value + (formatStr.empty() || *str == '\0' ? str : " " + (string)str));
+			friend FormatString operator+(const FormatString& formatStr, const char* str) {
+				return FormatString(formatStr.value + (formatStr.empty() || *str == '\0' ? str : ' ' + (string)str));
 			}
 
-			friend FormatString operator+ (const FormatString& formatStr, const string& str) {
-				return FormatString(formatStr.value + (formatStr.empty() || str.empty() ? str : " " + str));
+			friend FormatString operator+(const FormatString& formatStr, const string& str) {
+				return FormatString(formatStr.value + (formatStr.empty() || str.empty() ? str : ' ' + str));
 			}
 
-			friend FormatString operator+ (const char* str, const FormatString& formatStr) {
-				return FormatString(str + (formatStr.empty() || *str == '\0' ? (string)formatStr : " " + (string)formatStr));
+			friend FormatString operator+(const char* str, const FormatString& formatStr) {
+				return FormatString(str + (formatStr.empty() || *str == '\0' ? (string)formatStr : ' ' + (string)formatStr));
 			}
 
-			friend FormatString operator+ (const string& str, const FormatString& formatStr) {
-				return FormatString(str + (formatStr.empty() || str.empty() ? (string)formatStr : " " + (string)formatStr));
+			friend FormatString operator+(const string& str, const FormatString& formatStr) {
+				return FormatString(str + (formatStr.empty() || str.empty() ? (string)formatStr : ' ' + (string)formatStr));
 			}
 
 
-			friend FormatString& operator+= (FormatString& formatStr, const char* str) {
-				formatStr.value += (formatStr.empty() || *str == '\0' ? str : " " + (string)str);
+			friend FormatString& operator+=(FormatString& formatStr, const char* str) {
+				formatStr.value += (formatStr.empty() || *str == '\0' ? str : ' ' + (string)str);
 				return formatStr;
 			}
 
-			friend FormatString& operator+= (FormatString& formatStr, const string& str) {
-				formatStr.value += (formatStr.empty() || str.empty() ? str : " " + str);
+			friend FormatString& operator+=(FormatString& formatStr, const string& str) {
+				formatStr.value += (formatStr.empty() || str.empty() ? str : ' ' + str);
 				return formatStr;
 			}
 
@@ -267,7 +286,7 @@ namespace jdecompiler {
 		// 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
 		if(c < 0x200000)   return { (char)((c >> 18 &  0x7) | 0xF0), (char)((c >> 12 & 0x3F) | 0x80), (char)((c >>  6 & 0x3F) | 0x80),
 									(char)((c >>  0 & 0x3F) | 0x80) };
-		 // 111110xx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx
+		// 111110xx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx
 		if(c < 0x4000000)  return { (char)((c >> 24 &  0x3) | 0xF8), (char)((c >> 18 & 0x3F) | 0x80), (char)((c >> 12 & 0x3F) | 0x80),
 									(char)((c >>  6 & 0x3F) | 0x80), (char)((c >>  0 & 0x3F) | 0x80) };
 		// 1111110x 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx
@@ -281,9 +300,6 @@ namespace jdecompiler {
 	// surrogate pairs in UTF-16: 0xD800-0xDFFF
 	static inline string escapeUtf16(char32_t ch) {
 		assert(ch <= 0x10FFFF);
-
-		/*if(ch >= 0xD800 && ch < 0xE000)
-			return ; // TODO*/
 
 		if(ch > 0xFFFF) {
 			ch -= 0x10000;
@@ -317,12 +333,14 @@ namespace jdecompiler {
 
 	static string stringToLiteral(const string& str) {
 		#define check(condition, message) if(!(condition)) throw DecompilationException(message)
-		#define checkLength(n) check(bytes + n < end, "Unexpected end of the string")
-		#define checkEncoding(condition) check(condition, "Invalid string")
+		#define checkLength(n) check(bytes + n < end, "Unexpected end of the string: " + to_string(bytes - str.c_str()) + ", " + to_string(n) + ", " + to_string(end - str.c_str()))
+		#define checkEncoding(condition) check(condition, "Invalid string encoding")
 
 		const char* bytes = str.c_str();
 
 		string result("\"");
+
+		bytes = str.c_str();
 
 		for(const char* end = bytes + strlen(bytes); bytes < end; bytes++) {
 			char32_t ch = *bytes & 0xFF;
@@ -336,10 +354,10 @@ namespace jdecompiler {
 				bytes++;
 
 			} else if((ch & 0xF0) == 0xE0) {
-				if(ch == 0xED) {
-					checkLength(5);
-					checkEncoding((bytes[1] & 0xF0) == 0xA0 && (bytes[2] & 0xC0) == 0x80 && (bytes[3] & 0xFF) == 0xED
-					           && (bytes[4] & 0xF0) == 0xB0 && (bytes[5] & 0xC0) == 0x80);
+
+				if(ch == 0xED && bytes + 5 < end &&
+						(bytes[1] & 0xF0) == 0xA0 && (bytes[2] & 0xC0) == 0x80 && (bytes[3] & 0xFF) == 0xED
+					 && (bytes[4] & 0xF0) == 0xB0 && (bytes[5] & 0xC0) == 0x80) {
 
 					result += encodeUtf8((char32_t)(0x10000 | (bytes[1] & 0xF) << 16 |
 							(bytes[2] & 0x3F) << 10 | (bytes[4] & 0xF) << 6 | (bytes[5] & 0x3F)));
@@ -355,7 +373,7 @@ namespace jdecompiler {
 				bytes += 2;
 			}
 
-			check(ch <= 0x10FFFF && (ch < 0xD800 || ch >= 0xE000), "Invalid string: char code U+" + hex(ch) + " is out of range");
+			check(ch <= 0x10FFFF, "Invalid string: char code U+" + hex(ch) + " is out of range");
 
 			result += charToString<'"'>(ch);
 		}
@@ -364,68 +382,6 @@ namespace jdecompiler {
 		#undef checkEncoding
 		#undef checkLength
 		#undef check
-	}
-
-	static inline string primitiveToString(const string& str) {
-		return stringToLiteral(str);
-	}
-
-
-	template<typename T>
-	static string numberConstantToString(T value);
-
-
-	static inline string primitiveToString(bool value) {
-		return value ? "true" : "false";
-	}
-
-	static inline string primitiveToString(char16_t c) {
-		return '\'' + charToString<'\''>(c) + '\'';
-	}
-
-	static inline string primitiveToString(int8_t num) { // byte
-		return numberConstantToString(num);
-	}
-
-	static inline string primitiveToString(int16_t num) { // short
-		return numberConstantToString(num);
-	}
-
-	static inline string primitiveToString(int32_t num) { // int
-		return numberConstantToString(num);
-	}
-
-	static inline string primitiveToString(int64_t num) { // long
-		return numberConstantToString(num) + 'l';
-	}
-
-	static string primitiveToString(float num) {
-		if(isnan(num)) return "(0.0f / 0.0f)";
-		if(!isfinite(num)) return num > 0 ? "(1.0f / 0.0f)" : "(-1.0f / 0.0f)";
-
-		ostringstream out;
-		out.precision(9);
-
-		out << num;
-		if(floor(num) == num)
-			out << ".0";
-		out << 'f';
-
-		return out.str();
-	}
-
-	static string primitiveToString(double num) {
-		if(isnan(num)) return "(0.0 / 0.0)";
-		if(!isfinite(num)) return num > 0 ? "(1.0 / 0.0)" : "(-1.0 / 0.0)";
-
-		ostringstream out;
-		out.precision(17);
-
-		out << num;
-		if(floor(num) == num)
-			out << ".0";
-
-		return out.str();
 	}
 
 
@@ -460,6 +416,34 @@ namespace jdecompiler {
 		return mp.find(key) != mp.end();
 	}
 
+	template<typename K, typename V>
+	inline typename map<K, V>::iterator find_by_value(map<K, V>& mp, const V& value) {
+		return find_if(mp.begin(), mp.end(), [&value] (const auto& it) { return it.second == value; });
+	}
+
+	template<typename K, typename V>
+	inline typename map<K, V>::const_iterator find_by_value(const map<K, V>& mp, const V& value) {
+		return find_if(mp.begin(), mp.end(), [&value] (const auto& it) { return it.second == value; });
+	}
+
+	template<typename K, typename V>
+	inline bool has_value(const map<K, V>& mp, const V& value) {
+		return find_by_value<K, V>(mp, value) != mp.end();
+	}
+
+
+	/* The function works as usual, only a delimiter is added at the end of each line */
+	static vector<string> splitAndAddDelimiter(const string& str, char delimiter) {
+		vector<string> result;
+
+		for(size_t pos = 0, oldPos = 0; (pos = str.find(delimiter, oldPos)) != string::npos; oldPos = pos) {
+			pos++;
+			result.push_back(str.substr(oldPos, pos - oldPos));
+		}
+
+		return result;
+	}
+
 
 	template<bool v>
 	struct bool_type {
@@ -470,9 +454,8 @@ namespace jdecompiler {
 		inline constexpr operator bool () const noexcept { return v; }
 	};
 
-	struct false_type: bool_type<false> {};
-
-	struct true_type: bool_type<true> {};
+	typedef bool_type<false> false_type;
+	typedef bool_type<true> true_type;
 
 
 	template<typename...>
@@ -482,11 +465,25 @@ namespace jdecompiler {
 	struct is_one_of<F, S, T...>: bool_type<is_same<F, S>() || is_one_of<F, T...>()> {};
 
 
-	template<typename T>
+	template<typename>
 	struct is_float: false_type {};
 
 	template<>
 	struct is_float<float>: true_type {};
+
+
+	static bool stringStartsWith(string str, string search) {
+		if(search.size() > str.size())
+			return false;
+
+		const char* cstr = str.c_str();
+		for(char c : search) {
+			if(*(cstr++) != c)
+				return false;
+		}
+
+		return true;
+	}
 
 
 
@@ -496,6 +493,11 @@ namespace jdecompiler {
 
 	static inline uint64_t toRawBits(double d) {
 		return *(uint64_t*)&d;
+	}
+
+	template<typename T, typename = enable_if_t<is_integral_v<T>>>
+	static inline bool isPowerOfTwo(T x) {
+		return (x & (x - 1)) == 0;
 	}
 }
 #endif

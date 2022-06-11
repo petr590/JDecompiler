@@ -63,7 +63,7 @@ namespace jdecompiler {
 					initializer->castReturnTypeTo(&descriptor.type);
 			}
 
-			Field(const ClassInfo& classinfo, BinaryInputStream& instream): Field(instream.readUShort(),
+			Field(const ClassInfo& classinfo, ClassInputStream& instream): Field(instream.readUShort(),
 					*new FieldDescriptor(classinfo.constPool.getUtf8Constant(instream.readUShort()),
 							classinfo.constPool.getUtf8Constant(instream.readUShort())),
 					*new Attributes(instream, classinfo.constPool, instream.readUShort()), classinfo) {}
@@ -129,7 +129,7 @@ namespace jdecompiler {
 			const FieldDescriptor& descriptor;
 			const Attributes& attributes;
 
-			FieldDataHolder(const ConstantPool& constPool, BinaryInputStream& instream): modifiers(instream.readUShort()),
+			FieldDataHolder(const ConstantPool& constPool, ClassInputStream& instream): modifiers(instream.readUShort()),
 					descriptor(*new FieldDescriptor(constPool.getUtf8Constant(instream.readUShort()), constPool.getUtf8Constant(instream.readUShort()))),
 					attributes(*new Attributes(instream, constPool, instream.readUShort())) {}
 

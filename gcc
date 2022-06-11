@@ -1,2 +1,2 @@
 #!/bin/sh
-g++ `cat compiler-params` "$@"
+g++ $(./compiler-params) "$@" main.cpp -o jdecompiler

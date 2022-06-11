@@ -445,13 +445,14 @@ namespace jdecompiler {
 
 	namespace instructions {
 
-		template<bool required>
 		struct CastInstruction: Instruction {
 			protected:
 				const Type *const requiredType, *const type;
+				const bool required;
 
 			public:
-				CastInstruction(const Type* requiredType, const Type* type): requiredType(requiredType), type(type) {}
+				CastInstruction(const Type* requiredType, const Type* type, bool required):
+						requiredType(requiredType), type(type), required(required) {}
 
 				virtual const Operation* toOperation(const DecompilationContext& context) const override {
 					return new CastOperation(context, requiredType, type, required);
@@ -554,6 +555,24 @@ namespace jdecompiler {
 			InvokevirtualInstruction(uint16_t index, const ConstantPool& constPool): InvokeInstruction(index, constPool) {}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				if(JDecompiler::getInstance().castWrappers()) {
+					static const MethodDescriptor
+							byteValue   (javaLang::Byte,      "byteValue",   BYTE),
+							charValue   (javaLang::Character, "charValue",   CHAR),
+							shortValue  (javaLang::Short,     "shortValue",  SHORT),
+							intValue    (javaLang::Integer,   "intValue",    INT),
+							longValue   (javaLang::Long,      "longValue",   LONG),
+							floatValue  (javaLang::Float,     "floatValue",  FLOAT),
+							doubleValue (javaLang::Double,    "doubleValue", DOUBLE);
+
+					if(descriptor == byteValue)   return new CastOperation(context, &javaLang::Byte,      BYTE,   false);
+					if(descriptor == charValue)   return new CastOperation(context, &javaLang::Character, CHAR,   false);
+					if(descriptor == shortValue)  return new CastOperation(context, &javaLang::Short,     SHORT,  false);
+					if(descriptor == intValue)    return new CastOperation(context, &javaLang::Integer,   INT,    false);
+					if(descriptor == longValue)   return new CastOperation(context, &javaLang::Long,      LONG,   false);
+					if(descriptor == floatValue)  return new CastOperation(context, &javaLang::Float,     FLOAT,  false);
+					if(descriptor == doubleValue) return new CastOperation(context, &javaLang::Double,    DOUBLE, false);
+				}
 				return new InvokevirtualOperation(context, descriptor);
 			}
 		};
@@ -572,6 +591,24 @@ namespace jdecompiler {
 			InvokestaticInstruction(uint16_t index, const ConstantPool& constPool): InvokeInstruction(index, constPool) {}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override {
+				if(JDecompiler::getInstance().castWrappers()) {
+					static const MethodDescriptor
+							byteValueOf      (javaLang::Byte,      "valueOf", javaLang::Byte,      {BYTE}),
+							characterValueOf (javaLang::Character, "valueOf", javaLang::Character, {CHAR}),
+							shortValueOf     (javaLang::Short,     "valueOf", javaLang::Short,     {SHORT}),
+							integerValueOf   (javaLang::Integer,   "valueOf", javaLang::Integer,   {INT}),
+							longValueOf      (javaLang::Long,      "valueOf", javaLang::Long,      {LONG}),
+							floatValueOf     (javaLang::Float,     "valueOf", javaLang::Float,     {FLOAT}),
+							doubleValueOf    (javaLang::Double,    "valueOf", javaLang::Double,    {DOUBLE});
+
+					if(descriptor == byteValueOf)      return new CastOperation(context, BYTE,   &javaLang::Byte,      false);
+					if(descriptor == characterValueOf) return new CastOperation(context, CHAR,   &javaLang::Character, false);
+					if(descriptor == shortValueOf)     return new CastOperation(context, SHORT,  &javaLang::Short,     false);
+					if(descriptor == integerValueOf)   return new CastOperation(context, INT,    &javaLang::Integer,   false);
+					if(descriptor == longValueOf)      return new CastOperation(context, LONG,   &javaLang::Long,      false);
+					if(descriptor == floatValueOf)     return new CastOperation(context, FLOAT,  &javaLang::Float,     false);
+					if(descriptor == doubleValueOf)    return new CastOperation(context, DOUBLE, &javaLang::Double,    false);
+				}
 				return new InvokestaticOperation(context, descriptor);
 			}
 		};
@@ -626,7 +663,8 @@ namespace jdecompiler {
 									to_string((unsigned int)bootstrapMethod->methodHandle->referenceKind));
 						}
 					case KindType::METHOD: {
-						const MethodDescriptor descriptor(bootstrapMethod->methodHandle->referenceConstant->clazz->name, invokeDynamicConstant->nameAndType);
+						const MethodDescriptor& descriptor =
+								*new const MethodDescriptor(bootstrapMethod->methodHandle->referenceConstant->clazz->name, invokeDynamicConstant->nameAndType);
 
 						vector<const Operation*> arguments(descriptor.arguments.size());
 
@@ -704,13 +742,14 @@ namespace jdecompiler {
 							case RefKind::INVOKEVIRTUAL: return new InvokevirtualOperation(context, descriptor);
 							case RefKind::INVOKESTATIC:  return new InvokestaticOperation(context, descriptor);
 							case RefKind::INVOKESPECIAL: return new InvokespecialOperation(context, descriptor);
-							case RefKind::NEWINVOKESPECIAL: return new InvokespecialOperation(context,
-										new NewOperation(context, bootstrapMethod->methodHandle->referenceConstant->clazz), descriptor);
+							case RefKind::NEWINVOKESPECIAL: return new InvokespecialOperation(context, descriptor,
+										new NewOperation(context, bootstrapMethod->methodHandle->referenceConstant->clazz));
 							case RefKind::INVOKEINTERFACE: return new InvokeinterfaceOperation(context, descriptor);
 							default: throw IllegalStateException((string)"Illegal referenceConstant kind " +
 									to_string((unsigned int)bootstrapMethod->methodHandle->referenceKind));
 						}
 					}
+
 					default: throw IllegalStateException((string)"Illegal kind type " + to_string((unsigned int)bootstrapMethod->methodHandle->kindType));
 				}
 			}

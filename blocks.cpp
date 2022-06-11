@@ -121,7 +121,8 @@ namespace jdecompiler {
 		struct IfCmpBlock: IfBlock {
 			const CompareType& compareType;
 
-			IfCmpBlock(const DisassemblerContext& context, offset_t offset, const CompareType& compareType): IfBlock(context, offset), compareType(compareType) {}
+			IfCmpBlock(const DisassemblerContext& context, offset_t offset, const CompareType& compareType):
+					IfBlock(context, offset), compareType(compareType) {}
 
 			virtual const ConditionOperation* getCondition(const DecompilationContext& context) const override {
 				const Operation* operation = context.stack.pop();

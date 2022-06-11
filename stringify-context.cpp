@@ -10,7 +10,6 @@ namespace jdecompiler {
 		public:
 			const ClassInfo& classinfo;
 			const ConstantPool& constPool;
-			//CodeStack& stack;
 			MethodScope& methodScope;
 
 		private:
@@ -20,7 +19,6 @@ namespace jdecompiler {
 			const uint16_t modifiers;
 			const MethodDescriptor& descriptor;
 			const Attributes& attributes;
-			//index_t index = 0, exprStartIndex = 0;
 			const map<uint32_t, index_t>& exprIndexTable;
 
 		protected:
@@ -44,27 +42,6 @@ namespace jdecompiler {
 			StringifyContext(const StringifyContext&) = delete;
 
 			StringifyContext& operator=(const StringifyContext&) = delete;
-
-			/*bool addOperation(const Operation* operation) {
-				if(operation == nullptr)
-					return false;
-
-				//log(typeNameOf(operation));
-
-				bool status = false;
-
-				if(operation->getReturnType() != VOID) {
-					stack.push(operation);
-				} else if(operation->canAddToCode() && !(index == instructions.size() - 1 && operation == &VReturn::getInstance())) {
-					currentScope->addOperation(operation, *this);
-					status = true;
-				}
-
-				if(instanceof<const Scope*>(operation))
-					addScope(static_cast<const Scope*>(operation));
-
-				return status;
-			}*/
 
 
 			void enterScope(const Scope* scope) const;
@@ -95,24 +72,11 @@ namespace jdecompiler {
 				return disassemblerContext.getInstructionNoexcept(index);
 			}
 
-			~StringifyContext() {
-				/*delete &stack;*/
-			}
-
-
 			template<typename... Args>
 			inline void warning(Args... args) const {
 				print(cerr << descriptor.toString() << ':' << pos << ": warning: ", args...);
 			}
 	};
-
-
-	/*struct EmptyStringifyContext: StringifyContext {
-		private:
-			EmptyStringifyContext(const DisassemblerContext& disassemblerContext, const ClassInfo& classinfo, MethodScope* methodScope, uint16_t modifiers,
-					const MethodDescriptor& descriptor, const Attributes& attributes, uint16_t maxLocals):
-					StringifyContext()
-	};*/
 }
 
 #endif

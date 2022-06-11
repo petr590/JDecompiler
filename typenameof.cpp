@@ -1,9 +1,7 @@
 #ifndef JDECOMPILER_TYPENAME_OF_CPP
 #define JDECOMPILER_TYPENAME_OF_CPP
 
-#undef inline
 #include <regex>
-#define inline INLINE
 
 namespace jdecompiler {
 	using std::regex;
@@ -31,102 +29,102 @@ namespace jdecompiler {
 
 
 	template<typename T>
-	static inline constexpr string typeNameOf() {
+	static inline constexpr string typenameof() {
 		if constexpr(is_pointer<T>())
-			return typeNameOf<remove_pointer_t<T>>() + '*';
+			return typenameof<remove_pointer_t<T>>() + '*';
 		else if constexpr(is_const<T>())
-			return "const " + typeNameOf<remove_const_t<T>>();
+			return "const " + typenameof<remove_const_t<T>>();
 		else if constexpr(is_volatile<T>())
-			return "volatile " + typeNameOf<remove_volatile_t<T>>();
+			return "volatile " + typenameof<remove_volatile_t<T>>();
 		else
 			return undecorateTypeName(typeid(T).name());
 	}
 
 
-	template<> inline string typeNameOf<void>() {
+	template<> inline string typenameof<void>() {
 		return "void";
 	}
 
-	template<> inline string typeNameOf<char>() {
+	template<> inline string typenameof<char>() {
 		return "char";
 	}
 
-	template<> inline string typeNameOf<short>() {
+	template<> inline string typenameof<short>() {
 		return "short";
 	}
 
-	template<> inline string typeNameOf<int>() {
+	template<> inline string typenameof<int>() {
 		return "int";
 	}
 
-	template<> inline string typeNameOf<long>() {
+	template<> inline string typenameof<long>() {
 		return "long";
 	}
 
-	template<> inline string typeNameOf<long long>() {
+	template<> inline string typenameof<long long>() {
 		return "long long";
 	}
 
 
-	template<> inline string typeNameOf<signed char>() {
+	template<> inline string typenameof<signed char>() {
 		return "signed char";
 	}
 
 
-	template<> inline string typeNameOf<unsigned char>() {
+	template<> inline string typenameof<unsigned char>() {
 		return "unsigned char";
 	}
 
-	template<> inline string typeNameOf<unsigned short>() {
+	template<> inline string typenameof<unsigned short>() {
 		return "unsigned short";
 	}
 
-	template<> inline string typeNameOf<unsigned int>() {
+	template<> inline string typenameof<unsigned int>() {
 		return "unsigned int";
 	}
 
-	template<> inline string typeNameOf<unsigned long>() {
+	template<> inline string typenameof<unsigned long>() {
 		return "unsigned long";
 	}
 
-	template<> inline string typeNameOf<unsigned long long>() {
+	template<> inline string typenameof<unsigned long long>() {
 		return "unsigned long long";
 	}
 
 
-	template<> inline string typeNameOf<float>() {
+	template<> inline string typenameof<float>() {
 		return "float";
 	}
 
-	template<> inline string typeNameOf<double>() {
+	template<> inline string typenameof<double>() {
 		return "double";
 	}
 
-	template<> inline string typeNameOf<long double>() {
+	template<> inline string typenameof<long double>() {
 		return "long double";
 	}
 
 
-	template<> inline string typeNameOf<void*>() {
+	template<> inline string typenameof<void*>() {
 		return "void*";
 	}
 
-	template<> inline string typeNameOf<const void*>() {
+	template<> inline string typenameof<const void*>() {
 		return "const void*";
 	}
 
 
 
 	template<class T>
-	static inline string typeNameOf(T& value) {
+	static inline string typenameof(T& value) {
 		if constexpr(is_fundamental<T>() || is_same<remove_cv_t<remove_pointer_t<T>>, void>() /* const or volatile void* */)
-			return typeNameOf<T>();
+			return typenameof<T>();
 		else if constexpr(is_pointer<T>())
-			return typeNameOf<remove_pointer_t<T>>(*value) + '*';
+			return typenameof<remove_pointer_t<T>>(*value) + '*';
 		else if constexpr(is_const<T>())
-			return "const " + typeNameOf<remove_const_t<T>>(const_cast<remove_const_t<T>&>(value));
+			return "const " + typenameof<remove_const_t<T>>(const_cast<remove_const_t<T>&>(value));
 		else if constexpr(is_volatile<T>())
-			return "volatile " + typeNameOf<remove_volatile_t<T>>(const_cast<remove_volatile_t<T>&>(value));
+			return "volatile " + typenameof<remove_volatile_t<T>>(const_cast<remove_volatile_t<T>&>(value));
 		else
 			return undecorateTypeName(typeid(value).name());
 	}

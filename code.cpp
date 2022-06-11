@@ -75,7 +75,7 @@ namespace jdecompiler {
 
 	struct Operation {
 		protected:
-			Operation() noexcept {}
+			constexpr Operation() noexcept {}
 
 			virtual ~Operation() {}
 
@@ -85,6 +85,7 @@ namespace jdecompiler {
 			virtual string toArrayInitString(const StringifyContext& context) const {
 				return toString(context);
 			}
+
 
 			virtual const Type* getReturnType() const = 0;
 
@@ -111,7 +112,7 @@ namespace jdecompiler {
 			}
 
 		protected:
-			virtual void onCastReturnType(const Type* newType) const {}
+			virtual void onCastReturnType(const Type*) const {}
 
 
 		public:
@@ -148,7 +149,7 @@ namespace jdecompiler {
 				return classinfo.getIndent();
 			}
 
-			virtual inline string getBackSeparator(const ClassInfo& classinfo) const {
+			virtual inline string getBackSeparator(const ClassInfo&) const {
 				return ";\n";
 			}
 
@@ -170,6 +171,17 @@ namespace jdecompiler {
 			}
 
 			virtual void addVariableName(const string& name) const {}
+
+
+			virtual void allowImplicitCast() const {} // For CastOperation
+
+			virtual const Type* getImplicitType() const { // For CastOperation
+				return getReturnType();
+			}
+
+			virtual bool isReferenceToThis(const ClassInfo&) const { // For ALoadOperation
+				return false;
+			}
 
 		private:
 			static inline constexpr Associativity getAssociativityByPriority(Priority priority) {
@@ -227,21 +239,17 @@ namespace jdecompiler {
 
 		protected:
 			mutable const Type* type;
-			const bool isFixedType;
-
 			mutable bool declared;
+
+			const bool isFixedType;
 
 			mutable vector<const Operation*> bindedOperations;
 
-			/*friend struct operations::LoadOperation;
-			friend struct operations::StoreOperation;
-			friend struct operations::IIncOperation;*/
-
 			mutable bool typeSettingLocked = false;
 
-
-
 		public:
+			Variable(const Type* type, bool declared, bool isFixedType): type(type), declared(declared), isFixedType(isFixedType) {}
+
 
 			const Type* getType() const {
 				return type;
@@ -252,7 +260,8 @@ namespace jdecompiler {
 				if(isFixedType) {
 					if(type->isSubtypeOf(newType))
 						return this->type;
-					throw IncopatibleTypesException(type, newType);
+					else
+						throw IncopatibleTypesException(type, newType);
 				}
 
 				if(typeSettingLocked) // To avoid infinite recursion
@@ -260,19 +269,20 @@ namespace jdecompiler {
 
 				typeSettingLocked = true;
 
-				for(const Operation* operation : bindedOperations)
+				for(const Operation* operation : bindedOperations) {
 					newType = operation->getReturnTypeAsWidest(newType);
+				}
 
 				typeSettingLocked = false;
 
-				return this->type = (instanceof<const PrimitiveType*>(newType) ? static_cast<const PrimitiveType*>(newType)->toAmbigousType() : newType);
+				return this->type = newType;//(instanceof<const PrimitiveType*>(newType) ? static_cast<const PrimitiveType*>(newType)->toAmbigousType() : newType);
 			}
 
 			inline const Type* castTypeTo(const Type* requiredType) const {
 				return setType(type->castTo(requiredType));
 			}
 
-			void bindTo(const Operation* operation) const {
+			void bind(const Operation* operation) const {
 				bindedOperations.push_back(operation);
 				setType(operation->getReturnTypeAsWidest(type));
 			}
@@ -285,8 +295,6 @@ namespace jdecompiler {
 			void setDeclared(bool declared) const {
 				this->declared = declared;
 			}
-
-			Variable(const Type* type, bool declared, bool isFixedType): type(type), declared(declared), isFixedType(isFixedType) {}
 
 
 			virtual string getName() const = 0;
@@ -314,13 +322,13 @@ namespace jdecompiler {
 				return name;
 			}
 
-			virtual void addName(const string& name) const override {}
+			virtual void addName(const string&) const override {}
 	};
 
 
 	struct UnnamedVariable: Variable {
 		protected:
-			mutable vector<string> names;
+			mutable uset<string> names;
 
 		public:
 			UnnamedVariable(const Type* type, bool declared, bool isFixedType = false):
@@ -329,12 +337,14 @@ namespace jdecompiler {
 			UnnamedVariable(const Type* type, bool declared, const string& name, bool isFixedType = false):
 					Variable(type, declared, isFixedType), names({name}) {}
 
+			UnnamedVariable(const UnnamedVariable&) = delete;
+
 			virtual string getName() const override {
-				return names.size() == 1 ? names[0] : getNameByType(type);
+				return names.size() == 1 ? *names.begin() : getNameByType(type);
 			}
 
 			virtual void addName(const string& name) const override {
-				names.push_back(name);
+				names.insert(name);
 			}
 	};
 
@@ -393,7 +403,7 @@ namespace jdecompiler {
 			}
 
 			string toDebugString() const {
-				return typeNameOf(*this) + " {" + to_string(startIndex) + ".." + to_string(endIndex) + '}';
+				return typenameof(*this) + " {" + to_string(startIndex) + ".." + to_string(endIndex) + '}';
 			}
 	};
 
@@ -434,7 +444,7 @@ namespace jdecompiler {
 			O operation = stack<const Operation*>::pop();
 			if(const O* t = dynamic_cast<const O*>(operation))
 				return t;
-			throw DecompilationException("Illegal operation type " + typeNameOf<O>() + " for operation " + typeNameOf(*operation));
+			throw DecompilationException("Illegal operation type " + typenameof<O>() + " for operation " + typenameof(*operation));
 		}
 
 		CodeStack(const CodeStack&) = delete;
@@ -584,6 +594,37 @@ namespace jdecompiler {
 							throw IllegalStateException("Variable of type " + var->getType()->toString() + " is not found");
 				}
 
+				/* // Not working correctly
+				auto existsVar = varNames.find(var);
+				if(existsVar != varNames.end()) {
+					return existsVar->second;
+				}
+
+				const string baseName = var->getName();
+				string name = baseName + "1";
+
+				existsVar = find_by_value(varNames, baseName);
+				if(existsVar != varNames.end()) {
+					varNames[existsVar->first] = name;
+				}
+
+				if(find_by_value(varNames, name) != varNames.end()) {
+					uint_fast16_t i = 1;
+
+					while(find_if(varNames.begin(), varNames.end(), [&name] (const auto& it) { return it.second == name; }) != varNames.end()) {
+						name = baseName + to_string(++i);
+					}
+
+					varNames[var] = name;
+
+					return name;
+				} else {
+					varNames[var] = baseName;
+
+					return baseName;
+				}
+				*/
+
 				const auto varName = varNames.find(var);
 				if(varName != varNames.end()) {
 					return varName->second;
@@ -708,10 +749,10 @@ namespace jdecompiler {
 			}
 
 			string toDebugString() const {
-				return typeNameOf(*this) + " {" + to_string(startIndex) + ".." + to_string(endIndex) + '}';
+				return typenameof(*this) + " {" + to_string(startIndex) + ".." + to_string(endIndex) + '}';
 			}
 
-			friend ostream& operator<< (ostream& out, const Scope& scope) {
+			friend ostream& operator<<(ostream& out, const Scope& scope) {
 				return out << (&scope != nullptr ? scope.toDebugString() : "null");
 			}
 	};

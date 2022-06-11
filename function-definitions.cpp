@@ -5,61 +5,7 @@
 
 namespace jdecompiler {
 
-	template<typename T>
-	static string numberConstantToString(T value) {
-		static_assert(is_integral<T>(), "type must be integral");
-
-		if(JDecompiler::getInstance().useHexNumbersAlways()) {
-			return hexWithPrefix(value);
-		}
-
-		if(JDecompiler::getInstance().canUseHexNumbers()) {
-			if(value < 0 && value != numeric_limits<T>::min()) {
-				return '-' + numberConstantToString(-value);
-			}
-
-			if(value == 0x0F) return "0x0F";
-			if(value == 0x7F) return "0x7F";
-			if(value == 0x80) return "0x80";
-
-			if constexpr((T)0x7FFF > 0) { // short, int, long
-				if(value == 0x80)   return "0x80";
-				if(value == 0xFF)   return "0xFF";
-				if(value == 0x7FFF) return "0x7FFF";
-				if(value == 0x8000) return "0x8000";
-			}
-
-			if constexpr((T)0x7FFFFFFF > 0) { // int, long
-				if(value == 0x8000)     return "0x8000";
-				if(value == 0xFFFF)     return "0xFFFF";
-				if(value == 0x7FFFFF)   return "0x7FFFFF";
-				if(value == 0x800000)   return "0x800000";
-				if(value == 0xFFFFFF)   return "0xFFFFFF";
-				if(value == 0x7FFFFFFF) return "0x7FFFFFFF";
-				if(value == 0x80000000) return "0x80000000";
-			}
-
-			if constexpr((T)0x7FFFFFFFFFFFFFFF > 0) { // long
-				if(value == 0x80000000ll)         return "0x80000000";
-				if(value == 0xFFFFFFFFll)         return "0xFFFFFFFF";
-				if(value == 0x7FFFFFFFFFll)       return "0x7FFFFFFFFF";
-				if(value == 0x8000000000ll)       return "0x8000000000";
-				if(value == 0xFFFFFFFFFFll)       return "0xFFFFFFFFFF";
-				if(value == 0x7FFFFFFFFFFFll)     return "0x7FFFFFFFFFFF";
-				if(value == 0x800000000000ll)     return "0x800000000000";
-				if(value == 0xFFFFFFFFFFFFll)     return "0xFFFFFFFFFFFF";
-				if(value == 0x7FFFFFFFFFFFFFll)   return "0x7FFFFFFFFFFFFF";
-				if(value == 0x80000000000000ll)   return "0x80000000000000";
-				if(value == 0xFFFFFFFFFFFFFFll)   return "0xFFFFFFFFFFFFFF";
-				if(value == 0x7FFFFFFFFFFFFFFFll) return "0x7FFFFFFFFFFFFFFF";
-				if(value == 0x8000000000000000ll) return "0x8000000000000000";
-			}
-		}
-
-		return to_string(value);
-	}
-
-	EnumClass::EnumClass(const Version& version, const ClassType& thisType, const ClassType& superType, const ConstantPool& constPool, uint16_t modifiers,
+	EnumClass::EnumClass(const Version& version, const ClassType& thisType, const ClassType* superType, const ConstantPool& constPool, uint16_t modifiers,
 			const vector<const ClassType*>& interfaces, const Attributes& attributes,
 			const vector<FieldDataHolder>& fieldsData, vector<MethodDataHolder>& methodDataHolders):
 			Class(version, thisType, superType, constPool, modifiers, interfaces, attributes, fieldsData, processMethodData(methodDataHolders)) {
@@ -168,24 +114,23 @@ namespace jdecompiler {
 
 	void JDecompiler::readClassFiles() const {
 		if(atLeastOneFileSpecified) {
-			for(BinaryInputStream* file : files) {
+			for(ClassInputStream* classFile : files) {
 				if(!JDecompiler::getInstance().isFailOnError()) {
 					try {
-						const Class* clazz = Class::readClass(*file);
+						const Class* clazz = Class::readClass(*classFile);
 						classes[clazz->thisType.getEncodedName()] = clazz;
-					}
-					  catch(const EOFException& ex) {
-						error("unexpected end of file while reading ", file->path);
+					} catch(const EOFException& ex) {
+						error("unexpected end of file while reading ", classFile->fileName);
 					} catch(const IOException& ex) {
-						error(typeNameOf(ex), ": ", ex.what());
+						error(typenameof(ex), ": ", ex.what());
 					} catch(const DecompilationException& ex) {
-						error(typeNameOf(ex), ": ", ex.what());
+						error(typenameof(ex), ": ", ex.what());
 					} catch(const exception& ex) {
-						error(typeNameOf(ex), ": ", ex.what());
+						error(typenameof(ex), ": ", ex.what());
 						throw;
 					}
 				} else {
-					const Class* clazz = Class::readClass(*file);
+					const Class* clazz = Class::readClass(*classFile);
 					classes[clazz->thisType.getEncodedName()] = clazz;
 				}
 			}

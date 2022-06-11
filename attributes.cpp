@@ -35,7 +35,7 @@ namespace jdecompiler {
 				if(t != nullptr)
 					return t;
 
-				throw AttributeNotFoundException(typeNameOf<T>());
+				throw AttributeNotFoundException(typenameof<T>());
 			}
 
 			template<class T>
@@ -43,9 +43,9 @@ namespace jdecompiler {
 				return get<T>() != nullptr;
 			}
 
-			static inline const Attribute* readAttribute(BinaryInputStream& instream, const ConstantPool& constPool, const string& name, const uint32_t length);
+			static inline const Attribute* readAttribute(ClassInputStream&, const ConstantPool&, const string&, uint32_t);
 
-			Attributes(BinaryInputStream& instream, const ConstantPool& constPool, uint16_t attributeCount) {
+			Attributes(ClassInputStream& instream, const ConstantPool& constPool, uint16_t attributeCount) {
 				//log(attributeCount);
 				this->reserve(attributeCount);
 
@@ -81,7 +81,7 @@ namespace jdecompiler {
 
 	struct UnknownAttribute: Attribute {
 		const uint8_t* const bytes;
-		UnknownAttribute(const string& name, uint32_t length, BinaryInputStream& instream):
+		UnknownAttribute(const string& name, uint32_t length, ClassInputStream& instream):
 				Attribute(name, length), bytes(instream.readBytes(length)) {}
 
 		virtual ~UnknownAttribute() override {
@@ -92,7 +92,7 @@ namespace jdecompiler {
 	struct ConstantValueAttribute: Attribute/*, Stringified*/ {
 		const ConstValueConstant* const value;
 
-		ConstantValueAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+		ConstantValueAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
 				Attribute("ConstantValue", length), value(constPool.get<ConstValueConstant>(instream.readUShort())) {
 			if(length != 2) throw IllegalAttributeException("Length of ConstantValue attribute must be 2");
 		}
@@ -118,9 +118,9 @@ namespace jdecompiler {
 				}
 
 			public:
-				ExceptionHandler(BinaryInputStream& instream, const ConstantPool& constPool):
+				ExceptionHandler(ClassInputStream& instream, const ConstantPool& constPool):
 						startPos(instream.readUShort()), endPos(instream.readUShort()), handlerPos(instream.readUShort()),
-						catchType(getCatchType(constPool.getNullablle<ClassConstant>(instream.readUShort()))) {}
+						catchType(getCatchType(constPool.getNullable<ClassConstant>(instream.readUShort()))) {}
 
 				~ExceptionHandler() {
 					if(catchType != nullptr)
@@ -128,7 +128,7 @@ namespace jdecompiler {
 				}
 		};
 
-		static const vector<const ExceptionHandler*> readExceptionTable(BinaryInputStream& instream, const ConstantPool& constPool) {
+		static const vector<const ExceptionHandler*> readExceptionTable(ClassInputStream& instream, const ConstantPool& constPool) {
 			const uint16_t length = instream.readUShort();
 
 			vector<const ExceptionHandler*> exceptionTable;
@@ -146,7 +146,7 @@ namespace jdecompiler {
 		const vector<const ExceptionHandler*> exceptionTable;
 		const Attributes& attributes;
 
-		CodeAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+		CodeAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
 				Attribute("Code", length), maxStack(instream.readUShort()), maxLocals(instream.readUShort()),
 				codeLength(instream.readUInt()), code(instream.readBytes(codeLength)),
 				exceptionTable(readExceptionTable(instream, constPool)),
@@ -156,7 +156,7 @@ namespace jdecompiler {
 
 
 	struct AnnotationValue: Stringified {
-		static const AnnotationValue& readValue(BinaryInputStream& instream, const ConstantPool& constPool, uint8_t typeTag);
+		static const AnnotationValue& readValue(ClassInputStream& instream, const ConstantPool& constPool, uint8_t typeTag);
 	};
 
 	struct Annotation: Stringified {
@@ -165,7 +165,7 @@ namespace jdecompiler {
 				public:
 					const string name;
 					const AnnotationValue& value;
-					Element(BinaryInputStream& instream, const ConstantPool& constPool): name(constPool.getUtf8Constant(instream.readUShort())),
+					Element(ClassInputStream& instream, const ConstantPool& constPool): name(constPool.getUtf8Constant(instream.readUShort())),
 							value(AnnotationValue::readValue(instream, constPool, instream.readUByte())) {}
 			};
 
@@ -173,7 +173,7 @@ namespace jdecompiler {
 			const ClassType* const type;
 			vector<const Element*> elements;
 
-			Annotation(BinaryInputStream& instream, const ConstantPool& constPool):
+			Annotation(ClassInputStream& instream, const ConstantPool& constPool):
 					type(getAnnotationType(constPool.getUtf8Constant(instream.readUShort()))) {
 				const uint16_t elementCount = instream.readUShort();
 				elements.reserve(elementCount);
@@ -210,7 +210,7 @@ namespace jdecompiler {
 		NumberAnnotationValue(const NumberConstant<ConstT>* constant):
 				value(sizeof(ConstT) > sizeof(T) ? castExact(constant->value) : constant->value) {}
 
-		NumberAnnotationValue(BinaryInputStream& instream, const ConstantPool& constPool):
+		NumberAnnotationValue(ClassInputStream& instream, const ConstantPool& constPool):
 				NumberAnnotationValue(constPool.get<NumberConstant<ConstT>>(instream.readUShort())) {}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
@@ -229,7 +229,7 @@ namespace jdecompiler {
 	struct StringAnnotationValue: AnnotationValue {
 		const Utf8Constant& value;
 
-		StringAnnotationValue(BinaryInputStream& instream, const ConstantPool& constPool):
+		StringAnnotationValue(ClassInputStream& instream, const ConstantPool& constPool):
 				value(constPool.getUtf8Constant(instream.readUShort())) {}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
@@ -261,7 +261,7 @@ namespace jdecompiler {
 	struct AnnotationAnnotationValue: AnnotationValue {
 		const Annotation* const annotation;
 
-		AnnotationAnnotationValue(BinaryInputStream& instream, const ConstantPool& constPool): annotation(new Annotation(instream, constPool)) {}
+		AnnotationAnnotationValue(ClassInputStream& instream, const ConstantPool& constPool): annotation(new Annotation(instream, constPool)) {}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
 			return annotation->toString(classinfo);
@@ -272,7 +272,7 @@ namespace jdecompiler {
 		const uint16_t length;
 		vector<const AnnotationValue*> elements;
 
-		ArrayAnnotationValue(BinaryInputStream& instream, const ConstantPool& constPool): length(instream.readUShort()) {
+		ArrayAnnotationValue(ClassInputStream& instream, const ConstantPool& constPool): length(instream.readUShort()) {
 			elements.reserve(length);
 			for(uint16_t i = 0; i < length; i++)
 				elements.push_back(&readValue(instream, constPool, instream.readUByte()));
@@ -284,7 +284,7 @@ namespace jdecompiler {
 	};
 
 
-	const AnnotationValue& AnnotationValue::readValue(BinaryInputStream& instream, const ConstantPool& constPool, uint8_t typeTag) {
+	const AnnotationValue& AnnotationValue::readValue(ClassInputStream& instream, const ConstantPool& constPool, uint8_t typeTag) {
 		switch(typeTag) {
 			case 'B': case 'S': case 'I': return *new IntegerAnnotationValue(constPool.get<IntegerConstant>(instream.readUShort()));
 			case 'C': return *new CharAnnotationValue(instream, constPool);
@@ -307,7 +307,7 @@ namespace jdecompiler {
 	struct AnnotationsAttribute: Attribute, Stringified {
 		vector<const Annotation*> annotations;
 
-		AnnotationsAttribute(const string& name, uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+		AnnotationsAttribute(const string& name, uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
 				Attribute(name, length) {
 			const uint16_t annotationsCount = instream.readUShort();
 			annotations.reserve(annotationsCount);
@@ -327,7 +327,7 @@ namespace jdecompiler {
 	struct AnnotationDefaultAttribute: Attribute, Stringified {
 		const AnnotationValue& value;
 
-		AnnotationDefaultAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+		AnnotationDefaultAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
 				Attribute("AnnotationDefault", length), value(AnnotationValue::readValue(instream, constPool, instream.readUByte())) {}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
@@ -338,7 +338,7 @@ namespace jdecompiler {
 
 	/*
 	struct XXXAttribute: Attribute {
-		XXXAttribute(string name, uint32_t length, BinaryInputStream& instream): Attribute(EMPTY_STRING, length) {}
+		XXXAttribute(string name, uint32_t length, ClassInputStream& instream): Attribute(EMPTY_STRING, length) {}
 	};
 	*/
 
@@ -346,7 +346,7 @@ namespace jdecompiler {
 	struct ExceptionsAttribute: Attribute {
 		vector<const ClassConstant*> exceptions;
 
-		ExceptionsAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool): Attribute("Exceptions", length) {
+		ExceptionsAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool): Attribute("Exceptions", length) {
 			for(uint16_t i = instream.readUShort(); i > 0; i--)
 				exceptions.push_back(constPool.get<const ClassConstant>(instream.readUShort()));
 		}
@@ -369,7 +369,7 @@ namespace jdecompiler {
 				const Type& type;
 				const uint16_t index;
 
-				LocalVariable(BinaryInputStream& instream, const ConstantPool& constPool):
+				LocalVariable(ClassInputStream& instream, const ConstantPool& constPool):
 						startPos(instream.readUShort()), endPos(startPos + instream.readUShort()), name(constPool.getUtf8Constant(instream.readUShort())),
 						type(*parseType(constPool.getUtf8Constant(instream.readUShort()))), index(instream.readUShort()) {}
 			};
@@ -377,7 +377,7 @@ namespace jdecompiler {
 			vector<const LocalVariable*> localVariableTable;
 
 		public:
-			LocalVariableTableAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+			LocalVariableTableAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
 					Attribute("LocalVariableTable", length) {
 
 				const uint16_t localVariableTableLength = instream.readUShort();
@@ -396,7 +396,7 @@ namespace jdecompiler {
 	/*struct SignatureAttribute: Attribute {
 		const ClassSignature* classSignature;
 
-		SignatureAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+		SignatureAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
 				Attribute("Signature", length), classSignature(new ClassSignature(constPool.get<Utf8Constant>(instream.readUShort()))) {
 
 			if(length != 2) throw IllegalAttributeException("Length of Signature attribute must be 2");
@@ -409,7 +409,7 @@ namespace jdecompiler {
 		vector<uint16_t> argumentIndexes;
 		vector<const ConstValueConstant*> arguments;
 
-		BootstrapMethod(BinaryInputStream& instream, const ConstantPool& constPool):
+		BootstrapMethod(ClassInputStream& instream, const ConstantPool& constPool):
 				methodHandle(constPool.get<MethodHandleConstant>(instream.readUShort())) {
 			uint16_t argumentsCount = instream.readUShort();
 
@@ -430,7 +430,7 @@ namespace jdecompiler {
 			vector<const BootstrapMethod*> bootstrapMethods;
 
 		public:
-			BootstrapMethodsAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+			BootstrapMethodsAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
 					Attribute("BootstrapMethods", length) {
 
 				for(uint16_t i = instream.readUShort(); i > 0; i--)
@@ -449,9 +449,9 @@ namespace jdecompiler {
 		const Utf8Constant* const innerName;
 		const uint16_t modifiers;
 
-		InnerClass(BinaryInputStream& instream, const ConstantPool& constPool):
-				classType(constPool.get<ClassConstant>(instream.readUShort())), outerClass(constPool.getNullablle<ClassConstant>(instream.readUShort())),
-				innerName(constPool.getNullablle<Utf8Constant>(instream.readUShort())), modifiers(instream.readUShort()) {}
+		InnerClass(ClassInputStream& instream, const ConstantPool& constPool):
+				classType(constPool.get<ClassConstant>(instream.readUShort())), outerClass(constPool.getNullable<ClassConstant>(instream.readUShort())),
+				innerName(constPool.getNullable<Utf8Constant>(instream.readUShort())), modifiers(instream.readUShort()) {}
 	};
 
 
@@ -459,7 +459,7 @@ namespace jdecompiler {
 		public:
 			vector<const InnerClass*> classes;
 
-			InnerClassesAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+			InnerClassesAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
 					Attribute("InnerClasses", length) {
 
 				for(uint16_t i = instream.readUShort(); i > 0; i--)
@@ -478,7 +478,7 @@ namespace jdecompiler {
 		public:
 			vector<const ClassType*> nestMembers;
 
-			NestMembersAttribute(uint32_t length, BinaryInputStream& instream, const ConstantPool& constPool):
+			NestMembersAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
 					Attribute("NestMembers", length) {
 				for(uint16_t i = instream.readUShort(); i > 0; i--)
 					nestMembers.push_back(new ClassType(constPool.get<ClassConstant>(instream.readUShort())));
@@ -486,7 +486,7 @@ namespace jdecompiler {
 	};
 
 
-	inline const Attribute* Attributes::readAttribute(BinaryInputStream& instream, const ConstantPool& constPool, const string& name, const uint32_t length) {
+	inline const Attribute* Attributes::readAttribute(ClassInputStream& instream, const ConstantPool& constPool, const string& name, uint32_t length) {
 		if(name == "ConstantValue") return new ConstantValueAttribute(length, instream, constPool);
 		if(name == "Code") return new CodeAttribute(length, instream, constPool);
 		if(name == "Exceptions") return new ExceptionsAttribute(length, instream, constPool);

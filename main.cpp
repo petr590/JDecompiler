@@ -21,7 +21,7 @@ int main(int argc, const char* args[]) {
 			try {*/
 				cout << nameAndClass.second->toString() << endl;
 			/*} catch(const exception& ex) {
-				cerr << "Exception while decompiling class " << nameAndClass.first << ": " << typeNameOf(ex) << ": " << ex.what() << endl;
+				cerr << "Exception while decompiling class " << nameAndClass.first << ": " << typenameof(ex) << ": " << ex.what() << endl;
 				throw;
 			}*/
 		}
@@ -29,7 +29,5 @@ int main(int argc, const char* args[]) {
 
 	return 0;
 }
-
-#undef inline
 
 #endif

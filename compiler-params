@@ -1,1 +1,2 @@
--std=c++17 -Werror=shadow-local -Imissing-headers
+#!/bin/sh
+echo -std=c++17 -Werror=shadow-local -Imissing-headers -DJDECOMPILER_VERSION="\"$(cat version)\""

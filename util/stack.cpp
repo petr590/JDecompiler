@@ -51,6 +51,8 @@ namespace util {
 					constexpr iterator(Entry* entry): entry(entry) {}
 
 				public:
+					constexpr iterator(const iterator& other): entry(other.entry) {}
+
 					T& operator*() {
 						return entry->value;
 					}

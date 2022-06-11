@@ -23,31 +23,31 @@ namespace jdecompiler {
 			IfInstruction(offset_t offset): offset(offset) {}
 
 			virtual const Block* toBlock(const DisassemblerContext& context) const override final {
-				const Block* currentBlock = context.getCurrentBlock();
+				/*const Block* currentBlock = context.getCurrentBlock();
 
 				const index_t index = context.posToIndex(context.getPos() + offset) - 1;
 
 				if(instanceof<const IfBlock*>(currentBlock)) {
 					const IfBlock* ifBlock = static_cast<const IfBlock*>(currentBlock);
 
-					/*if(offset > 0) {
-					}*/
-				}
+					if(offset > 0) {
+					}
+				}*/
 
 				return createBlock(context);
 			}
 
 			virtual const Operation* toOperation(const DecompilationContext& context) const override final {
-				const Scope* currentScope = context.getCurrentScope();
+				/*const Scope* currentScope = context.getCurrentScope();
 
 				const index_t index = context.posToIndex(context.pos + offset);
 
 				if(instanceof<const IfScope*>(currentScope)) {
 					const IfScope* ifScope = static_cast<const IfScope*>(currentScope);
 
-					/*if(offset > 0) {
-					}*/
-				}
+					if(offset > 0) {
+					}
+				}*/
 
 				return nullptr;
 			}

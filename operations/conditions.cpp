@@ -140,6 +140,11 @@ namespace jdecompiler {
 					operand1->castReturnTypeTo(requiredType);
 					operand2->castReturnTypeTo(requiredType);
 
+					if(!compareType.isEqualsCompareType) {
+						operand1->allowImplicitCast();
+						operand2->allowImplicitCast();
+					}
+
 					const Type* generalType = operand1->getReturnType()->castNoexcept(operand2->getReturnType());
 					if(generalType == nullptr)
 						generalType = operand2->getReturnType()->castNoexcept(operand1->getReturnType());
@@ -160,7 +165,7 @@ namespace jdecompiler {
 
 				CompareBinaryOperation(const DecompilationContext& context, const Type* requiredType, const CompareType& compareType):
 						/* We don't delegate constructor because of undefined order of initialization of the function arguments
-						 * which is important in this case */
+						   which is important in this case */
 						CompareOperation(compareType), operand2(context.stack.pop()), operand1(context.stack.pop()) {
 					castOperandsTo(compareType.getRequiredType()->castTo(requiredType));
 				}
@@ -175,7 +180,9 @@ namespace jdecompiler {
 		struct CompareWithZeroOperation: CompareOperation {
 			const Operation* const operand;
 
-			CompareWithZeroOperation(const Operation* operand, const CompareType& compareType): CompareOperation(compareType), operand(operand) {}
+			CompareWithZeroOperation(const Operation* operand, const CompareType& compareType): CompareOperation(compareType), operand(operand) {
+				operand->allowImplicitCast();
+			}
 
 			virtual string toString(const StringifyContext& context) const override {
 				const Type* const operandType = operand->getReturnType();
@@ -365,7 +372,7 @@ namespace jdecompiler {
 
 								/*log('[');
 								for(int i = 0; i < context.stack.size(); i++)
-									log(typeNameOf(context.stack.lookup(i)));
+									log(typenameof(context.stack.lookup(i)));
 								log(']');*/
 							}
 						}

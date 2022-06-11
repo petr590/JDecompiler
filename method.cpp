@@ -9,7 +9,7 @@ namespace jdecompiler {
 		public:
 			const ReferenceType& clazz;
 			const string name;
-			const Type* returnType;
+			const Type* const returnType;
 			vector<const Type*> arguments;
 
 		private:
@@ -48,7 +48,7 @@ namespace jdecompiler {
 					MethodDescriptor(clazz, nameAndType->name, nameAndType->descriptor) {}
 
 			MethodDescriptor(const ReferenceType& clazz, const string& name, const string& descriptor):
-					clazz(clazz), name(name), type(typeForName(name)) {
+					clazz(clazz), name(name), returnType(nullptr), type(typeForName(name)) {
 				if(descriptor[0] != '(')
 					throw IllegalMethodDescriptorException(descriptor);
 
@@ -76,7 +76,7 @@ namespace jdecompiler {
 								goto PushArgument;
 							break;
 						case ')':
-							returnType = parseReturnType(&descriptor[i + 1]);
+							*const_cast<const Type**>(&returnType) = parseReturnType(&descriptor[i + 1]);
 							goto End;
 						default:
 							throw InvalidTypeNameException(descriptor);
@@ -159,12 +159,27 @@ namespace jdecompiler {
 			}
 
 
-			bool operator==(const MethodDescriptor& other) const {
-				return   this == &other || (this->name == other.name && this->clazz == other.clazz &&
+			inline bool equalsIgnoreClass(const MethodDescriptor& other) const {
+				return  this == &other || (this->name == other.name &&
 						*this->returnType == *other.returnType &&
-						 this->arguments.size() == other.arguments.size() &&
-						 equal(this->arguments.begin(), this->arguments.end(), other.arguments.begin(),
-								[] (auto arg1, auto arg2) { return *arg1 == *arg2; }));
+						typesEquals(this->arguments, other.arguments));
+			}
+
+
+			inline friend bool operator==(const MethodDescriptor& descriptor1, const MethodDescriptor& descriptor2) {
+				return  &descriptor1 == &descriptor2 || (descriptor1.name == descriptor2.name && descriptor1.clazz == descriptor2.clazz &&
+						*descriptor1.returnType == *descriptor2.returnType &&
+						typesEquals(descriptor1.arguments, descriptor2.arguments));
+			}
+
+
+			inline friend bool operator!=(const MethodDescriptor& descriptor1, const MethodDescriptor& descriptor2) {
+				return !(descriptor1 == descriptor2);
+			}
+
+
+			inline friend ostream& operator<<(ostream& out, const MethodDescriptor& descriptor) {
+				return out << descriptor.toString();
 			}
 	};
 
@@ -230,6 +245,41 @@ namespace jdecompiler {
 			virtual string toString(const ClassInfo& classinfo) const override {
 				string str;
 
+				if(JDecompiler::getInstance().useOverrideAnnotation()) {
+					static const ClassType OVERRIDE_ANNOTATION("java/lang/Override");
+
+					function<bool(const ClassInfo&)> checkOverride;
+
+					const function<bool(const ClassType&)> checkClassHasMethod = [this, &classinfo, &str, &checkOverride] (const ClassType& classType) {
+						const ClassInfo* otherClassInfo = JDecompiler::getInstance().getClassInfo(classType.getEncodedName());
+						if(otherClassInfo != nullptr) {
+							if(otherClassInfo->hasMethod(descriptor)) {
+								str += classinfo.getIndent() + (string)"@" + OVERRIDE_ANNOTATION.toString(classinfo) + '\n';
+								return true;
+							} else {
+								return checkOverride(*otherClassInfo);
+							}
+						}
+
+						return false;
+					};
+
+					checkOverride = [&str, checkClassHasMethod] (const ClassInfo& otherClassInfo) {
+						if(otherClassInfo.superType != nullptr) {
+							if(checkClassHasMethod(*otherClassInfo.superType))
+								return true;
+						}
+
+						for(const ClassType* interface : otherClassInfo.interfaces)
+							if(checkClassHasMethod(*interface))
+								return true;
+
+						return false;
+					};
+
+					checkOverride(classinfo);
+				}
+
 				if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
 					str += annotationsAttribute->toString(classinfo);
 
@@ -281,6 +331,10 @@ namespace jdecompiler {
 						(modifiers & ACC_BRIDGE && JDecompiler::getInstance().showBridge()));
 			}
 
+			inline bool isStatic() const {
+				return modifiers & ACC_STATIC;
+			}
+
 		private:
 			FormatString modifiersToString(const ClassInfo& classinfo) const {
 				FormatString str;
@@ -330,7 +384,7 @@ namespace jdecompiler {
 			const Attributes& attributes;
 
 		#if 1
-			MethodDataHolder(const ConstantPool& constPool, BinaryInputStream& instream, const ClassType& thisType):
+			MethodDataHolder(const ConstantPool& constPool, ClassInputStream& instream, const ClassType& thisType):
 					modifiers(instream.readUShort()), descriptor(
 						*new MethodDescriptor(thisType, constPool.getUtf8Constant(instream.readUShort()), constPool.getUtf8Constant(instream.readUShort()))),
 					attributes(*new Attributes(instream, constPool, instream.readUShort())) {}
@@ -354,7 +408,7 @@ namespace jdecompiler {
 		public:
 			const function<const Method*(const ClassInfo&)> createMethod;
 
-			MethodDataHolder(const ConstantPool& constPool, BinaryInputStream& instream, const ClassType& thisType):
+			MethodDataHolder(const ConstantPool& constPool, ClassInputStream& instream, const ClassType& thisType):
 					modifiers(instream.readUShort()), descriptor(
 						*new MethodDescriptor(thisType, constPool.getUtf8Constant(instream.readUShort()), constPool.getUtf8Constant(instream.readUShort()))),
 					attributes(*new Attributes(instream, constPool, instream.readUShort())), createMethod(defaultMethodCreator()) {}

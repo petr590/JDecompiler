@@ -1,2 +1,5 @@
 #!/bin/sh
-g++ $(./compiler-params) "$@" main.cpp -o jdecompiler
+
+file="$1"
+shift
+g++ $(./compiler-params) -c "$@" "$file.cpp" -o "$file.o"

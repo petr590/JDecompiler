@@ -10,10 +10,10 @@ namespace jdecompiler::operations {
 			const Variable& variable;
 
 		protected:
-			int_fast32_t postInc = 0;
+			mutable int_fast8_t inc = 0;
 			const BinaryOperatorOperation* shortFormOperator = nullptr;
 			const Operation* revokeIncrementOperation = nullptr;
-			bool canDeclare = false;
+			bool declare = false;
 
 		public:
 			StoreOperation(const Type* requiredType, const DecompilationContext& context, uint16_t index):
@@ -21,12 +21,13 @@ namespace jdecompiler::operations {
 
 				initReturnType<Dup1Operation, Dup2Operation>(context, value);
 
+				bool isPostInc = returnType == VOID;
+
 				// Check we have load operation on stack
 				if(returnType == VOID && !context.stack.empty()) {
 					const Operation* operation = context.stack.top();
 					if(instanceof<const LoadOperation*>(operation) && static_cast<const LoadOperation*>(operation)->index == index) {
 						returnType = context.stack.pop()->getReturnType();
-						//log("returnType =", getReturnType());
 					}
 				}
 
@@ -37,41 +38,44 @@ namespace jdecompiler::operations {
 				const Operation* rawValue = value->getOriginalOperation();
 				if(instanceof<const InvokeOperation*>(rawValue)) {
 					const string methodName = static_cast<const InvokeOperation*>(rawValue)->descriptor.name;
-					if(methodName.size() > 3 && stringStartsWith(methodName, "get")) {
+					if(stringStartsWith(methodName, "get")) {
 						variable.addName(toLowerCamelCase(methodName.substr(3)));
+					} else if(stringStartsWith(methodName, "is")) {
+						variable.addName(methodName);
 					}
 				}
 
-				if(!variable.isDeclared() && returnType == VOID) {
-					variable.setDeclared(true);
-					canDeclare = true;
-				} else {
+				if(!variable.isDeclared()) {
+					if(returnType == VOID) {
+						variable.setDeclared(true);
+						declare = true;
+					} else {
+						context.getCurrentScope()->addOperation(new DeclareVariableOperation(variable), context);
+					}
+				}
+
+				if(!declare) {
 					const BinaryOperatorOperation* binaryOperator = dynamic_cast<const BinaryOperatorOperation*>(rawValue);
 
 					if(binaryOperator == nullptr && instanceof<const CastOperation*>(rawValue))
 						binaryOperator = dynamic_cast<const BinaryOperatorOperation*>(static_cast<const CastOperation*>(rawValue)->value);
 
-					//log("1", binaryOperator != nullptr);
-
 					if(binaryOperator != nullptr) {
 						if(const LoadOperation* loadOperation = dynamic_cast<const LoadOperation*>(binaryOperator->operand1->getOriginalOperation())) {
-							//log("2", loadOperation->index == index);
 
-							if(loadOperation->index == index) {
+							if(loadOperation->index == index && !loadOperation->isIncrement()) {
 								shortFormOperator = binaryOperator;
 
 								const AbstractConstOperation* constOperation = dynamic_cast<const AbstractConstOperation*>(binaryOperator->operand2);
 
-								//log("3", constOperation != nullptr);
 								if(constOperation != nullptr) { // post increment
 									int_fast8_t incValue = instanceof<const AddOperatorOperation*>(binaryOperator) ? 1 :
 												instanceof<const SubOperatorOperation*>(binaryOperator) ? -1 : 0;
-									//log("4", (int)incValue);
 
 									if(incValue != 0) {
 										initReturnType<Dup1Operation, Dup2Operation>(context, binaryOperator->operand1);
 
-										bool isPostInc =
+										bool isShortInc =
 											instanceof<const IConstOperation*>(constOperation) ?
 												static_cast<const IConstOperation*>(constOperation)->value == 1 :
 											instanceof<const LConstOperation*>(constOperation) ?
@@ -81,12 +85,12 @@ namespace jdecompiler::operations {
 											instanceof<const DConstOperation*>(constOperation) ?
 												static_cast<const DConstOperation*>(constOperation)->value == 1 : false;
 
-										//log("5", isPostInc);
-										if(isPostInc) {
-											postInc = incValue;
+										if(isShortInc) {
+											inc = incValue << isPostInc; // post-inc if return type is void, else pre-inc
 										} else if(returnType != VOID) {
 											revokeIncrementOperation = constOperation;
-											context.warning("Cannot decompile bytecode exactly: it contains post-increment by a number, other than one or minus one");
+											context.warning("Cannot decompile bytecode exactly: it contains post-increment by a number,"
+															"other than one or minus one");
 										}
 									}
 								}
@@ -94,32 +98,80 @@ namespace jdecompiler::operations {
 						}
 					}
 				}
-				//log("returnType =", getReturnType());
 			}
+
+			inline string valueToString(const StringifyContext& context) const {
+				return (declare && JDecompiler::getInstance().useShortArrayInitializing() ?
+						value->toArrayInitString(context) : value->toString(context));
+			}
+
+			inline bool isDeclare() const {
+				return declare;
+			}
+
 
 			virtual string toString(const StringifyContext& context) const override {
-				//log("A", shortFormOperator != nullptr, postInc);
 
-				return (canDeclare ? variable.getType()->toString(context.classinfo) + ' ' : EMPTY_STRING) +
-						// Increment
-						(shortFormOperator != nullptr ?
-							(postInc != 0 ? (context.getCurrentScope()->getNameFor(variable) + (postInc > 0 ? "++" : "--")) :
-							revokeIncrementOperation != nullptr ?
+				if(declare) {
+					return variableDeclarationToString(variable.getType(), context.classinfo, context.getCurrentScope()->getNameFor(variable)) +
+							" = " + valueToString(context);
+				}
+
+				if(shortFormOperator != nullptr) { // Increment
+					if(inc != 0) {
+						const string
+								name = context.getCurrentScope()->getNameFor(variable),
+								incStr = inc > 0 ? "++" : "--";
+
+						return inc & 0x1 ? incStr + name : name + incStr;
+					}
+
+					return revokeIncrementOperation != nullptr ?
 							'(' + shortFormOperator->toShortFormString(context, variable) + ") " + // x++ is equivalent (x += 1) - 1
 									shortFormOperator->getOppositeOperator() + ' ' + revokeIncrementOperation->toString(context) :
-							shortFormOperator->toShortFormString(context, variable)) :
+							shortFormOperator->toShortFormString(context, variable);
+				}
 
-						context.getCurrentScope()->getNameFor(variable) + " = " +
-
-						// Short form array
-						(canDeclare && JDecompiler::getInstance().canUseShortArrayInitializing() ?
-								value->toArrayInitString(context) : value->toString(context)));
+				return context.getCurrentScope()->getNameFor(variable) + " = " + valueToString(context);
 			}
 
+		protected:
+			void bind(const LoadOperation* loadOperation) const {
+				assert(returnType == VOID && loadOperation->index == index);
+				returnType = loadOperation->getReturnType();
+				inc >>= 1;
+			}
+
+			friend LoadOperation::LoadOperation(const Type*, const DecompilationContext&, uint16_t);
+
+		public:
 			virtual Priority getPriority() const override {
 				return Priority::ASSIGNMENT;
 			}
+
+			virtual bool isIncrement() const override {
+				return inc != 0;
+			}
 	};
+
+
+	LoadOperation::LoadOperation(const Type* requiredType, const DecompilationContext& context, uint16_t index):
+			index(index), variable(context.getCurrentScope()->getVariable(index, true)) {
+		variable.castTypeTo(requiredType);
+
+		vector<const Operation*>& tempCode = context.getCurrentScope()->getTempCode();
+		if(!tempCode.empty()) {
+
+			const Operation* operation = tempCode.back();
+			if(operation->isIncrement() && instanceof<const StoreOperation*>(operation) && static_cast<const StoreOperation*>(operation)->index == index) {
+
+				static_cast<const StoreOperation*>(operation)->bind(this);
+				incOperation = operation;
+				tempCode.pop_back();
+			}
+		}
+	}
+
 
 	struct IStoreOperation: StoreOperation {
 		IStoreOperation(const DecompilationContext& context, uint16_t index): StoreOperation(ANY_INT_OR_BOOLEAN, context, index) {}

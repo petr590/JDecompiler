@@ -1,62 +1,11 @@
 #ifndef JDECOMPILER_UTIL_CPP
 #define JDECOMPILER_UTIL_CPP
 
-#include <fstream>
-#include <cstring>
-#include <functional>
-#include <sstream>
-#define _USE_MATH_DEFINES // constants M_PI, M_E
-#include <cmath>
-#include <algorithm>
-#include <type_traits>
-
-#include "jdecompiler-fwd.h"
-#include "typenameof.cpp"
-#include "index-types.cpp"
-#include "exceptions.cpp"
-#include "util/file-binary-input-stream.cpp"
-#include "class-input-stream.cpp"
-#include "util/stack.cpp"
-
-#define LOG_POINT "[ jdecompiler/" __FILE__ " ]:"
-#define log(...) logFunc<cout>(LOG_POINT, __VA_ARGS__)
-#define logerr(...) logFunc<cerr>(LOG_POINT, __VA_ARGS__)
-#define logf(pattern, ...) printf(LOG_POINT pattern, __VA_ARGS__)
+#include "util.h"
 
 namespace jdecompiler {
 
-	template<ostream& out, typename Arg, typename... Args>
-	static inline void logFunc(const Arg& arg, const Args&... args) {
-		out << arg;
-		if constexpr(sizeof...(Args) > 0) {
-			out << ' ';
-			logFunc<out>(args...);
-		} else {
-			out << endl;
-		}
-	}
-
-
-	static const string EMPTY_STRING = string();
-
-
-	template<typename T, typename O>
-	static inline bool instanceof(O o) {
-		return dynamic_cast<T>(o) != nullptr;
-	}
-
-
-	template<class T, class B>
-	static T safe_cast(B o) {
-		T t = dynamic_cast<T>(o);
-		if(t == nullptr && o != nullptr)
-			throw CastException((string)"cannot cast " + typenameof(o) + " to " + typenameof<T>());
-		return t;
-	}
-
-
-
-	static string toLowerCamelCase(const string& str) {
+	string toLowerCamelCase(const string& str) {
 		string result;
 		const size_t strlength = str.size();
 
@@ -70,7 +19,7 @@ namespace jdecompiler {
 	}
 
 
-	static const char* repeatString(const char* str, uint32_t count) {
+	const char* repeatString(const char* str, uint32_t count) {
 		const size_t
 				strlength = strlen(str),
 				resultlength = strlength * count;
@@ -84,12 +33,8 @@ namespace jdecompiler {
 		return result;
 	}
 
-	static inline const char* repeatString(const string& str, uint32_t count) {
-		return repeatString(str.c_str(), count);
-	}
 
-
-	static string unescapeString(const char* const str) {
+	string unescapeString(const char* str) {
 		string result;
 
 		for(const char* i = str; *i != '\0'; i++) {
@@ -112,158 +57,43 @@ namespace jdecompiler {
 		return result;
 	}
 
-	static inline string unescapeString(const string& str) {
-		return unescapeString(str.c_str());
-	}
 
-
-	static inline bool isLetterOrDigit(char c) {
-		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
-	}
-
-
-	template<typename T>
-	static string join(const vector<T>& array, const function<string(T)> func, const string& separator = ", ") {
+	string repeat(const string& str, size_t times) {
 		string result;
-		const size_t size = array.size();
+		result.reserve(times);
 
-		if(size > 0) {
-			size_t i = 0;
-			while(true) {
-				result += func(array[i]);
-				if(++i == size) break;
-				result += separator;
-			}
-		}
+		for(size_t i = 0; i < times; i++)
+			result += str;
+
+		return result;
+	}
+
+	char* str_concat(const char* str1, const char* str2) {
+		const size_t
+				len1 = strlen(str1),
+				len = len1 + strlen(str2);
+
+		char* result = new char[len + 1];
+		strcpy(result, str1);
+		strcpy(result + len1, str2);
+		result[len] = '\0';
+
+		return result;
+	}
+
+	char* str_concat(const char* str, char c) {
+		const size_t len = strlen(str) + 1;
+
+		char* result = new char[len + 1];
+		strcpy(result, str);
+		result[len - 1] = c;
+		result[len] = '\0';
 
 		return result;
 	}
 
 
-	template<typename T>
-	static string join(const vector<T>& array, const function<string(T, size_t)> func, const string& separator = ", ") {
-		string result;
-		const size_t size = array.size();
-
-		if(size > 0) {
-			size_t i = 0;
-			while(true) {
-				result += func(array[i], i);
-				if(++i == size) break;
-				result += separator;
-			}
-		}
-
-		return result;
-	}
-
-
-	template<typename T>
-	static string rjoin(const vector<T>& array, const function<string(T)>& func, const string& separator = ", ") {
-		string result;
-		size_t i = array.size();
-
-		if(i > 0) {
-			while(true) {
-				i--;
-				result += func(array[i]);
-				if(i == 0) break;
-				result += separator;
-			}
-		}
-
-		return result;
-	}
-
-
-	template<typename T>
-	static string rjoin(const vector<T>& array, const function<string(T, size_t)>& func, const string& separator = ", ") {
-		string result;
-		size_t i = array.size();
-
-		if(i > 0) {
-			while(true) {
-				i--;
-				result += func(array[i], i);
-				if(i == 0) break;
-				result += separator;
-			}
-		}
-
-		return result;
-	}
-
-	struct IllegalLiteralException: Exception {
-		IllegalLiteralException(): Exception() {}
-		IllegalLiteralException(const char* message): Exception(message) {}
-		IllegalLiteralException(const string& message): Exception(message) {}
-	};
-
-
-
-	class FormatString {
-		private: string value;
-
-		public:
-			FormatString() noexcept: value() {}
-			FormatString(const string& value): value(value) {}
-
-
-			friend FormatString operator+(const FormatString& formatStr, const char* str) {
-				return FormatString(formatStr.value + (formatStr.empty() || *str == '\0' ? str : ' ' + (string)str));
-			}
-
-			friend FormatString operator+(const FormatString& formatStr, const string& str) {
-				return FormatString(formatStr.value + (formatStr.empty() || str.empty() ? str : ' ' + str));
-			}
-
-			friend FormatString operator+(const char* str, const FormatString& formatStr) {
-				return FormatString(str + (formatStr.empty() || *str == '\0' ? (string)formatStr : ' ' + (string)formatStr));
-			}
-
-			friend FormatString operator+(const string& str, const FormatString& formatStr) {
-				return FormatString(str + (formatStr.empty() || str.empty() ? (string)formatStr : ' ' + (string)formatStr));
-			}
-
-
-			friend FormatString& operator+=(FormatString& formatStr, const char* str) {
-				formatStr.value += (formatStr.empty() || *str == '\0' ? str : ' ' + (string)str);
-				return formatStr;
-			}
-
-			friend FormatString& operator+=(FormatString& formatStr, const string& str) {
-				formatStr.value += (formatStr.empty() || str.empty() ? str : ' ' + str);
-				return formatStr;
-			}
-
-
-			inline bool empty() const {
-				return value.empty();
-			}
-
-
-			inline operator string() const {
-				return value;
-			}
-	};
-
-
-
-	static constexpr char32_t operator"" _c32(const char* const str, size_t length) {
-		char32_t c = 0;
-
-		if(length > 4)
-			throw IllegalLiteralException((string)"char32_t literal '" + str + "' too long");
-
-		for(size_t i = 0; i < length; i++) {
-			c = (c << 8) | str[i];
-		}
-
-		return c;
-	}
-
-
-	static const char* char32ToString(char32_t ch) {
+	const char* char32ToString(char32_t ch) {
 		if(ch >> 24 != 0)
 			return new char[5] { (char)(ch >> 24), (char)(ch >> 16), (char)(ch >> 8), (char)ch, '\0' };
 		if(ch >> 16 != 0)
@@ -276,7 +106,7 @@ namespace jdecompiler {
 	}
 
 
-	static string encodeUtf8(char32_t c) {
+	string encodeUtf8(char32_t c) {
 		// 0xxxxxxx
 		if(c < 0x80)       return { (char)c };
 		// 110xxxxx 10xxxxxx
@@ -298,7 +128,7 @@ namespace jdecompiler {
 
 
 	// surrogate pairs in UTF-16: 0xD800-0xDFFF
-	static inline string escapeUtf16(char32_t ch) {
+	string escapeUtf16(char32_t ch) {
 		assert(ch <= 0x10FFFF);
 
 		if(ch > 0xFFFF) {
@@ -309,14 +139,15 @@ namespace jdecompiler {
 		return "\\u" + hex<4>(ch);
 	}
 
-	static inline bool isNotDisplayedChar(char32_t ch) {
+	bool isNotDisplayedChar(char32_t ch) {
 		return ch < 0x20 || (ch >= 0x7F && ch < 0xA0) // Control characters
+			|| (ch >= 0xFFEF && ch < 0x10000)         // Unknown characters
 			|| (ch >= 0xD800 && ch < 0xE000);         // Surrogate pairs in UTF-16
 	}
 
 
 	template<char quote>
-	static string charToString(char32_t ch) {
+	string charToString(char32_t ch) {
 		static_assert(quote == '"' || quote == '\'', "Invalid quote");
 
 		switch(ch) {
@@ -331,7 +162,10 @@ namespace jdecompiler {
 		}
 	}
 
-	static string stringToLiteral(const string& str) {
+	template string charToString<'"'>(char32_t);
+	template string charToString<'\''>(char32_t);
+
+	string stringToLiteral(const string& str) {
 		#define check(condition, message) if(!(condition)) throw DecompilationException(message)
 		#define checkLength(n) check(bytes + n < end, "Unexpected end of the string: " + to_string(bytes - str.c_str()) + ", " + to_string(n) + ", " + to_string(end - str.c_str()))
 		#define checkEncoding(condition) check(condition, "Invalid string encoding")
@@ -385,94 +219,24 @@ namespace jdecompiler {
 	}
 
 
-	template<typename T>
-	inline bool has(const vector<T>& array, const T& element) {
-		return find(array.begin(), array.end(), element) != array.end();
-	}
-
-
-	template<typename T>
-	inline bool has(const vector<T*>& array, const T* element) {
-		return find(array.begin(), array.end(), element) != array.end();
-	}
-
-	template<typename T>
-	static inline bool has_if(const vector<T>& array, const function<bool(T)>& predicate) {
-		return find_if(array.begin(), array.end(), predicate) != array.end();
-	}
-
-	template<typename T>
-	static inline vector<T> copy_if(const vector<T>& array, const function<bool(T)>& predicate) {
-		vector<T> result;
-		for(T value : array) {
-			if(predicate(value))
-				result.push_back(value);
-		}
-		return result;
-	}
-
-	template<typename K, typename V>
-	inline bool has(const map<K, V>& mp, const K& key) {
-		return mp.find(key) != mp.end();
-	}
-
-	template<typename K, typename V>
-	inline typename map<K, V>::iterator find_by_value(map<K, V>& mp, const V& value) {
-		return find_if(mp.begin(), mp.end(), [&value] (const auto& it) { return it.second == value; });
-	}
-
-	template<typename K, typename V>
-	inline typename map<K, V>::const_iterator find_by_value(const map<K, V>& mp, const V& value) {
-		return find_if(mp.begin(), mp.end(), [&value] (const auto& it) { return it.second == value; });
-	}
-
-	template<typename K, typename V>
-	inline bool has_value(const map<K, V>& mp, const V& value) {
-		return find_by_value<K, V>(mp, value) != mp.end();
-	}
-
-
-	/* The function works as usual, only a delimiter is added at the end of each line */
-	static vector<string> splitAndAddDelimiter(const string& str, char delimiter) {
+	vector<string> splitAndAddDelimiter(const string& str, char delimiter) {
 		vector<string> result;
 
-		for(size_t pos = 0, oldPos = 0; (pos = str.find(delimiter, oldPos)) != string::npos; oldPos = pos) {
+		size_t oldPos = 0;
+
+		for(size_t pos = 0; (pos = str.find(delimiter, oldPos)) != string::npos; oldPos = pos) {
 			pos++;
 			result.push_back(str.substr(oldPos, pos - oldPos));
 		}
 
+		if(oldPos < str.size())
+			result.push_back(str.substr(oldPos));
+
 		return result;
 	}
 
 
-	template<bool v>
-	struct bool_type {
-		static constexpr bool value = v;
-
-		inline constexpr bool_type() noexcept {}
-
-		inline constexpr operator bool () const noexcept { return v; }
-	};
-
-	typedef bool_type<false> false_type;
-	typedef bool_type<true> true_type;
-
-
-	template<typename...>
-	struct is_one_of: false_type {};
-
-	template<typename F, typename S, typename... T>
-	struct is_one_of<F, S, T...>: bool_type<is_same<F, S>() || is_one_of<F, T...>()> {};
-
-
-	template<typename>
-	struct is_float: false_type {};
-
-	template<>
-	struct is_float<float>: true_type {};
-
-
-	static bool stringStartsWith(string str, string search) {
+	bool stringStartsWith(const string& str, const string& search) {
 		if(search.size() > str.size())
 			return false;
 
@@ -484,20 +248,6 @@ namespace jdecompiler {
 
 		return true;
 	}
-
-
-
-	static inline uint64_t toRawBits(float f) {
-		return *(uint64_t*)&f;
-	}
-
-	static inline uint64_t toRawBits(double d) {
-		return *(uint64_t*)&d;
-	}
-
-	template<typename T, typename = enable_if_t<is_integral_v<T>>>
-	static inline bool isPowerOfTwo(T x) {
-		return (x & (x - 1)) == 0;
-	}
 }
+
 #endif

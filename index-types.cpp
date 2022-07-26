@@ -116,7 +116,7 @@ namespace jdecompiler {
 
 	template<typename T, index_marker_t M>
 	struct abstract_index_impl final: abstract_index_t<T> {
-		inline constexpr abstract_index_impl() {}
+		inline constexpr abstract_index_impl() noexcept = default;
 		inline constexpr abstract_index_impl(T value) noexcept: abstract_index_t<T>(value) {}
 
 		inline constexpr abstract_index_impl(const abstract_index_impl& val) noexcept: abstract_index_t<T>(val.value) {}
@@ -125,7 +125,7 @@ namespace jdecompiler {
 
 	template<>
 	struct abstract_index_impl<uint32_t, index_marker_t::INDEX_MARKER>: abstract_index_t<uint32_t> {
-		inline constexpr abstract_index_impl() {}
+		inline constexpr abstract_index_impl() noexcept = default;
 		inline constexpr abstract_index_impl(uint32_t value) noexcept: abstract_index_t<uint32_t>(value) {}
 
 		inline constexpr abstract_index_impl(const abstract_index_impl& val) noexcept: abstract_index_t<uint32_t>(val.value) {}
@@ -137,7 +137,7 @@ namespace jdecompiler {
 
 	template<>
 	struct abstract_index_impl<uint32_t, index_marker_t::POS_MARKER>: abstract_index_t<uint32_t> {
-		inline constexpr abstract_index_impl() {}
+		inline constexpr abstract_index_impl() noexcept = default;
 		inline constexpr abstract_index_impl(uint32_t value) noexcept: abstract_index_t<uint32_t>(value) {}
 
 		inline constexpr abstract_index_impl(const abstract_index_impl& val) noexcept: abstract_index_t<uint32_t>(val.value) {}
@@ -158,7 +158,7 @@ namespace jdecompiler {
 
 	template<>
 	struct abstract_index_impl<int32_t, index_marker_t::OFFSET_MARKER>: abstract_index_t<int32_t> {
-		inline constexpr abstract_index_impl() {}
+		inline constexpr abstract_index_impl() noexcept = default;
 		inline constexpr abstract_index_impl(int32_t value) noexcept: abstract_index_t<int32_t>(value) {}
 
 		inline constexpr abstract_index_impl(const abstract_index_impl& val) noexcept: abstract_index_t<int32_t>(val.value) {}

@@ -75,7 +75,6 @@ namespace jdecompiler {
 				const ConditionOperation* condition = getCondition(context)->invert();
 
 				const IfScope* ifScope = dynamic_cast<const IfScope*>(context.getCurrentScope());
-				// TO DO $assertionsDisabled
 				const Scope* ifParentScope = context.getCurrentScope();
 
 				if(ifScope != nullptr) {
@@ -92,10 +91,6 @@ namespace jdecompiler {
 						ifParentScope = ifParentScope->parentScope;
 						ifScope->remove();
 					}
-
-					/*if(ifScope->endIndex >= endIndex && endIndex <= ifScope->parentScope->endIndex) {
-
-					}*/
 				}
 
 				return elseBlock != nullptr ?

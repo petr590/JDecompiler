@@ -6,9 +6,6 @@ namespace jdecompiler {
 	struct DecompilationContext: Context {
 		private:
 			const DisassemblerContext& disassemblerContext;
-			const StringifyContext* stringifyContext = nullptr;
-
-			friend struct Method;
 			friend struct StringifyContext;
 
 		public:

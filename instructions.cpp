@@ -47,7 +47,7 @@ namespace jdecompiler {
 
 		template<typename T>
 		struct NumberConstInstruction: Instruction {
-			static_assert(is_fundamental<T>(), "template type T of struct NumberConstInstruction is not primitive");
+			static_assert(is_fundamental<T>(), "Type T of struct NumberConstInstruction must be primitive");
 
 			const T value;
 
@@ -657,8 +657,8 @@ namespace jdecompiler {
 						switch(bootstrapMethod->methodHandle->referenceKind) {
 							case RefKind::GETFIELD: return new GetInstanceFieldOperation(context, safe_cast<const FieldrefConstant*>(referenceConstant));
 							case RefKind::GETSTATIC: return new GetStaticFieldOperation(          safe_cast<const FieldrefConstant*>(referenceConstant));
-							case RefKind::PUTFIELD: return new PutInstanceFieldOperation(context, safe_cast<const MethodrefConstant*>(referenceConstant));
-							case RefKind::PUTSTATIC: return new PutStaticFieldOperation( context, safe_cast<const MethodrefConstant*>(referenceConstant));
+							case RefKind::PUTFIELD: return new PutInstanceFieldOperation(context, safe_cast<const FieldrefConstant*>(referenceConstant));
+							case RefKind::PUTSTATIC: return new PutStaticFieldOperation( context, safe_cast<const FieldrefConstant*>(referenceConstant));
 							default: throw IllegalStateException((string)"Illegal referenceConstant kind " +
 									to_string((unsigned int)bootstrapMethod->methodHandle->referenceKind));
 						}

@@ -1,14 +1,13 @@
 #ifndef JDECOMPILER_TYPES_CPP
 #define JDECOMPILER_TYPES_CPP
 
-#include <cassert>
 #include "const-pool.cpp"
 #include "classinfo.cpp"
 
 namespace jdecompiler {
 
 	enum class TypeSize {
-		ZERO_BYTES, FOUR_BYTES, EIGHT_BYTES
+		ZERO_BYTES = 0, FOUR_BYTES = 1, EIGHT_BYTES = 2
 	};
 
 
@@ -17,7 +16,7 @@ namespace jdecompiler {
 			case TypeSize::ZERO_BYTES: return "ZERO_BYTES";
 			case TypeSize::FOUR_BYTES: return "FOUR_BYTES";
 			case TypeSize::EIGHT_BYTES: return "EIGHT_BYTES";
-			default: throw IllegalStateException("Illegal typeSize " + to_string((unsigned int)typeSize));
+			default: throw IllegalStateException("Illegal typeSize " + to_string((unsigned)typeSize));
 		}
 	}
 
@@ -44,25 +43,23 @@ namespace jdecompiler {
 				return !isBasic();
 			}
 
-			virtual bool isPrimitive() const = 0;
+			/* Only for subtypes of class PrimitiveType */
+			virtual bool isPrimitive() const {
+				return false;
+			}
+
+			/* Only for subtypes of class IntegralType */
+			virtual bool isIntegral() const {
+				return false;
+			}
 
 			virtual TypeSize getSize() const = 0;
 
 		private:
 			template<class T>
 			static constexpr void checkType() noexcept {
-				static_assert(is_base_of<Type, T>::value, "template class T must be subclass of class Type");
+				static_assert(is_base_of<Type, T>::value, "Class T must be subclass of class Type");
 			}
-
-
-			template<bool isNoexcept>
-			inline const Type* getNullOrThrowException(const Type* type) const {
-				if constexpr(isNoexcept)
-					return nullptr;
-				else
-					throw IncopatibleTypesException(this, type);
-			}
-
 
 		protected:
 			template<bool widest>
@@ -91,11 +88,16 @@ namespace jdecompiler {
 					return castedType;
 				}
 
+				(type->*reversedCastImplFunc)(this);
+
 				if(this->canReverseCast(type) && (castedType = (type->*reversedCastImplFunc)(this)) != nullptr) {
 					return castedType;
 				}
 
-				return getNullOrThrowException<isNoexcept>(type);
+				if constexpr(isNoexcept)
+					return nullptr;
+				else
+					throw IncopatibleTypesException(this, type);
 			}
 
 		public:
@@ -130,16 +132,16 @@ namespace jdecompiler {
 
 				const Type* castedType;
 
-				if((castedType = this->castImpl(t)) != nullptr)
+				if((castedType = this->castToWidestImpl(t)) != nullptr)
 					return safe_cast<const T*>(castedType);
 
-				if((castedType = ((const Type*)t)->castImpl(this)) != nullptr)
+				if((castedType = ((const Type*)t)->castToWidestImpl(this)) != nullptr)
 					return safe_cast<const T*>(castedType);
 
-				if((castedType = this->reversedCastImpl(t)) != nullptr)
+				if((castedType = this->reversedCastToWidestImpl(t)) != nullptr)
 					return safe_cast<const T*>(castedType);
 
-				if((castedType = ((const Type*)t)->reversedCastImpl(this)) != nullptr)
+				if((castedType = ((const Type*)t)->reversedCastToWidestImpl(this)) != nullptr)
 					return safe_cast<const T*>(castedType);
 
 				throw IncopatibleTypesException(this, t);
@@ -154,45 +156,52 @@ namespace jdecompiler {
 			}
 
 		protected:
-			virtual bool canReverseCast(const Type* other) const {
+			virtual bool canReverseCast(const Type*) const {
 				return true;
 			}
 
-			virtual bool isSubtypeOfImpl(const Type* type) const = 0;
+			virtual bool isSubtypeOfImpl(const Type*) const = 0;
 
-			virtual bool isStrictSubtypeOfImpl(const Type* type) const {
-				return isSubtypeOfImpl(type);
+			virtual bool isStrictSubtypeOfImpl(const Type* other) const {
+				return isSubtypeOfImpl(other);
 			}
 
 
-			virtual const Type* castImpl(const Type* type) const = 0;
+			virtual const Type* castImpl(const Type*) const = 0;
 
-			virtual const Type* reversedCastImpl(const Type* type) const {
-				return castImpl(type);
+			virtual const Type* reversedCastImpl(const Type* other) const {
+				return castImpl(other);
 			}
 
-			virtual const Type* castToWidestImpl(const Type* type) const {
-				return castImpl(type);
+			virtual const Type* castToWidestImpl(const Type* other) const {
+				return castImpl(other);
 			}
 
-			virtual const Type* reversedCastToWidestImpl(const Type* type) const {
-				return castToWidestImpl(type);
+			virtual const Type* reversedCastToWidestImpl(const Type* other) const {
+				return castToWidestImpl(other);
 			}
 
 		public:
-			inline friend bool operator== (const Type& type1, const Type& type2) {
+			inline friend bool operator==(const Type& type1, const Type& type2) {
 				return &type1 == &type2 || (typeid(type1) == typeid(type2) && type1.getEncodedName() == type2.getEncodedName());
 			}
 
-			inline friend bool operator!= (const Type& type1, const Type& type2) {
+			inline friend bool operator!=(const Type& type1, const Type& type2) {
 				return !(type1 == type2);
 			}
 
-			inline friend ostream& operator<< (ostream& out, const Type* type) {
+			inline friend ostream& operator<<(ostream& out, const Type* type) {
 				return out << (type != nullptr ? type->toString() : "null");
+
+				/*const char* data = reinterpret_cast<const char*>(type);
+				for(size_t i = 0; i < 240 ; i++) // 240 = sizeof(ClassType)
+					out << hex<2>(data[i]) << ' ';
+				out << endl << typenameof(type);
+
+				return out;*/
 			}
 
-			inline friend ostream& operator<< (ostream& out, const Type& type) {
+			inline friend ostream& operator<<(ostream& out, const Type& type) {
 				return out << &type;
 			}
 
@@ -203,9 +212,9 @@ namespace jdecompiler {
 			static constexpr status_t
 					N_STATUS = 0,
 					SAME_STATUS = 1,
-					EXTEND_STATUS = 2,
+					EXTEND_STATUS = 2, // Extend of argument (String -> Object or char -> int)
 					AUTOBOXING_STATUS = 3,
-					OBJECT_AUTOBOXING_STATUS = 4,
+					OBJECT_AUTOBOXING_STATUS = 4, // Autoboxing into Object (int -> Integer -> Object)
 					VARARGS_STATUS = 5;
 
 			virtual status_t implicitCastStatus(const Type* other) const {
@@ -257,12 +266,11 @@ namespace jdecompiler {
 			PrimitiveType(const PrimitiveType&) = delete;
 			PrimitiveType& operator=(const PrimitiveType&) = delete;
 
+			/* Allow only these types to inherit from PrimitiveType */
 			friend struct VoidType;
 			friend struct BooleanType;
-			friend struct ByteType;
 			friend struct CharType;
-			friend struct ShortType;
-			friend struct IntType;
+			friend struct IntegralType;
 			friend struct LongType;
 			friend struct FloatType;
 			friend struct DoubleType;
@@ -306,18 +314,45 @@ namespace jdecompiler {
 			}
 
 		public:
-			virtual const Type* toAmbigousType() const {
+			virtual const Type* toVariableCapacityIntegralType() const {
 				return this;
 			}
 
 			virtual status_t implicitCastStatus(const Type*) const override;
+
+			virtual const ClassType& getWrapperType() const = 0;
 	};
 
 
-	struct VoidType: PrimitiveType {
+	/*
+		An integral type is an signed integer type that occupies 4 bytes on the stack: int, short and byte.
+		Boolean and char are not included in this list, they are processed separately
+	*/
+	struct IntegralType: PrimitiveType {
+		private:
+			IntegralType(const string& encodedName, const string& name, const string& varName):
+					PrimitiveType(encodedName, name, varName) {}
+
+			friend struct ByteType;
+			friend struct ShortType;
+			friend struct IntType;
+			friend struct LongType;
+
+		public:
+			virtual uint8_t getCapacity() const = 0;
+
+			virtual bool isIntegral() const override final {
+				return true;
+			}
+	};
+
+
+	struct VoidType final: PrimitiveType {
 		VoidType(): PrimitiveType("V", "void", "v") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::ZERO_BYTES; }
+
+		virtual const ClassType& getWrapperType() const override;
 
 		static const VoidType& getInstance() {
 			static const VoidType instance;
@@ -325,12 +360,12 @@ namespace jdecompiler {
 		}
 	};
 
-	struct BooleanType: PrimitiveType {
+	struct BooleanType final: PrimitiveType {
 		BooleanType(): PrimitiveType("Z", "boolean", "bool") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::FOUR_BYTES; }
 
-		virtual status_t implicitCastStatus(const Type*) const override;
+		virtual const ClassType& getWrapperType() const override;
 
 		static const BooleanType& getInstance() {
 			static const BooleanType instance;
@@ -338,15 +373,16 @@ namespace jdecompiler {
 		}
 	};
 
-	struct ByteType: PrimitiveType {
-		ByteType(): PrimitiveType("B", "byte", "b") {}
+	struct ByteType final: IntegralType {
+		ByteType(): IntegralType("B", "byte", "b") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::FOUR_BYTES; }
+		virtual uint8_t getCapacity() const override { return 1; }
 
 		virtual bool isSubtypeOfImpl(const Type*) const override;
-		virtual const Type* toAmbigousType() const override;
+		virtual const Type* toVariableCapacityIntegralType() const override;
 
-		virtual status_t implicitCastStatus(const Type*) const override;
+		virtual const ClassType& getWrapperType() const override;
 
 		static const ByteType& getInstance() {
 			static const ByteType instance;
@@ -354,15 +390,15 @@ namespace jdecompiler {
 		}
 	};
 
-	struct CharType: PrimitiveType {
+	struct CharType final: PrimitiveType {
 		CharType(): PrimitiveType("C", "char", "c") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::FOUR_BYTES; }
 
 		virtual bool isSubtypeOfImpl(const Type*) const override;
-		virtual const Type* toAmbigousType() const override;
+		virtual const Type* toVariableCapacityIntegralType() const override;
 
-		virtual status_t implicitCastStatus(const Type*) const override;
+		virtual const ClassType& getWrapperType() const override;
 
 		static const CharType& getInstance() {
 			static const CharType instance;
@@ -370,15 +406,16 @@ namespace jdecompiler {
 		}
 	};
 
-	struct ShortType: PrimitiveType {
-		ShortType(): PrimitiveType("S", "short", "s") {}
+	struct ShortType final: IntegralType {
+		ShortType(): IntegralType("S", "short", "s") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::FOUR_BYTES; }
+		virtual uint8_t getCapacity() const override { return 2; }
 
 		virtual bool isSubtypeOfImpl(const Type*) const override;
-		virtual const Type* toAmbigousType() const override;
+		virtual const Type* toVariableCapacityIntegralType() const override;
 
-		virtual status_t implicitCastStatus(const Type*) const override;
+		virtual const ClassType& getWrapperType() const override;
 
 		static const ShortType& getInstance() {
 			static const ShortType instance;
@@ -386,12 +423,13 @@ namespace jdecompiler {
 		}
 	};
 
-	struct IntType: PrimitiveType {
-		IntType(): PrimitiveType("I", "int", "n") {}
+	struct IntType final: IntegralType {
+		IntType(): IntegralType("I", "int", "n") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::FOUR_BYTES; }
+		virtual uint8_t getCapacity() const override { return 4; }
 
-		virtual status_t implicitCastStatus(const Type*) const override;
+		virtual const ClassType& getWrapperType() const override;
 
 		static const IntType& getInstance() {
 			static const IntType instance;
@@ -399,12 +437,12 @@ namespace jdecompiler {
 		}
 	};
 
-	struct LongType: PrimitiveType {
+	struct LongType final: PrimitiveType {
 		LongType(): PrimitiveType("J", "long", "l") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::EIGHT_BYTES; }
 
-		virtual status_t implicitCastStatus(const Type*) const override;
+		virtual const ClassType& getWrapperType() const override;
 
 		static const LongType& getInstance() {
 			static const LongType instance;
@@ -412,12 +450,12 @@ namespace jdecompiler {
 		}
 	};
 
-	struct FloatType: PrimitiveType {
+	struct FloatType final: PrimitiveType {
 		FloatType(): PrimitiveType("F", "float", "f") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::FOUR_BYTES; }
 
-		virtual status_t implicitCastStatus(const Type*) const override;
+		virtual const ClassType& getWrapperType() const override;
 
 		static const FloatType& getInstance() {
 			static const FloatType instance;
@@ -425,12 +463,12 @@ namespace jdecompiler {
 		}
 	};
 
-	struct DoubleType: PrimitiveType {
+	struct DoubleType final: PrimitiveType {
 		DoubleType(): PrimitiveType("D", "double", "d") {}
 
 		virtual TypeSize getSize() const override final { return TypeSize::EIGHT_BYTES; }
 
-		virtual status_t implicitCastStatus(const Type*) const override;
+		virtual const ClassType& getWrapperType() const override;
 
 		static const DoubleType& getInstance() {
 			static const DoubleType instance;
@@ -470,12 +508,12 @@ namespace jdecompiler {
 			ReferenceType(): BasicType(EMPTY_STRING, EMPTY_STRING) {}
 
 		public:
-			virtual bool isPrimitive() const override final {
-				return false;
-			}
-
 			virtual TypeSize getSize() const override final {
 				return TypeSize::FOUR_BYTES;
+			}
+
+			virtual string getClassEncodedName() const {
+				return encodedName;
 			}
 
 		protected:
@@ -487,7 +525,11 @@ namespace jdecompiler {
 
 	struct ClassType final: ReferenceType {
 		public:
-			string simpleName, fullSimpleName /* fullSimpleName is a class name including enclosing class name */, packageName;
+			string classEncodedName,
+					simpleName,
+					fullSimpleName, // fullSimpleName is a class name including enclosing class name
+					packageName;
+
 			vector<const ReferenceType*> parameters;
 
 			const ClassType* enclosingClass;
@@ -495,47 +537,75 @@ namespace jdecompiler {
 
 			ClassType(const ClassConstant* clazz): ClassType(clazz->name) {}
 
-			ClassType(string encodedName) {
-				const uint32_t length = encodedName.size();
+			ClassType(const string& str): ClassType(str.c_str()) {}
 
+			ClassType(const char*&& str): ClassType(static_cast<const char*&>(str)) {}
+
+			ClassType(const char*& restrict str) {
+
+				const char* const srcStr = str;
+
+				string encodedName = str;
 				string name = encodedName;
 
 				uint32_t nameStartPos = 0,
 				         packageEndPos = 0,
 				         enclosingClassNameEndPos = 0;
 
-				for(uint32_t i = 0; i < length; i++) {
-					char c = name[i];
+				for(uint32_t i = 0;;) {
 
-					switch(c) {
+					switch(*str) {
 						case '/':
-							nameStartPos = packageEndPos = i;
+							packageEndPos = i;
+							nameStartPos = i + 1;
 							name[i] = '.';
 							break;
+
 						case '$':
-							nameStartPos = enclosingClassNameEndPos = i;
+							enclosingClassNameEndPos = i;
+							nameStartPos = i + 1;
 							name[i] = '.';
 							break;
+
 						case '<':
-							parameters = parseParameters(&name[i]);
-							break;
-						case ';': case '\0':
+							parameters = parseParameters(str);
+
+							switch(*str) {
+								case ';':
+									++str;
+								case '\0':
+									name = name.substr(0, i);
+									encodedName = encodedName.substr(0, i);
+									goto End; // break loop
+
+								default:
+									throw InvalidClassNameException(srcStr, i);
+							}
+
+						case ';':
+							++str;
+						case '\0':
 							name = name.substr(0, i);
 							encodedName = encodedName.substr(0, i);
-							goto ForEnd;
-						case '\t': case '\n': case '\v': case '\f': case '\r': case ' ': case '!': // invalid chars
+							goto End;
+						// invalid chars
+						case '\t': case '\n': case '\v': case '\f': case '\r': case ' ': case '!':
 						case '"': case '#': case '%': case '&': case '\'': case '(': case ')': case '*': case '+':
-						case ',': case '-': case '.': case ':': case '=': case '?':  case '@': case '[': case '\\':
-						case ']': case '^': case '`': case '{': case '|':  case '}': case '~': case '\x7F':
-							throw InvalidClassNameException(encodedName);
+						case ',': case '-': case '.': case ':': case '=':  case '?': case '@': case '[': case '\\':
+						case ']': case '^': case '`': case '{': case '|':  case '}': case '~': case '\x7F': // DEL
+							throw InvalidClassNameException(srcStr, i);
 					}
+
+					++i, ++str;
 				}
-				ForEnd:
+				End:
 
 				this->name = name;
-				this->encodedName = 'L' + encodedName;
 
-				simpleName = nameStartPos == 0 ? name : name.substr(nameStartPos + 1);
+				this->encodedName = 'L' + encodedName + ';';
+				this->classEncodedName = encodedName;
+
+				simpleName = name.substr(nameStartPos);
 
 				packageName = name.substr(0, packageEndPos);
 
@@ -556,10 +626,11 @@ namespace jdecompiler {
 				}
 			}
 
-			virtual string toString(const ClassInfo& classinfo) const override;
+			virtual string toString(const ClassInfo&) const override;
 
 			virtual string toString() const override {
-				return "class " + name;
+				return "class " + (parameters.empty() ? name : name +
+						'<' + join<const ReferenceType*>(parameters, [] (const ReferenceType* type) { return type->toString(); }) + '>');
 			}
 
 			virtual string getVarName() const override final {
@@ -567,6 +638,10 @@ namespace jdecompiler {
 			}
 
 			virtual status_t implicitCastStatus(const Type*) const override;
+
+			virtual string getClassEncodedName() const override {
+				return classEncodedName;
+			}
 
 		protected:
 			virtual bool isSubtypeOfImpl(const Type* other) const override {
@@ -591,51 +666,48 @@ namespace jdecompiler {
 namespace jdecompiler {
 
 	Type::status_t PrimitiveType::implicitCastStatus(const Type* other) const {
-		return *other == *OBJECT ? OBJECT_AUTOBOXING_STATUS : Type::implicitCastStatus(other);
+		return *other == *OBJECT ? OBJECT_AUTOBOXING_STATUS : *other == getWrapperType() ? AUTOBOXING_STATUS : Type::implicitCastStatus(other);
 	}
 
-	Type::status_t BooleanType::implicitCastStatus(const Type* other) const {
-		return *other == javaLang::Boolean ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	const ClassType& VoidType::getWrapperType() const {
+		return javaLang::Void;
 	}
 
-	Type::status_t ByteType::implicitCastStatus(const Type* other) const {
-		return *other == javaLang::Byte ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	const ClassType& BooleanType::getWrapperType() const {
+		return javaLang::Boolean;
 	}
 
-	Type::status_t CharType::implicitCastStatus(const Type* other) const {
-		return *other == javaLang::Character ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	const ClassType& ByteType::getWrapperType() const {
+		return javaLang::Byte;
 	}
 
-	Type::status_t ShortType::implicitCastStatus(const Type* other) const {
-		return *other == javaLang::Short ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	const ClassType& CharType::getWrapperType() const {
+		return javaLang::Character;
 	}
 
-	Type::status_t IntType::implicitCastStatus(const Type* other) const {
-		return *other == javaLang::Integer ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	const ClassType& ShortType::getWrapperType() const {
+		return javaLang::Short;
 	}
 
-	Type::status_t LongType::implicitCastStatus(const Type* other) const {
-		return *other == javaLang::Long ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	const ClassType& IntType::getWrapperType() const {
+		return javaLang::Integer;
 	}
 
-	Type::status_t FloatType::implicitCastStatus(const Type* other) const {
-		return *other == javaLang::Float ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	const ClassType& LongType::getWrapperType() const {
+		return javaLang::Long;
 	}
 
-	Type::status_t DoubleType::implicitCastStatus(const Type* other) const {
-		return *other == javaLang::Double ? AUTOBOXING_STATUS : PrimitiveType::implicitCastStatus(other);
+	const ClassType& FloatType::getWrapperType() const {
+		return javaLang::Float;
+	}
+
+	const ClassType& DoubleType::getWrapperType() const {
+		return javaLang::Double;
 	}
 
 
 	Type::status_t ClassType::implicitCastStatus(const Type* other) const {
-		return ((other == BOOLEAN && *this == javaLang::Boolean) ||
-				(other == BYTE && *this == javaLang::Byte) ||
-				(other == CHAR && *this == javaLang::Character) ||
-				(other == SHORT && *this == javaLang::Short) ||
-				(other == INT && *this == javaLang::Integer) ||
-				(other == LONG && *this == javaLang::Long) ||
-				(other == FLOAT && *this == javaLang::Float) ||
-				(other == DOUBLE && *this == javaLang::Double)) ?
+		return other->isPrimitive() && *this == safe_cast<const PrimitiveType*>(other)->getWrapperType() ?
 						AUTOBOXING_STATUS : Type::implicitCastStatus(other);
 	}
 
@@ -645,21 +717,28 @@ namespace jdecompiler {
 			const Type *memberType, *elementType;
 			uint16_t nestingLevel = 0;
 
-		private: string braces;
+			string braces;
 
-		public:
-			ArrayType(const string& name) {
-				size_t i = 0;
-				for(char c = name[0]; c == '['; c = name[++i]) {
-					nestingLevel++;
-					braces += "[]";
-				}
+			ArrayType(const string& str): ArrayType(str.c_str()) {}
 
-				memberType = parseType(&name[i]);
+			ArrayType(const char*&& str): ArrayType(static_cast<const char*&>(str)) {}
+
+			ArrayType(const char*& restrict str) {
+
+				const char* const srcStr = str;
+
+				while(*str == '[')
+					++str, ++nestingLevel;
+
+				braces = repeat("[]", nestingLevel);
+
+				const char* const memberTypeStart = str;
+
+				memberType = parseType(str);
 				elementType = nestingLevel == 1 ? memberType : new ArrayType(memberType, (uint16_t)(nestingLevel - 1));
 
 				this->name = memberType->getName() + braces;
-				this->encodedName = string(name, 0, memberType->getEncodedName().size() + nestingLevel);
+				this->encodedName = string(srcStr, 0, str - memberTypeStart + nestingLevel); // cut string
 			}
 
 			ArrayType(const Type& memberType, uint16_t nestingLevel = 1): ArrayType(&memberType, nestingLevel) {}
@@ -675,8 +754,7 @@ namespace jdecompiler {
 
 				this->nestingLevel = nestingLevel;
 
-				for(uint16_t i = 0; i < nestingLevel; i++)
-					braces += "[]";
+				braces = repeat("[]", nestingLevel);
 
 				this->name = memberType->getName() + braces;
 				this->encodedName = string(nestingLevel, '[') + memberType->getEncodedName();
@@ -715,15 +793,17 @@ namespace jdecompiler {
 
 	struct ParameterType final: ReferenceType {
 		public:
-			ParameterType(const char* encodedName) {
-				uint32_t i = 0;
-				for(char c = encodedName[0]; isLetterOrDigit(c); c = encodedName[++i])
-					name += c;
+			ParameterType(const char*& restrict str) {
+				while(*str != ';')
+					name += *(str++);
+
+				++str;
+
 				this->encodedName = name;
 			}
 
 			virtual string toString() const override {
-				return "ParameterType {" + name + '}';
+				return '<' + name + '>';
 			}
 
 			virtual string toString(const ClassInfo& classinfo) const override final {
@@ -741,182 +821,368 @@ namespace jdecompiler {
 	};
 
 
+	struct GenericType: ReferenceType {
 
-	struct AmbigousType: SpecialType {
+		virtual string getVarName() const override {
+			throw IllegalStateException("Seriously? Variable of unknown generic type?");
+		}
+
+		virtual bool isSubtypeOfImpl(const Type* other) const override {
+			return instanceof<const ReferenceType*>(other);
+		}
+	};
+
+
+	struct DefinedGenericType: GenericType {
+		const ReferenceType* const type;
+
+		DefinedGenericType(const char*& str): type(parseParameter(str)) {}
+	};
+
+
+	struct ExtendingGenericType: DefinedGenericType {
+		ExtendingGenericType(const char*& str): DefinedGenericType(str) {}
+
+		virtual string toString(const ClassInfo& classinfo) const override {
+			return "? extends " + type->toString(classinfo);
+		}
+
+		virtual string toString() const override {
+			return "ExtendingGenericType(" + type->toString() + ')';
+		}
+	};
+
+
+	struct SuperGenericType: DefinedGenericType {
+		SuperGenericType(const char*& str): DefinedGenericType(str) {}
+
+		virtual string toString(const ClassInfo& classinfo) const override {
+			return "? super " + type->toString(classinfo);
+		}
+
+		virtual string toString() const override {
+			return "SuperGenericType(" + type->toString() + ')';
+		}
+	};
+
+
+	struct AnyGenericType: GenericType {
+		private:
+			AnyGenericType() noexcept {}
+
 		public:
-			const vector<const BasicType*> types;
-
-		protected:
-			const bool isPrimitiveTypes;
-			const TypeSize size;
-
-		public:
-			AmbigousType(const vector<const BasicType*>& types): types(types),
-					isPrimitiveTypes(
-						all_of(types.begin(), types.end(), [] (auto type) { return  type->isPrimitive(); }) ? true :
-						all_of(types.begin(), types.end(), [] (auto type) { return !type->isPrimitive(); }) ? false :
-						throw IllegalArgumentException("All types in type list must be only primitive or only non-primitive")
-					),
-					size(
-						all_of(types.begin(), types.end(), [] (auto type) { return type->getSize() == TypeSize::FOUR_BYTES; }) ? TypeSize::FOUR_BYTES :
-						all_of(types.begin(), types.end(), [] (auto type) { return type->getSize() == TypeSize::EIGHT_BYTES; }) ? TypeSize::EIGHT_BYTES :
-						throw IllegalArgumentException("All types in type list must have same size")
-					) {
-				if(types.empty())
-					throw IllegalArgumentException("Type list cannot be empty");
+			static const AnyGenericType* getInstance() {
+				static const AnyGenericType instance;
+				return &instance;
 			}
 
-			AmbigousType(const initializer_list<const BasicType*> typeList): AmbigousType(vector<const BasicType*>(typeList)) {}
-
-			virtual string toString(const ClassInfo& classinfo) const override {
-				return types[0]->toString(classinfo);
+			virtual string toString(const ClassInfo&) const override {
+				return "?";
 			}
 
 			virtual string toString() const override {
-				return "AmbigousType {" + join<const BasicType*>(types, [] (auto type) { return type->toString(); }) + '}';
+				return "AnyGenericType";
 			}
+	};
 
-			virtual string getEncodedName() const override final {
-				return "SAmbigousType(" + join<const BasicType*>(types, [] (auto type) { return type->getEncodedName(); }) + ')';
-			}
 
-			virtual const string& getName() const override final {
-				return types[0]->getName();
-			}
+	struct VariableCapacityIntegralType: SpecialType {
+		public:
+			const uint8_t minCapacity, maxCapacity;
+			const bool includeBoolean, includeChar;
 
-			virtual string getVarName() const override final {
-				return types[0]->getVarName();
-			}
+			static const uint8_t INCLUDE_BOOLEAN = 1, INCLUDE_CHAR = 2;
+			static const uint8_t CHAR_CAPACITY = 2;
 
-			virtual bool isPrimitive() const override final {
-				return isPrimitiveTypes;
-			}
+		private:
+			const PrimitiveType* const primitiveType;
 
-			virtual TypeSize getSize() const override final {
-				return size;
-			}
+			const string encodedName;
 
-			virtual bool isSubtypeOfImpl(const Type* other) const override {
-				if(isStrictSubtypeOfImpl(other))
-					return true;
-
-				if(other->isBasic())
-					for(const BasicType* type : types)
-						if(type->isSubtypeOf(other))
-							return true;
-
-				return false;
-			}
-
-			virtual bool isStrictSubtypeOfImpl(const Type* other) const override {
-				if(*this == *other)
-					return true;
-
-				if(other->isBasic())
-					for(const BasicType* type : types)
-						if(type == other)
-							return true;
-
-				if(instanceof<const AmbigousType*>(other)) {
-					for(const Type* type1 : types)
-						for(const Type* type2 : static_cast<const AmbigousType*>(other)->types)
-							if(*type1 == *type2)
-								return true;
+			static inline constexpr const PrimitiveType* primitiveTypeByCapacity(uint8_t capacity, bool includeChar) {
+				if(includeChar && capacity == CHAR_CAPACITY) {
+					return CHAR;
 				}
 
-				return false;
+				switch(capacity) {
+					case 1: return BYTE;
+					case 2: return SHORT;
+					case 4: return INT;
+					default:
+						throw IllegalStateException((string)"Cannot find " + (includeChar ? "unsigned" : "signed") +
+								" integral type for capacity " + to_string(capacity));
+				}
+			}
+
+			VariableCapacityIntegralType(uint8_t minCapacity, uint8_t maxCapacity, bool includeBoolean, bool includeChar):
+					minCapacity(minCapacity), maxCapacity(maxCapacity), includeBoolean(includeBoolean), includeChar(includeChar),
+					primitiveType(primitiveTypeByCapacity(maxCapacity, includeChar)),
+					encodedName("SVariableCapacityIntegralType:" + to_string(minCapacity) + ':' + to_string(maxCapacity) + ':' +
+							(char)('0' + includeBoolean + (includeChar << 1))) {}
+
+		public:
+			static const VariableCapacityIntegralType* getInstance(uint8_t minCapacity, uint8_t maxCapacity, bool includeBoolean, bool includeChar) {
+				static vector<const VariableCapacityIntegralType*> instances;
+
+				if(minCapacity > maxCapacity)
+					return nullptr;
+
+				for(const VariableCapacityIntegralType* instance : instances) {
+					if(instance->minCapacity == minCapacity && instance->maxCapacity == maxCapacity &&
+						instance->includeBoolean == includeBoolean && instance->includeChar == includeChar) {
+
+						return instance;
+					}
+				}
+
+				const VariableCapacityIntegralType* instance = new VariableCapacityIntegralType(minCapacity, maxCapacity, includeBoolean, includeChar);
+				instances.push_back(instance);
+				return instance;
+			}
+
+			static inline const VariableCapacityIntegralType* getInstance(uint8_t minCapacity, uint8_t maxCapacity, uint8_t flags = 0) {
+				const VariableCapacityIntegralType* instance = getInstance(minCapacity, maxCapacity, flags & INCLUDE_BOOLEAN, flags & INCLUDE_CHAR);
+				return instance != nullptr ? instance : throw IllegalArgumentException(
+						(string)"minCapacity = " + to_string(minCapacity) + ", maxCapacity = " + to_string(maxCapacity) + ", flags = 0x" + hex<1>(flags));
+			}
+
+			virtual string toString(const ClassInfo& classinfo) const override {
+				return primitiveType->toString(classinfo);
+			}
+
+			virtual string toString() const override {
+				return "VariableCapacityIntegralType(" + to_string(minCapacity) + ", " + to_string(maxCapacity) +
+						(includeBoolean ? ", boolean" : "") + (includeChar ? ", char" : "") + ')';
+			}
+
+			virtual string getEncodedName() const override {
+				return encodedName;
+			}
+
+			virtual const string& getName() const override {
+				return primitiveType->getName();
+			}
+
+			virtual string getVarName() const override {
+				return primitiveType->getVarName();
+			}
+
+			virtual TypeSize getSize() const override {
+				return TypeSize::FOUR_BYTES;
 			}
 
 		protected:
-			template<bool direct, bool widest>
-			const Type* castImpl0(const Type* other) const {
-				static constexpr auto castImplFunc = getCastImplFunction<widest>();
-				static constexpr auto reversedCastImplFunc = getReversedCastImplFunction<widest>();
+			virtual bool canReverseCast(const Type* other) const {
+				return true;
+			}
 
-				if(*this == *other)
-					return this;
+			virtual bool isSubtypeOfImpl(const Type* other) const override {
+				if(*this == *other || (other == BOOLEAN && includeBoolean) || other == primitiveType)
+					return true;
 
-				if(other->isBasic()) {
-					vector<const BasicType*> newTypes;
-					for(const BasicType* type : types) {
-						const BasicType* castedType = safe_cast<const BasicType*>(
-								direct ? (type->*castImplFunc)(other) : (other->*reversedCastImplFunc)(type));
+				if(other == CHAR)
+					return includeChar || maxCapacity > CHAR_CAPACITY;
 
-						if(castedType != nullptr && find(newTypes.begin(), newTypes.end(), castedType) == newTypes.end()) {
-							newTypes.push_back(castedType);
-						}
-					}
-					return newTypes.empty() ? nullptr : newTypes.size() == 1 ? newTypes[0] : (const Type*)new AmbigousType(newTypes);
+				if(other->isIntegral()) {
+					const uint8_t capacity = safe_cast<const IntegralType*>(other)->getCapacity();
+					return capacity >= minCapacity;
 				}
 
-				if(instanceof<const AmbigousType*>(other)) {
-					vector<const BasicType*> newTypes;
-					for(const BasicType* type1 : types) {
-						for(const BasicType* type2 : static_cast<const AmbigousType*>(other)->types) {
-							const BasicType* newType = dynamic_cast<const BasicType*>(direct ? (type1->*castImplFunc)(type2) : (type2->*castImplFunc)(type1));
-							if(newType != nullptr && find(newTypes.begin(), newTypes.end(), newType) == newTypes.end())
-								newTypes.push_back(newType);
+				if(instanceof<const VariableCapacityIntegralType*>(other)) {
+					return static_cast<const VariableCapacityIntegralType*>(other)->maxCapacity >= minCapacity;
+				}
+
+				return false;
+			}
+
+			virtual bool isStrictSubtypeOfImpl(const Type* other) const {
+				if(*this == *other || (other == BOOLEAN && includeBoolean) || other == primitiveType)
+					return true;
+
+				if(other == CHAR)
+					return includeChar || (minCapacity <= CHAR_CAPACITY && maxCapacity > CHAR_CAPACITY);
+
+				if(other->isIntegral()) {
+					const uint8_t capacity = safe_cast<const IntegralType*>(other)->getCapacity();
+					return capacity >= minCapacity && capacity <= maxCapacity;
+				}
+
+				return false;
+			}
+
+			template<bool widest>
+			static const Type* castImpl0(const VariableCapacityIntegralType* type, const Type* other) {
+
+				if(other->isPrimitive()) {
+
+					if(other == BOOLEAN)
+						return type->includeBoolean ? other : nullptr;
+
+					if(other == type->primitiveType)
+						return type;
+
+					if(other == CHAR)
+						return type->includeChar ? other : nullptr;
+
+					if(other->isIntegral()) {
+						const uint8_t capacity = safe_cast<const IntegralType*>(other)->getCapacity();
+
+						if(capacity == type->minCapacity)
+							return widest ? type : other;
+
+						if(capacity == type->maxCapacity)
+							return type;
+
+						if(capacity > type->minCapacity)
+							return getInstance(type->minCapacity, min(capacity, type->maxCapacity), type->includeBoolean, type->includeChar);
+					}
+				}
+
+				if(instanceof<const VariableCapacityIntegralType*>(other)) {
+					return castImpl0(type, static_cast<const VariableCapacityIntegralType*>(other));
+				}
+
+				return nullptr;
+			}
+
+			static const Type* castImpl0(const VariableCapacityIntegralType* type, const VariableCapacityIntegralType* other) {
+				return getInstance(type->minCapacity, min(other->maxCapacity, type->maxCapacity),
+						type->includeBoolean && other->includeBoolean, type->includeChar && other->includeChar);
+			}
+
+			template<bool widest>
+			const Type* reversedCastImpl0(const Type* other) const {
+
+				if(other->isPrimitive()) {
+
+					if(other == BOOLEAN)
+						return includeBoolean ? other : nullptr;
+
+					if(other == primitiveType)
+						return widest ? this : other;
+
+					if(other == CHAR)
+						return includeChar || maxCapacity > CHAR_CAPACITY ?
+								(widest ? getInstance(CHAR_CAPACITY * 2, maxCapacity, false, includeChar) : other) : nullptr;
+
+					if(other->isIntegral()) {
+						const uint8_t capacity = safe_cast<const IntegralType*>(other)->getCapacity();
+
+						if(widest ? capacity <= minCapacity : capacity >= maxCapacity)
+							return this;
+
+						if(widest ? capacity <= maxCapacity : capacity >= minCapacity) {
+							return widest ? getInstance(max(capacity, minCapacity), capacity, includeBoolean, includeChar) :
+											getInstance(capacity, min(capacity, maxCapacity), includeBoolean, includeChar);
 						}
 					}
-					return newTypes.empty() ? nullptr : new AmbigousType(newTypes);
 				}
+
+				if(instanceof<const VariableCapacityIntegralType*>(other))
+					return castImpl0<false>(static_cast<const VariableCapacityIntegralType*>(other), this);
 
 				return nullptr;
 			}
 
 
 			virtual const Type* castImpl(const Type* other) const override {
-				return castImpl0<true, false>(other);
+				return castImpl0<false>(this, other);
 			}
 
 			virtual const Type* reversedCastImpl(const Type* other) const override {
-				return castImpl0<false, false>(other);
+				return reversedCastImpl0<false>(other);
 			}
 
+
 			virtual const Type* castToWidestImpl(const Type* other) const override {
-				return castImpl0<true, true>(other);
+				return castImpl0<true>(this, other);
 			}
 
 			virtual const Type* reversedCastToWidestImpl(const Type* other) const override {
-				return castImpl0<false, true>(other);
-			}
-
-			virtual status_t implicitCastStatus(const Type* other) const override {
-				status_t resultStatus = N_STATUS;
-
-				for(const Type* type : types) {
-					status_t status = type->implicitCastStatus(other);
-					if(status != N_STATUS && (resultStatus == N_STATUS || status < resultStatus))
-						resultStatus = status;
-				}
-
-				return resultStatus;
+				return reversedCastImpl0<true>(other);
 			}
 	};
 
 
-	static const AmbigousType
-			*const ANY_INT_OR_BOOLEAN(new AmbigousType({INT, SHORT, CHAR, BYTE, BOOLEAN})),
-			*const ANY_INT(new AmbigousType({INT, SHORT, CHAR, BYTE})),
-			*const CHAR_OR_SHORT_OR_INT(new AmbigousType({CHAR, SHORT, INT})),
-			*const CHAR_OR_INT(new AmbigousType({CHAR, INT})),
-			*const SHORT_OR_INT(new AmbigousType({SHORT, INT})),
+	static const VariableCapacityIntegralType
+			*const   ANY_INT_OR_BOOLEAN = VariableCapacityIntegralType::getInstance(1, 4,
+					VariableCapacityIntegralType::INCLUDE_BOOLEAN | VariableCapacityIntegralType::INCLUDE_CHAR),
+			*const              ANY_INT = VariableCapacityIntegralType::getInstance(1, 4, VariableCapacityIntegralType::INCLUDE_CHAR),
+			*const       ANY_SIGNED_INT = VariableCapacityIntegralType::getInstance(1, 4),
+			*const CHAR_OR_SHORT_OR_INT = VariableCapacityIntegralType::getInstance(2, 4, VariableCapacityIntegralType::INCLUDE_CHAR),
+			*const          CHAR_OR_INT = VariableCapacityIntegralType::getInstance(4, 4, VariableCapacityIntegralType::INCLUDE_CHAR),
+			*const         SHORT_OR_INT = VariableCapacityIntegralType::getInstance(2, 4),
+			*const      BYTE_OR_BOOLEAN = VariableCapacityIntegralType::getInstance(1, 1, VariableCapacityIntegralType::INCLUDE_BOOLEAN),
+			*const       INT_OR_BOOLEAN = VariableCapacityIntegralType::getInstance(4, 4, VariableCapacityIntegralType::INCLUDE_BOOLEAN);
 
-			*const BYTE_OR_BOOLEAN(new AmbigousType({BYTE, BOOLEAN})),
-			*const INT_OR_BOOLEAN(new AmbigousType({INT, BOOLEAN}));
 
-
-	const Type* ByteType::toAmbigousType() const {
+	const Type* ByteType::toVariableCapacityIntegralType() const {
 		return ANY_INT;
 	}
 
-	const Type* CharType::toAmbigousType() const {
+	const Type* CharType::toVariableCapacityIntegralType() const {
 		return CHAR_OR_INT;
 	}
 
-	const Type* ShortType::toAmbigousType() const {
+	const Type* ShortType::toVariableCapacityIntegralType() const {
 		return SHORT_OR_INT;
 	}
+
+
+
+	struct ExcludingBooleanType: SpecialType {
+		private:
+			constexpr ExcludingBooleanType() noexcept {}
+
+		public:
+			static const ExcludingBooleanType* getInstance() {
+				static const ExcludingBooleanType instance;
+				return &instance;
+			}
+
+			virtual string toString(const ClassInfo&) const override {
+				return "ExcludingBooleanType";
+			}
+
+			virtual string toString() const override {
+				return "ExcludingBooleanType";
+			}
+
+			virtual string getEncodedName() const override {
+				return "SExcludingBooleanType";
+			}
+
+			virtual const string& getName() const override {
+				static string name("ExcludingBooleanType");
+				return name;
+			}
+
+			virtual string getVarName() const override {
+				return "e";
+			}
+
+			virtual TypeSize getSize() const override {
+				return TypeSize::FOUR_BYTES;
+			}
+
+			virtual bool isSubtypeOfImpl(const Type* other) const override {
+				return castImpl(other) != nullptr;
+			}
+
+			virtual const Type* castImpl(const Type* other) const override {
+
+				if(instanceof<const VariableCapacityIntegralType*>(other)) {
+					const VariableCapacityIntegralType* intergalType = static_cast<const VariableCapacityIntegralType*>(other);
+
+					return !intergalType->includeBoolean ? intergalType :
+							VariableCapacityIntegralType::getInstance(intergalType->minCapacity, intergalType->maxCapacity, false, intergalType->includeChar);
+				}
+
+				return other != BOOLEAN ? other : nullptr;
+			}
+
+	};
+
 
 
 	struct AnyType final: SpecialType {
@@ -944,21 +1210,21 @@ namespace jdecompiler {
 				return "o";
 			}
 
-			virtual bool isPrimitive() const override {
-				return false; // ???
-			}
-
 			virtual TypeSize getSize() const override {
 				return TypeSize::FOUR_BYTES; // ???
 			}
 
-			virtual bool isSubtypeOfImpl(const Type* other) const override {
+			virtual bool isSubtypeOfImpl(const Type*) const override {
 				return true;
 			}
 
 		protected:
 			virtual const Type* castImpl(const Type* other) const override {
 				return other;
+			}
+
+			virtual const Type* castToWidestImpl(const Type* other) const override {
+				return other->isPrimitive() ? safe_cast<const PrimitiveType*>(other)->toVariableCapacityIntegralType() : other;
 			}
 
 		public:
@@ -999,10 +1265,6 @@ namespace jdecompiler {
 				return "o";
 			}
 
-			virtual bool isPrimitive() const override {
-				return false;
-			}
-
 			virtual TypeSize getSize() const override {
 				return TypeSize::FOUR_BYTES;
 			}
@@ -1029,196 +1291,196 @@ namespace jdecompiler {
 	};
 
 
-	struct ExcludingType final: SpecialType {
+
+	struct GenericParameter: Stringified {
 		public:
-			const vector<const BasicType*> types;
+			const string name;
+			const vector<const ReferenceType*> types;
 
-			ExcludingType(const vector<const BasicType*>& types): types(types) {
-				if(types.empty())
-					throw IllegalArgumentException("Type list cannot be empty");
-			}
+		private:
+			static string parseName(const char*& restrict str) {
+				string name;
 
-			ExcludingType(const initializer_list<const BasicType*> typeList): ExcludingType(vector<const BasicType*>(typeList)) {}
+				while(*str != ':')
+					name += *(str++);
+				++str;
 
-			virtual string toString() const override {
-				return "ExcludingType {" + join<const BasicType*>(types, [] (const BasicType* type) { return type->toString(); }) + '}';
-			}
+				if(name.empty())
+					throw InvalidSignatureException(str);
 
-			virtual string toString(const ClassInfo& classinfo) const override final {
-				return OBJECT->toString(classinfo);
-			}
-
-			virtual string getEncodedName() const override final {
-				return "SExcludingType(" + join<const BasicType*>(types, [] (const BasicType* type) { return type->getEncodedName(); }) + ')';
-			}
-
-			virtual const string& getName() const override final {
-				static const string name("java.lang.Object");
 				return name;
 			}
 
-			virtual string getVarName() const override final {
-				return "o";
-			}
+			static vector<const ReferenceType*> parseTypes(const char*& restrict str) {
+				if(*str == ':')
+					++str;
 
-			virtual bool isPrimitive() const override {
-				return false;
-			}
+				vector<const ReferenceType*> types { parseParameter(str) };
 
-			virtual TypeSize getSize() const override {
-				return TypeSize::FOUR_BYTES;
-			}
-
-			virtual bool isSubtypeOfImpl(const Type* other) const override {
-				if(*this == *other)
-					return true;
-
-				if(other->isBasic()) {
-					for(const BasicType* type : this->types) {
-						if(type == other) {
-							return false;
-						}
-					}
-
-					return true;
+				while(*str == ':') {
+					types.push_back(parseParameter(str += 1));
 				}
 
-				if(instanceof<const AmbigousType*>(other)) {
-					for(const BasicType* t1 : this->types) {
-						for(const Type* t2 : static_cast<const AmbigousType*>(other)->types) {
-							if(!t2->isSubtypeOf(t1)) {
-								return true;
-							}
-						}
-					}
-				}
-
-				return false;
+				return types;
 			}
 
-		protected:
-			virtual const Type* castImpl(const Type* other) const override {
-				if(*this == *other)
-					return this;
+		public:
+			GenericParameter(const char*& restrict str): name(parseName(str)), types(parseTypes(str)) {}
 
-				if(other->isBasic()) {
-					for(const BasicType* type : this->types) {
-						if(type == other) {
-							return nullptr;
-						}
-					}
-
-					return other;
-				}
-
-				if(instanceof<const AmbigousType*>(other)) {
-					vector<const BasicType*> newTypes = static_cast<const AmbigousType*>(other)->types;
-					newTypes.erase(remove_if(newTypes.begin(), newTypes.end(), [this] (const BasicType* t1) {
-							for(const BasicType* t2 : types)
-								if(*t1 == *t2)
-									return true;
-							return false;
-						}), newTypes.end());
-
-					if(!newTypes.empty())
-						return new AmbigousType(newTypes);
-				}
-
-				return nullptr;
+			virtual string toString(const ClassInfo& classinfo) const override {
+				return types.size() == 1 && *types[0] == *OBJECT ? name : name + " extends " +
+						join<const ReferenceType*>(types, [&classinfo] (const ReferenceType* type) { return type->toString(classinfo); }, " & ");
 			}
 	};
 
 
 
 
-	static const BasicType* parseType(const char* encodedName) {
-		switch(encodedName[0]) {
-			case 'B': return BYTE;
-			case 'C': return CHAR;
-			case 'S': return SHORT;
-			case 'I': return INT;
-			case 'J': return LONG;
-			case 'F': return FLOAT;
-			case 'D': return DOUBLE;
-			case 'Z': return BOOLEAN;
-			case 'L': return new ClassType(encodedName + 1);
-			case '[': return new ArrayType(encodedName);
+	static const BasicType* parseType(const char*& restrict str) {
+		switch(str[0]) {
+			case 'B': ++str; return BYTE;
+			case 'C': ++str; return CHAR;
+			case 'S': ++str; return SHORT;
+			case 'I': ++str; return INT;
+			case 'J': ++str; return LONG;
+			case 'F': ++str; return FLOAT;
+			case 'D': ++str; return DOUBLE;
+			case 'Z': ++str; return BOOLEAN;
+			case 'L': return new ClassType(str += 1);
+			case '[': return new ArrayType(str);
+			case 'T': return new ParameterType(str += 1);
 			default:
-				throw InvalidTypeNameException(encodedName);
+				throw InvalidTypeNameException(str);
 		}
 	}
 
-	static inline const BasicType* parseType(const string& encodedName) {
-		return parseType(encodedName.c_str());
+	static inline const BasicType* parseType(const char*&& str) {
+		return parseType(static_cast<const char*&>(str));
+	}
+
+	static inline const BasicType* parseType(const string& str) {
+		return parseType(str.c_str());
+	}
+
+	/* Крч, тесты показали, что если указать компилятору restrict, то он сам введет доп. переменную для значения указателя.
+	   Поэтому можно спокойно забить на оптимизацию вручную и просто указывать restrict где попало 😆️ */
+	static vector<const Type*> parseMethodArguments(const char*& restrict str) {
+		if(str[0] != '(')
+			throw IllegalMethodDescriptorException(str);
+		++str;
+
+		vector<const Type*> arguments;
+
+		while(true) {
+			if(*str == ')') {
+				++str;
+				return arguments;
+			}
+
+			arguments.push_back(parseType(str));
+		}
 	}
 
 
-	static const BasicType* parseReturnType(const char* encodedName) {
-		if(encodedName[0] == 'V')
-			return VOID;
-		return parseType(encodedName);
+	static const BasicType* parseReturnType(const char* str) {
+		return str[0] == 'V' ? VOID : parseType(str);
+	}
+
+	static inline const BasicType* parseReturnType(const string& str) {
+		return parseReturnType(str.c_str());
 	}
 
 
-	static const ReferenceType* parseReferenceType(const string& encodedName) {
-		return encodedName[0] == '[' ? (const ReferenceType*)new ArrayType(encodedName) : (const ReferenceType*)new ClassType(encodedName);
+	static const ReferenceType* parseReferenceType(const char* str) {
+		return str[0] == '[' ? (const ReferenceType*)new ArrayType(str) : (const ReferenceType*)new ClassType(str);
+	}
+
+	static inline const ReferenceType* parseReferenceType(const string& str) {
+		return parseReferenceType(str.c_str());
 	}
 
 
-	static vector<const ReferenceType*> parseParameters(const char* str) {
+	static inline const ClassType* parseClassType(const char*& restrict str) {
+		return str[0] == 'L' ? new ClassType(str += 1) : throw InvalidSignatureException(str, 0);
+	}
+
+
+	static const ReferenceType* parseParameter(const char*& restrict str) {
+		const ReferenceType* parameter;
+
+		switch(str[0]) {
+			case 'L': return new ClassType(str += 1);
+			case '[': return new ArrayType(str);
+			case 'T': return new ParameterType(str += 1);
+			default:
+				throw InvalidTypeNameException(str);
+		}
+	}
+
+
+	static vector<const ReferenceType*> parseParameters(const char*& restrict str) {
 		if(str[0] != '<')
-			throw InvalidTypeNameException(str);
+			throw InvalidTypeNameException(str, 0);
 
 		vector<const ReferenceType*> parameters;
 
-		for(size_t i = 0;; i++) {
-			const ReferenceType* parameter;
-			switch(str[i]) {
-				case 'L':
-					parameter = new ClassType(&str[i + 1]);
-					i += parameter->getEncodedName().size() + 2U;
-					break;
-				case '[':
-					parameter = new ArrayType(&str[i]);
-					i += parameter->getEncodedName().size();
-					break;
-				case 'T':
-					parameter = new ParameterType(&str[i]);
-					i += parameter->getEncodedName().size() + 1U;
-					break;
+		for(const char* const srcStr = str++; ;) {
+			switch(*str) {
 				case '>':
-					parameters = parseParameters(&str[i]);
-					goto ForEnd;
+					++str;
+					return parameters;
+
+				case '+':
+					parameters.push_back(new ExtendingGenericType(str += 1));
+					break;
+				case '-':
+					parameters.push_back(new SuperGenericType(str += 1));
+					break;
+				case '*':
+					++str;
+					parameters.push_back(AnyGenericType::getInstance());
+					break;
+
+				case '\0':
+					throw InvalidTypeNameException(srcStr, str - srcStr);
+
 				default:
-					throw InvalidTypeNameException(str);
+					parameters.push_back(parseParameter(str));
 			}
-			parameters.push_back(parameter);
 		}
-		ForEnd:
-		return parameters;
+	}
+
+
+	static vector<const GenericParameter*> parseGeneric(const char*& restrict str) {
+		if(str[0] != '<')
+			return vector<const GenericParameter*>();
+
+		vector<const GenericParameter*> genericParameters;
+
+		for(const char* const srcStr = str++; ;) {
+			switch(*str) {
+				case '>':
+					++str;
+					return genericParameters;
+
+				default:
+					genericParameters.push_back(new GenericParameter(str));
+					break;
+
+				case '\0':
+					throw InvalidTypeNameException(srcStr, str - srcStr);
+			}
+		}
+
+		return genericParameters;
 	}
 
 
 	IncopatibleTypesException::IncopatibleTypesException(const Type* type1, const Type* type2):
-			DecompilationException("incopatible types: " + type1->toString() + " and " + type2->toString()) {}
+			DecompilationException("Incopatible types: " + type1->toString() + " and " + type2->toString()) {}
 
-
-	static bool typesEquals(const vector<const Type*>& types1, const vector<const Type*>& types2) {
-		return types1.size() == types2.size() &&
-				equal(types1.begin(), types1.end(), types2.begin(),
-					[] (auto arg1, auto arg2) { return *arg1 == *arg2; });
-	}
-
-	static inline bool typesEquals(const vector<const Type*>& types1, initializer_list<const Type*>& types2) {
-		return typesEquals(types1, vector<const Type*>(types2));
-	}
-
-	static inline bool typesEquals(initializer_list<const Type*>& types1, const vector<const Type*>& types2) {
-		return typesEquals(vector<const Type*>(types1), types2);
-	}
-
-	static inline bool typesEquals(initializer_list<const Type*>& types1, initializer_list<const Type*>& types2) {
-		return typesEquals(vector<const Type*>(types1), vector<const Type*>(types2));
+	string ClassConstant::toString(const ClassInfo& classinfo) const {
+		return parseReferenceType(name)->toString(classinfo) + ".class";
 	}
 }
 

@@ -61,7 +61,7 @@ namespace jdecompiler::operations {
 			ConstOperation(const T& value): ConstOperation(TYPE, value) {}
 
 		public:
-			virtual string toString(const StringifyContext& context) const override {
+			virtual string toString(const StringifyContext&) const override {
 				return primitiveToString(value);
 			}
 	};
@@ -79,7 +79,7 @@ namespace jdecompiler::operations {
 		private:
 			static inline const Type* getTypeByValue(int32_t value) {
 				if((bool)value == value)     return ANY_INT_OR_BOOLEAN;
-				if((int8_t)value == value)   return ANY_INT;
+				if((int8_t)value == value)   return value > 0 ? ANY_INT : ANY_SIGNED_INT;
 				if((char16_t)value == value) return (int16_t)value == value ? CHAR_OR_SHORT_OR_INT : CHAR_OR_INT;
 				if((int16_t)value == value)  return SHORT_OR_INT;
 				return INT;
@@ -94,7 +94,7 @@ namespace jdecompiler::operations {
 				return result == nullptr ? new IConstOperation(value) : result;
 			}
 
-			virtual string toString(const StringifyContext& context) const override {
+			virtual string toString(const StringifyContext&) const override {
 				if(returnType->isStrictSubtypeOf(INT))     return primitiveToString(value);
 				if(returnType->isStrictSubtypeOf(SHORT))   return primitiveToString((int16_t)value);
 				if(returnType->isStrictSubtypeOf(CHAR))    return primitiveToString((char16_t)value);
@@ -103,15 +103,39 @@ namespace jdecompiler::operations {
 				throw IllegalStateException("Illegal type of iconst operation: " + returnType->toString());
 			}
 
-			virtual void onCastReturnType(const Type* newType) const override {
+			/*virtual void onCastReturnType(const Type* newType) const override {
 				returnType = newType;
+			}*/
+	};
+
+
+	template<typename T>
+	struct IntConvertibleConstOperation: ConstOperation<T> {
+
+		protected:
+			mutable bool implicit = false;
+
+			IntConvertibleConstOperation(const T& value): ConstOperation<T>(value) {}
+
+		public:
+			virtual const Type* getImplicitType() const override {
+				return (int32_t)ConstOperation<T>::value == ConstOperation<T>::value ? INT : ConstOperation<T>::returnType;
+			}
+
+			virtual void allowImplicitCast() const override {
+				implicit = (int32_t)ConstOperation<T>::value == ConstOperation<T>::value;
+			}
+
+			virtual string toString(const StringifyContext&) const override {
+				return implicit ? primitiveToString((int32_t)ConstOperation<T>::value) : primitiveToString(ConstOperation<T>::value);
 			}
 	};
 
 
-	struct LConstOperation: ConstOperation<int64_t> {
+
+	struct LConstOperation: IntConvertibleConstOperation<int64_t> {
 		protected:
-			LConstOperation(int64_t value): ConstOperation(value) {}
+			LConstOperation(int64_t value): IntConvertibleConstOperation(value) {}
 
 		public:
 			static const Operation* valueOf(int64_t, const ConstantDecompilationContext);
@@ -126,13 +150,13 @@ namespace jdecompiler::operations {
 
 
 	template<typename T>
-	struct FPConstOperation: ConstOperation<T> {
+	struct FPConstOperation: IntConvertibleConstOperation<T> {
 		static_assert(is_floating_point<T>(), "Only float or double allowed");
 
 		public:
 			static const Operation* valueOf(T, const ConstantDecompilationContext);
 
-			FPConstOperation(T value): ConstOperation<T>(value) {}
+			FPConstOperation(T value): IntConvertibleConstOperation<T>(value) {}
 	};
 
 	using FConstOperation = FPConstOperation<float>;
@@ -157,24 +181,28 @@ namespace jdecompiler::operations {
 			}
 
 			virtual string toString(const StringifyContext& context) const override {
-				if(JDecompiler::getInstance().multilineStringAllowed() && count(value.begin(), value.end(), '\n') > 1) {
-					string result;
+				if(JDecompiler::getInstance().multilineStringAllowed()) {
+					size_t lnPos = value.find('\n');
 
-					context.classinfo.increaseIndent(2);
+					if(lnPos != string::npos && lnPos != value.size() - 1) {
+						string result;
 
-					const vector<string> lines = splitAndAddDelimiter(value, '\n');
+						context.classinfo.increaseIndent(2);
 
-					auto it = lines.begin();
-					while(true) {
-						result += primitiveToString(*it);
-						if(++it == lines.end())
-							break;
-						result += (string)" +\n" + context.classinfo.getIndent();
+						const vector<string> lines = splitAndAddDelimiter(value, '\n');
+
+						auto it = lines.begin();
+						while(true) {
+							result += (string)"\n" + context.classinfo.getIndent() + primitiveToString(*it);
+							if(++it == lines.end())
+								break;
+							result += " +";
+						}
+
+						context.classinfo.reduceIndent(2);
+
+						return result;
 					}
-
-					context.classinfo.reduceIndent(2);
-
-					return result;
 				}
 				return primitiveToString(value);
 			}

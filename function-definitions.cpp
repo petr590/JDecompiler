@@ -1,14 +1,16 @@
 #ifndef FUNCTION_DEFINITIONS_CPP
 #define FUNCTION_DEFINITIONS_CPP
 
-#include "instructions.cpp"
+#include "decompile.cpp"
+
 
 namespace jdecompiler {
 
 	EnumClass::EnumClass(const Version& version, const ClassType& thisType, const ClassType* superType, const ConstantPool& constPool, uint16_t modifiers,
-			const vector<const ClassType*>& interfaces, const Attributes& attributes,
-			const vector<FieldDataHolder>& fieldsData, vector<MethodDataHolder>& methodDataHolders):
-			Class(version, thisType, superType, constPool, modifiers, interfaces, attributes, fieldsData, processMethodData(methodDataHolders)) {
+			const vector<const ClassType*>& interfaces, const Attributes& attributes, const vector<FieldDataHolder>& fieldsData,
+			const vector<MethodDataHolder>& methodDataHolders, const vector<const GenericParameter*>& genericParameters):
+			Class(version, thisType, superType, constPool, modifiers, interfaces,
+					attributes, fieldsData, processMethodData(methodDataHolders), genericParameters) {
 
 		using namespace operations;
 
@@ -17,12 +19,13 @@ namespace jdecompiler {
 			const Dup1Operation* dupOperation;
 			const NewOperation* newOperation;
 
-			if(field->modifiers == (ACC_PUBLIC | ACC_STATIC | ACC_FINAL | ACC_ENUM) &&
-					field->descriptor.type == thisType && field->hasInitializer() &&
-
+			if(field->modifiers & ACC_ENUM && field->descriptor.type == thisType && field->hasInitializer() &&
 					(invokespecialOperation = dynamic_cast<const InvokespecialOperation*>(field->getInitializer())) != nullptr &&
 					(dupOperation = dynamic_cast<const Dup1Operation*>(invokespecialOperation->object)) != nullptr &&
 					(newOperation = dynamic_cast<const NewOperation*>(dupOperation->operation)) != nullptr) {
+
+				if(field->modifiers != (ACC_PUBLIC | ACC_STATIC | ACC_FINAL | ACC_ENUM))
+					throw IllegalModifiersException("Enum constant must be public static final, got " + hexWithPrefix<4>(field->modifiers));
 
 				if(invokespecialOperation->arguments.size() < 2)
 					throw DecompilationException("enum constant initializer should have at least two arguments, got " +
@@ -56,15 +59,15 @@ namespace jdecompiler {
 		for(auto i = inactiveScopes.begin(); i != inactiveScopes.end(); ) {
 			const Scope* scope = *i;
 			if(scope->start() <= index) {
-				if(scope->end() > currentScope->end())
+				/*if(scope->end() > currentScope->end())
 					throw DecompilationException((string)"Scope " + scope->toDebugString() +
-							" is out of bounds of the parent scope " + currentScope->toDebugString());
+							" is out of bounds of the parent scope " + currentScope->toDebugString());*/
 				/*if(index > scope->start()) {
 					throw IllegalStateException("Scope " + scope->toDebugString() + " is added after it starts");
 				}*/
 
 				log("Start of", scope->toDebugString());
-				currentScope->addOperation(scope, *stringifyContext);
+				currentScope->addOperation(scope, *this);
 				currentScope = scope;
 				//scope->initiate(*this);
 				inactiveScopes.erase(i);
@@ -72,12 +75,8 @@ namespace jdecompiler {
 				++i;
 		}
 	}
-}
 
 
-#include "decompile.cpp"
-
-namespace jdecompiler {
 	string ClassInfo::importsToString() const {
 		string str;
 
@@ -109,29 +108,25 @@ namespace jdecompiler {
 	}
 
 	string ClassType::toString(const ClassInfo& classinfo) const {
-		return this->isAnonymous ? fullSimpleName : (classinfo.addImport(this) ? simpleName : name);
+		return this->isAnonymous ? fullSimpleName : (classinfo.addImport(this) ? simpleName : name) + (parameters.empty() ? EMPTY_STRING :
+				'<' + join<const ReferenceType*>(parameters, [&classinfo] (const ReferenceType* type) { return type->toString(classinfo); }) + '>');
 	}
 
 	void JDecompiler::readClassFiles() const {
 		if(atLeastOneFileSpecified) {
 			for(ClassInputStream* classFile : files) {
-				if(!JDecompiler::getInstance().isFailOnError()) {
+				if(!JDecompiler::getInstance().failOnError()) {
 					try {
-						const Class* clazz = Class::readClass(*classFile);
-						classes[clazz->thisType.getEncodedName()] = clazz;
+						Class::readClass(*classFile); /* Adding a class to JDecompiler::classes takes place in the class constructor */
 					} catch(const EOFException& ex) {
 						error("unexpected end of file while reading ", classFile->fileName);
 					} catch(const IOException& ex) {
-						error(typenameof(ex), ": ", ex.what());
+						error(ex.toString());
 					} catch(const DecompilationException& ex) {
-						error(typenameof(ex), ": ", ex.what());
-					} catch(const exception& ex) {
-						error(typenameof(ex), ": ", ex.what());
-						throw;
+						error(ex.toString());
 					}
 				} else {
-					const Class* clazz = Class::readClass(*classFile);
-					classes[clazz->thisType.getEncodedName()] = clazz;
+					Class::readClass(*classFile);
 				}
 			}
 		} else {
@@ -140,7 +135,6 @@ namespace jdecompiler {
 	}
 
 	void StringifyContext::enterScope(const Scope* scope) const {
-		//assert(scope->parentScope == currentScope);
 		currentScope = scope;
 	}
 
@@ -149,13 +143,6 @@ namespace jdecompiler {
 			throw AssertionError("While stringify method " + descriptor.toString() + ": scope != currentScope: scope = " + scope->toDebugString() + "; currentScope = " + currentScope->toDebugString());
 		}*/
 		currentScope = scope->parentScope;
-	}
-
-	const StringifyContext* ClassInfo::getFieldStringifyContext() const {
-		if(fieldStringifyContext == nullptr)
-			fieldStringifyContext = new StringifyContext(this->getEmptyDisassemblerContext(), *this,
-					new MethodScope(0, 0, 0), ACC_STATIC, *new MethodDescriptor(thisType, "<init>", VOID), Attributes::getEmptyInstance());
-		return fieldStringifyContext;
 	}
 
 	const DisassemblerContext& ClassInfo::getEmptyDisassemblerContext() const {

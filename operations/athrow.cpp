@@ -4,14 +4,13 @@
 namespace jdecompiler::operations {
 
 	struct AThrowOperation: VoidOperation {
-		protected: const Operation* const exceptionOperation;
+		const Operation* const exception;
 
-		public:
-			AThrowOperation(const DecompilationContext& context): exceptionOperation(context.stack.pop()) {}
+		AThrowOperation(const DecompilationContext& context): exception(context.stack.popAs(THROWABLE)) {}
 
-			virtual string toString(const StringifyContext& context) const override {
-				return "throw " + exceptionOperation->toString(context);
-			}
+		virtual string toString(const StringifyContext& context) const override {
+			return "throw " + exception->toString(context);
+		}
 	};
 }
 

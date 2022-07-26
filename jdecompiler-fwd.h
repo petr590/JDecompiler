@@ -2,20 +2,32 @@
 #define JDECOMPILER_H
 
 #ifdef NO_STATIC_ASSERT
-#define static_assert(...)
+	#define static_assert(...)
+#endif
+
+#ifndef NO_RESTRICT
+	#if defined(__clang__)
+		#define restrict __restrict__
+	#elif defined(__GNUC__) || defined(_MSC_VER)
+		#define restrict __restrict
+	#else
+		#define restrict
+	#endif
+#else
+	#define restrict
 #endif
 
 #include <stdint.h>
 #include <string>
 #include <vector>
-#include <map>
 #include <set>
+#include <map>
 #include <unordered_set>
+#include <unordered_map>
 #include <tuple>
 #include <iostream>
-#include "util/binary-input-stream.cpp"
 
-#define inline INLINE
+namespace util {}
 
 namespace jdecompiler {
 
@@ -26,12 +38,15 @@ namespace jdecompiler {
 
 	using std::string;
 	using std::vector;
-	using std::map;
 	using std::set;
+	using std::map;
 	template<typename T>
 	using uset = std::unordered_set<T>;
+	template<typename K, typename V>
+	using umap = std::unordered_map<K, V>;
 
 	using std::tuple;
+	using std::pair;
 	using std::get;
 	using std::index_sequence;
 	using std::index_sequence_for;
@@ -53,22 +68,10 @@ namespace jdecompiler {
 	using std::find_if;
 	using std::memcpy;
 
-	using std::is_same;
 	using std::is_base_of;
 	using std::is_arithmetic;
 	using std::is_integral;
 	using std::is_floating_point;
-	using std::is_fundamental;
-	using std::is_pointer;
-	using std::is_const;
-	using std::is_volatile;
-	using std::is_signed;
-	using std::is_unsigned;
-
-	using std::remove_pointer_t;
-	using std::remove_const_t;
-	using std::remove_volatile_t;
-	using std::remove_cv_t;
 	using std::make_unsigned_t;
 
 	using std::initializer_list;
@@ -81,9 +84,9 @@ namespace jdecompiler {
 	using namespace util;
 
 
-	static const uint32_t CLASS_SIGNATURE = 0xCAFEBABE;
+	static inline const uint32_t CLASS_SIGNATURE = 0xCAFEBABE;
 
-	static const uint32_t
+	static inline const uint32_t
 			ACC_VISIBLE      = 0x0000, // class, field, method
 			ACC_PUBLIC       = 0x0001, // class, field, method
 			ACC_PRIVATE      = 0x0002, // nested class, field, method
@@ -102,18 +105,19 @@ namespace jdecompiler {
 			ACC_STRICT       = 0x0800, // class, non-abstract method
 			ACC_SYNTHETIC    = 0x1000, // class, field, method
 			ACC_ANNOTATION   = 0x2000, // class
-			ACC_ENUM         = 0x4000, // class
+			ACC_ENUM         = 0x4000, // class, field
 			ACC_ACCESS_FLAGS = ACC_VISIBLE | ACC_PUBLIC | ACC_PRIVATE | ACC_PROTECTED;
 
 
-	// jdecompiler-util
+	// util.cpp
 
 	struct FormatString;
 
-	template<typename T>
-	struct const_ptr;
+	// Maybe in far future...
+	/*template<typename>
+	struct const_ptr;*/
 
-	// jdecompiler-const-pool
+	// const-pool.cpp
 
 	struct ConstantPool;
 
@@ -132,7 +136,7 @@ namespace jdecompiler {
 	struct InvokeDynamicConstant;
 
 
-	// jdecompiler-attributes
+	// attributes.cpp
 
 	struct Attributes;
 
@@ -145,7 +149,7 @@ namespace jdecompiler {
 	struct AnnotationsAttribute;
 
 
-	// jdecompiler-main
+	// code.cpp
 
 	struct Stringified;
 
@@ -156,11 +160,10 @@ namespace jdecompiler {
 	struct Instruction;
 
 	struct Scope;
-
 	struct MethodScope;
-
 	struct StaticInitializerScope;
 
+	// classinfo.cpp
 	struct ClassInfo;
 
 
@@ -173,40 +176,44 @@ namespace jdecompiler {
 	struct BasicType;
 	struct SpecialType;
 
-
 	struct PrimitiveType;
 
 	struct ReferenceType;
-
 	struct ClassType;
-
 	struct ArrayType;
+	struct ParameterType;
 
-
-	struct AmbigousType;
-
+	struct VariableCapacityIntegralType;
 	struct AnyType;
-
 	struct AnyObjectType;
 
-	struct ExcludingType;
+	struct GenericParameter;
 
 
-	static const BasicType* parseType(const char* encodedName);
+	static const BasicType* parseType(const char*&);
+	static const BasicType* parseType(const char*&&);
+	static const BasicType* parseType(const string&);
 
-	static const BasicType* parseType(const string& encodedName);
+	static vector<const Type*> parseMethodArguments(const char*&);
 
-	static const BasicType* parseReturnType(const char* encodedName);
+	static const BasicType* parseReturnType(const char*);
+	static const BasicType* parseReturnType(const string&);
 
-	static const ReferenceType* parseReferenceType(const string& encodedName);
+	static const ReferenceType* parseReferenceType(const char*);
+	static const ReferenceType* parseReferenceType(const string&);
 
-	static vector<const ReferenceType*> parseParameters(const char* str);
+	static const ReferenceType* parseParameter(const char*&);
+
+	static vector<const ReferenceType*> parseParameters(const char*&);
+	static vector<const ReferenceType*> parseParameters(const char*&&);
+
+	static vector<const GenericParameter*> parseGeneric(const char*&);
 
 	// field.cpp
 
 	struct FieldDescriptor;
-	struct Field;
 	struct FieldInfo;
+	struct Field;
 
 	struct ConstantDecompilationContext {
 		const ClassInfo& classinfo;
@@ -221,9 +228,12 @@ namespace jdecompiler {
 	struct MethodDescriptor;
 	struct Method;
 
+	// class.spp
 	struct Class;
+	struct EnumClass;
 
 
+	// contexts
 	struct DisassemblerContext;
 
 	struct DecompilationContext;
@@ -236,25 +246,25 @@ namespace jdecompiler {
 	enum class Priority;
 
 	namespace operations {
-		template<class T> struct ReturnableOperation; // ReturnableOperation is an operation which returns specified type
+		template<class> struct ReturnableOperation; // ReturnableOperation is an operation which returns specified type
 		struct IntOperation;
 		struct AnyIntOperation;
 		struct BooleanOperation;
 		struct VoidOperation;
 		struct TransientReturnableOperation;
 
-		template<TypeSize size> struct TypeSizeTemplatedOperation;
-		template<TypeSize size> struct AbstractDupOperation;
-		template<TypeSize size> struct DupOperation;
+		template<TypeSize> struct TypeSizeTemplatedOperation;
+		template<TypeSize> struct AbstractDupOperation;
+		template<TypeSize> struct DupOperation;
 		struct DupX1Operation;
 		struct DupX2Operation;
 		struct Dup2X1Operation;
 		struct Dup2X2Operation;
 
-		template<typename T> struct ConstOperation;
+		template<typename> struct ConstOperation;
 		struct IConstOperation;
 
-		template<TypeSize size, class CT, typename RT>
+		template<TypeSize, class CT, typename RT>
 		struct LdcOperation;
 
 		struct LoadOperation;
@@ -281,12 +291,12 @@ namespace jdecompiler {
 		struct DStoreOperation;
 		struct AStoreOperation;
 
-		template<TypeSize size>
+		template<TypeSize>
 		struct PopOperation;
 
 		struct OperatorOperation;
-		template<char32_t operation, Priority priority> struct BinaryOperatorOperationImpl;
-		template<char32_t operation, Priority priority> struct UnaryOperatorOperation;
+		template<char32_t, Priority> struct BinaryOperatorOperationImpl;
+		template<char32_t, Priority> struct UnaryOperatorOperation;
 
 		struct IIncOperation;
 
@@ -364,6 +374,7 @@ namespace jdecompiler {
 
 		struct IfScope;
 		struct ContinueOperation;
+		struct InfiniteLoopScope;
 		struct EmptyInfiniteLoopScope;
 	}
 
@@ -376,14 +387,14 @@ namespace jdecompiler {
 		struct VoidInstructionAndOperation;
 
 		struct AConstNull;
-		template<typename T> struct NumberConstInstruction;
+		template<typename> struct NumberConstInstruction;
 		struct IConstInstruction;
 		struct LConstInstruction;
 		struct FConstInstruction;
 		struct DConstInstruction;
 
-		template<typename T> struct IPushInstruction;
-		template<TypeSize size> struct LdcInstruction;
+		template<typename> struct IPushInstruction;
+		template<TypeSize> struct LdcInstruction;
 
 		struct LoadInstruction;
 		struct ILoadInstruction;
@@ -417,22 +428,22 @@ namespace jdecompiler {
 		struct CAStoreInstruction;
 		struct SAStoreInstruction;
 
-		template<TypeSize size>
+		template<TypeSize>
 		struct PopInstruction;
-		template<TypeSize size>
+		template<TypeSize>
 		struct DupInstruction;
 		struct DupX1Instruction;
 		struct DupX2Instruction;
 		struct Dup2X1Instruction;
 		struct Dup2X2Instruction;
 		struct SwapInstruction;
-		template<char32_t operation, Priority priority, bool canUseBoolean>
+		template<char32_t, Priority, bool>
 		struct OperatorInstruction;
-		template<char32_t operation, Priority priority, bool canUseBoolean>
+		template<char32_t, Priority, bool>
 		struct BinaryOperatorInstruction;
-		template<char32_t operation, Priority priority>
+		template<char32_t, Priority>
 		struct ShiftOperatorInstruction;
-		template<char32_t operation, Priority priority>
+		template<char32_t, Priority>
 		struct UnaryOperatorInstruction;
 		struct IIncInstruction;
 		struct CastInstruction;
@@ -461,7 +472,7 @@ namespace jdecompiler {
 		struct IfNonNullBlock;
 		struct GotoInstruction;
 		struct SwitchInstruction;
-		template<class ReturnOperation>
+		template<class>
 		struct ReturnInstruction;
 		struct VReturn;
 		struct GetStaticFieldInstruction;
@@ -488,6 +499,7 @@ namespace jdecompiler {
 	struct Block;
 	struct RootBlock;
 
+	static void finish();
 }
 
 #undef inline

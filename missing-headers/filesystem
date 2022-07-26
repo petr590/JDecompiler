@@ -2,7 +2,7 @@ namespace std {
 	namespace filesystem {
 		namespace path {
 			static const char preferred_separator =
-			#ifdef __WIN32
+			#if defined(__WIN32) || defined(_WIN32)
 				'\\';
 			#else
 				'/';

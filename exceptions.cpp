@@ -59,15 +59,24 @@ namespace jdecompiler {
 
 
 	struct InvalidTypeNameException: DisassemblingException {
-		InvalidTypeNameException(const string& message): DisassemblingException(message) {}
+		InvalidTypeNameException(const string& encodedName): DisassemblingException('\'' + encodedName + '\'') {}
+		InvalidTypeNameException(const string& encodedName, size_t pos): DisassemblingException('\'' + encodedName + "' (at pos " + to_string(pos) + ')') {}
 	};
 
 	struct InvalidClassNameException: InvalidTypeNameException {
-		InvalidClassNameException(const string& message): InvalidTypeNameException(message) {}
+		InvalidClassNameException(const string& encodedName): InvalidTypeNameException(encodedName) {}
+		InvalidClassNameException(const string& encodedName, size_t pos): InvalidTypeNameException(encodedName, pos) {}
 	};
 
 	struct InvalidSignatureException: InvalidTypeNameException {
-		InvalidSignatureException(const string& message): InvalidTypeNameException(message) {}
+		InvalidSignatureException(const string& encodedName): InvalidTypeNameException(encodedName) {}
+		InvalidSignatureException(const string& encodedName, size_t pos): InvalidTypeNameException(encodedName, pos) {}
+	};
+
+
+	struct IncopatibleSignatureTypesException: DisassemblingException {
+		IncopatibleSignatureTypesException(): DisassemblingException() {}
+		IncopatibleSignatureTypesException(const string& message): DisassemblingException(message) {}
 	};
 
 

@@ -117,22 +117,22 @@ namespace jdecompiler {
 			case 0x7E: case 0x7F: return new AndOperatorInstruction(current() & 1);
 			case 0x80: case 0x81: return new OrOperatorInstruction(current() & 1);
 			case 0x82: case 0x83: return new XorOperatorInstruction(current() & 1);
-			case 0x84: return new IIncInstruction(nextUByte(), nextByte());
-			case 0x85: return new CastInstruction(INT, LONG, false); // int -> long
-			case 0x86: return new CastInstruction(INT, FLOAT, false); // int -> float
-			case 0x87: return new CastInstruction(INT, DOUBLE, false); // int -> double
-			case 0x88: return new CastInstruction(LONG, INT, true); // long -> int
-			case 0x89: return new CastInstruction(LONG, FLOAT, false); // long -> float
-			case 0x8A: return new CastInstruction(LONG, DOUBLE, false); // long -> double
-			case 0x8B: return new CastInstruction(FLOAT, INT, true); // float -> int
-			case 0x8C: return new CastInstruction(FLOAT, LONG, true); // float -> long
-			case 0x8D: return new CastInstruction(FLOAT, DOUBLE, false); // float -> double
-			case 0x8E: return new CastInstruction(DOUBLE, INT, true); // double -> int
-			case 0x8F: return new CastInstruction(DOUBLE, LONG, true); // double -> long
-			case 0x90: return new CastInstruction(DOUBLE, FLOAT, true); // double -> float
-			case 0x91: return new CastInstruction(INT, BYTE, true); // int -> byte
-			case 0x92: return new CastInstruction(INT, CHAR, true); // int -> char
-			case 0x93: return new CastInstruction(INT, SHORT, true); // int -> short
+			case 0x84: return new IIncInstruction(nextUByte(), nextByte()); // UB (depends on the compiler)
+			case 0x85: return new CastInstruction(INT,    LONG,   false); // int -> long
+			case 0x86: return new CastInstruction(INT,    FLOAT,  false); // int -> float
+			case 0x87: return new CastInstruction(INT,    DOUBLE, false); // int -> double
+			case 0x88: return new CastInstruction(LONG,   INT,    true);  // long -> int
+			case 0x89: return new CastInstruction(LONG,   FLOAT,  false); // long -> float
+			case 0x8A: return new CastInstruction(LONG,   DOUBLE, false); // long -> double
+			case 0x8B: return new CastInstruction(FLOAT,  INT,    true);  // float -> int
+			case 0x8C: return new CastInstruction(FLOAT,  LONG,   true);  // float -> long
+			case 0x8D: return new CastInstruction(FLOAT,  DOUBLE, false); // float -> double
+			case 0x8E: return new CastInstruction(DOUBLE, INT,    true);  // double -> int
+			case 0x8F: return new CastInstruction(DOUBLE, LONG,   true);  // double -> long
+			case 0x90: return new CastInstruction(DOUBLE, FLOAT,  true);  // double -> float
+			case 0x91: return new CastInstruction(INT,    BYTE,   true);  // int -> byte
+			case 0x92: return new CastInstruction(INT,    CHAR,   true);  // int -> char
+			case 0x93: return new CastInstruction(INT,    SHORT,  true);  // int -> short
 			case 0x94:            return new LCmpInstruction();
 			case 0x95: case 0x96: return new FCmpInstruction();
 			case 0x97: case 0x98: return new DCmpInstruction();
@@ -151,8 +151,8 @@ namespace jdecompiler {
 			case 0xA5: return new IfAEqInstruction(nextShort());
 			case 0xA6: return new IfANotEqInstruction(nextShort());
 			case 0xA7: return new GotoInstruction(nextShort());
-			/*case 0xA8: i+=2; return jsr;
-			case 0xA9: i++ ; return ret;*/
+			/*case 0xA8: return jsr(readShort());
+			case 0xA9: return ret(readUByte());*/
 			case 0xAA: {
 				skip(3 - (pos & 0x3)); // alignment by 4 bytes
 				offset_t defaultOffset = nextInt();
@@ -189,8 +189,8 @@ namespace jdecompiler {
 			case 0xB6: return new InvokevirtualInstruction(nextUShort(), constPool);
 			case 0xB7: return new InvokespecialInstruction(nextUShort(), constPool);
 			case 0xB8: return new InvokestaticInstruction(nextUShort(), constPool);
-			case 0xB9: return new InvokeinterfaceInstruction(nextUShort(), nextUByte(), nextUByte(), *this);
-			case 0xBA: return new InvokedynamicInstruction(nextUShort(), nextUShort(), *this);
+			case 0xB9: return new InvokeinterfaceInstruction(nextUShort(), nextUByte(), nextUByte(), *this); // UB (depends on the compiler)
+			case 0xBA: return new InvokedynamicInstruction(nextUShort(), nextUShort(), *this); // UB (depends on the compiler)
 			case 0xBB: return new NewInstruction(nextUShort());
 			case 0xBC: return new NewArrayInstruction(nextUByte());
 			case 0xBD: return new ANewArrayInstruction(nextUShort());
@@ -211,15 +211,15 @@ namespace jdecompiler {
 				case 0x38: return new FStoreInstruction(nextUShort());
 				case 0x39: return new DStoreInstruction(nextUShort());
 				case 0x3A: return new AStoreInstruction(nextUShort());
-				case 0x84: return new IIncInstruction(nextUShort(), nextShort());
-				//case 0xA9: i+=2 ; return ret;
+				case 0x84: return new IIncInstruction(nextUShort(), nextShort()); // UB (depends on the compiler)
+				//case 0xA9: return ret(nextUShort());
 				default: throw IllegalOpcodeError("Illegal wide opcode " + hexWithPrefix(current()));
 			}
-			case 0xC5: return new MultiANewArrayInstruction(nextUShort(), nextUByte());
+			case 0xC5: return new MultiANewArrayInstruction(nextUShort(), nextUByte()); // UB (depends on the compiler)
 			case 0xC6: return new IfNullInstruction(nextShort());
 			case 0xC7: return new IfNonNullInstruction(nextShort());
 			case 0xC8: return new GotoInstruction(nextInt());
-			/*case 0xC9: i+=4; return jsr_w;
+			/*case 0xC9: return jsr_w(nextInt());
 			case 0xCA: return breakpoint;
 			case 0xFE: return impdep1;
 			case 0xFF: return impdep2;*/
@@ -237,42 +237,27 @@ namespace jdecompiler {
 		const bool hasCodeAttribute = codeAttribute != nullptr;
 		const bool isNonStatic = !(modifiers & ACC_STATIC);
 
-		const uint32_t methodScopeEndPos = hasCodeAttribute ? codeAttribute->codeLength : 0;
+		const uint32_t codeLength = hasCodeAttribute ? codeAttribute->codeLength : 0;
 		uint16_t localsCount;
 
 		if(hasCodeAttribute) {
 			localsCount = codeAttribute->maxLocals;
 		} else {
-			localsCount = isNonStatic ? 1 : 0;
+			localsCount = isNonStatic;
 
 			for(const Type* arg : descriptor.arguments) {
-				localsCount += arg->getSize() != TypeSize::EIGHT_BYTES ? 1 : 2;
+				localsCount += static_cast<unsigned>(arg->getSize());
 			}
 		}
 
 		MethodScope* methodScope = descriptor.isStaticInitializer() ?
-				new StaticInitializerScope(0, methodScopeEndPos, localsCount) : new MethodScope(0, methodScopeEndPos, localsCount);
+				new StaticInitializerScope(0, codeLength, localsCount) : new MethodScope(0, codeLength, localsCount);
 
-		if(isNonStatic)
-			methodScope->addVariable(new NamedVariable(&classinfo.thisType, true, "this"));
-
-		// -------------------------------------------------- Add arguments --------------------------------------------------
-		{
-			const uint32_t argumentsCount = descriptor.arguments.size();
-
-			static const ArrayType STRING_ARRAY(STRING);
-
-			if(descriptor.name == "main" && descriptor.returnType == VOID && modifiers == (ACC_PUBLIC | ACC_STATIC) &&
-					argumentsCount == 1 && *descriptor.arguments[0] == STRING_ARRAY) { // public static void main(String[] args)
-				methodScope->addVariable(new NamedVariable(&STRING_ARRAY, true, "args"));
-			} else {
-				for(uint32_t i = 0; i < argumentsCount; i++)
-					methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i], true));
-			}
-		}
 
 		if(!hasCodeAttribute)
 			return *new StringifyContext(classinfo.getEmptyDisassemblerContext(), classinfo, methodScope, modifiers, descriptor, attributes);
+
+		// ------------------------------------------------- Create contexts -------------------------------------------------
 
 		DisassemblerContext& disassemblerContext = *new DisassemblerContext(classinfo.constPool, codeAttribute->codeLength, codeAttribute->code);
 
@@ -280,9 +265,55 @@ namespace jdecompiler {
 				*new DecompilationContext(disassemblerContext, classinfo, methodScope, modifiers, descriptor, attributes, codeAttribute->maxLocals);
 
 		StringifyContext& stringifyContext = *new StringifyContext(decompilationContext);
-		decompilationContext.stringifyContext = &stringifyContext;
 
-		// -------------------------------------------------- Add try-catch blocks --------------------------------------------------
+		// -------------------------------------------------- Add arguments --------------------------------------------------
+		{
+			const uint32_t argumentsCount = descriptor.arguments.size();
+
+			if(hasCodeAttribute && codeAttribute->attributes.has<LocalVariableTableAttribute>()) {
+				const LocalVariableTableAttribute* localVariableTableAttr = codeAttribute->attributes.get<LocalVariableTableAttribute>();
+
+				using LocalVariable = LocalVariableTableAttribute::LocalVariable;
+
+				for(size_t i = 0, size = localVariableTableAttr->localVariableTable.size(); i < size; i++) {
+					const vector<const LocalVariable*>& localVars = localVariableTableAttr->localVariableTable[i];
+
+					const bool declared = i < (argumentsCount + isNonStatic);
+
+					for(const LocalVariable* localVar : localVars) {
+
+						if(localVar->startPos == 0 && localVar->endPos == disassemblerContext.length) {
+							methodScope->addVariable(new NamedVariable(&localVar->type, declared, localVar->name));
+							goto ContinueOuter;
+						}
+					}
+					// If no variable found, add empty variable
+					methodScope->addVariable(new UnnamedVariable(i < argumentsCount ? descriptor.arguments[i] : AnyType::getInstance(), declared));
+
+					ContinueOuter:;
+				}
+
+			} else {
+
+				static const ArrayType STRING_ARRAY(STRING);
+
+				if(descriptor.name == "main" && descriptor.returnType == VOID &&
+						(modifiers & ACC_STATIC) && (modifiers & ACC_ACCESS_FLAGS) == ACC_PUBLIC &&
+						argumentsCount == 1 && *descriptor.arguments[0] == STRING_ARRAY) { // public static void main(String[] args)
+					methodScope->addVariable(new NamedVariable(&STRING_ARRAY, true, "args"));
+
+				} else {
+
+					if(isNonStatic)
+						methodScope->addVariable(new NamedVariable(&classinfo.thisType, true, "this"));
+
+					for(uint32_t i = 0; i < argumentsCount; i++)
+						methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i], true));
+				}
+			}
+		}
+
+		// ---------------------------------------------- Add try-catch blocks -----------------------------------------------
 		// TODO
 		/*vector<TryBlock*> tryBlocks;
 
@@ -319,66 +350,91 @@ namespace jdecompiler {
 		}*/
 
 
+		// ------------------------------------------------- Decompile code --------------------------------------------------
+
 		const vector<Instruction*>& instructions = disassemblerContext.getInstructions();
 		vector<const Block*> blocks = disassemblerContext.getBlocks();
 
-		for(uint32_t i = 0, exprIndex = 0, instructionsSize = instructions.size(); i < instructionsSize; i++) {
+		function<void()> decompile = [&] () {
+			for(uint32_t i = 0, exprIndex = 0, instructionsSize = instructions.size(); i < instructionsSize; i++) {
 
-			decompilationContext.index = i;
-			decompilationContext.pos = disassemblerContext.indexToPos(i);
+				decompilationContext.index = i;
+				decompilationContext.pos = disassemblerContext.indexToPos(i);
 
-			decompilationContext.exprIndexTable[i] = exprIndex;
+				decompilationContext.exprIndexTable[i] = exprIndex;
 
-			if(decompilationContext.stack.empty())
-				decompilationContext.exprStartIndex = i;
+				if(decompilationContext.stack.empty())
+					decompilationContext.exprStartIndex = i;
 
-			/*if(instructions[i] != nullptr && decompilationContext.addOperation(instructions[i]->toOperation(decompilationContext))) {
-				exprIndex++;
-			}*/
+				/*if(instructions[i] != nullptr && decompilationContext.addOperation(instructions[i]->toOperation(decompilationContext))) {
+					exprIndex++;
+				}*/
 
-			if(instructions[i] != nullptr) {
-				const Operation* operation = instructions[i]->toOperation(decompilationContext);
+				if(instructions[i] != nullptr) {
 
-				if(operation != nullptr) {
+					const Operation* operation = instructions[i]->toOperation(decompilationContext);
 
-					if(operation->getReturnType() != VOID) {
-						decompilationContext.stack.push(operation);
-					} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == VReturn::getInstance())) {
-						decompilationContext.getCurrentScope()->addOperation(operation, stringifyContext);
-						exprIndex++;
-					}
-
-					if(instanceof<const Scope*>(operation))
-						decompilationContext.addScope(static_cast<const Scope*>(operation));
-				}
-			}
-
-			for(auto iter = blocks.begin(); iter != blocks.end(); ) {
-				const Block* block = *iter;
-
-				assert(!(block->start() < i));
-
-				if(block->start() == i) { // Do not increment iterator when erase element
-
-					const Operation* operation = block->toOperation(decompilationContext);
 					if(operation != nullptr) {
+
 						if(operation->getReturnType() != VOID) {
 							decompilationContext.stack.push(operation);
 						} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == VReturn::getInstance())) {
-							decompilationContext.getCurrentScope()->addOperation(operation, stringifyContext);
+							decompilationContext.getCurrentScope()->addOperation(operation, decompilationContext);
 							exprIndex++;
 						}
 
 						if(instanceof<const Scope*>(operation))
 							decompilationContext.addScope(static_cast<const Scope*>(operation));
 					}
-					blocks.erase(iter);
-				} else {
-					++iter;
 				}
-			}
 
-			decompilationContext.updateScopes();
+				decompilationContext.getCurrentScope()->update(decompilationContext);
+
+				for(auto iter = blocks.begin(); iter != blocks.end(); ) {
+					const Block* block = *iter;
+
+					assert(!(block->start() < i));
+
+					if(block->start() == i) { // Do not increment iterator when erase element
+
+						const Operation* operation = block->toOperation(decompilationContext);
+						if(operation != nullptr) {
+							if(operation->getReturnType() != VOID) {
+								decompilationContext.stack.push(operation);
+							} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == VReturn::getInstance())) {
+								decompilationContext.getCurrentScope()->addOperation(operation, decompilationContext);
+								exprIndex++;
+							}
+
+							if(instanceof<const Scope*>(operation))
+								decompilationContext.addScope(static_cast<const Scope*>(operation));
+						}
+
+						blocks.erase(iter);
+
+					} else {
+						++iter;
+					}
+				}
+
+				if(instructions[i] != nullptr && instanceof<const IfInstruction*>(instructions[i])) // Hack
+					decompilationContext.exprStartIndex = i + 1;
+
+				decompilationContext.updateScopes();
+			}
+		};
+
+
+		if(!JDecompiler::getInstance().failOnError()) {
+			try {
+				decompile();
+			} catch(const DecompilationException& ex) {
+				cerr << "Exception while decompiling method " << descriptor.toString() << ": " << ex.toString() << endl;
+			} catch(const EmptyStackException& ex) {
+				cerr << "Exception while decompiling method " << descriptor.toString() << ": " << ex.toString() << endl;
+			}
+		} else {
+			decompile();
 		}
 
 		return stringifyContext;

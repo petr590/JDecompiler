@@ -1,7 +1,6 @@
 #ifndef JDECOMPILER_CONST_POOL_CPP
 #define JDECOMPILER_CONST_POOL_CPP
 
-#include "util.cpp"
 #include "jdecompiler-instance.cpp"
 #include "primitive-to-string.cpp"
 
@@ -24,7 +23,7 @@ namespace jdecompiler {
 	};
 
 	struct InterConstant {
-		virtual const Constant* createConstant(const ConstantPool& constPool) const = 0;
+		virtual const Constant* createConstant(const ConstantPool&) const = 0;
 	};
 
 
@@ -153,7 +152,7 @@ namespace jdecompiler {
 		const T value;
 		NumberConstant(const T value): value(value) {}
 
-		virtual string toString(const ClassInfo& classinfo) const override {
+		virtual string toString(const ClassInfo&) const override {
 			return primitiveToString(value);
 		}
 	};
@@ -345,7 +344,7 @@ namespace jdecompiler {
 
 	template<typename Const, typename... Args>
 	struct InterConstantImpl: InterConstant {
-		static_assert(is_base_of<Constant, Const>(), "Const must be inherited from Constant");
+		static_assert(is_base_of<Constant, Const>(), "Type Const must be subtype of type Constant");
 
 		const tuple<Args...> args;
 

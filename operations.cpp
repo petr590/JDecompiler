@@ -1,13 +1,19 @@
 #ifndef JDECOMPILER_OPERATIONS_CPP
 #define JDECOMPILER_OPERATIONS_CPP
 
+#if 0
+#include "class.h"
+#include "enum-class.h"
+#else
 #include "class.cpp"
+#include "enum-class.cpp"
+#endif
 
 namespace jdecompiler::operations {
 
 	template<class T = Type>
 	struct ReturnableOperation: Operation { // ReturnableOperation is an operation which returns specified type
-		static_assert(is_base_of<Type, T>::value, "template class T of struct ReturnableOperation is not subclass of class Type");
+		static_assert(is_base_of<Type, T>(), "Class T of struct ReturnableOperation must be subclass of class Type");
 
 		protected:
 			const T* const returnType;
@@ -19,25 +25,25 @@ namespace jdecompiler::operations {
 	};
 
 	struct IntOperation: Operation {
-		inline IntOperation() {}
+		constexpr IntOperation() noexcept {}
 
 		virtual const Type* getReturnType() const override { return INT; }
 	};
 
 	struct AnyIntOperation: Operation {
-		inline AnyIntOperation() {}
+		constexpr AnyIntOperation() noexcept {}
 
 		virtual const Type* getReturnType() const override { return ANY_INT; }
 	};
 
 	struct BooleanOperation: Operation {
-		inline BooleanOperation() {}
+		constexpr BooleanOperation() noexcept {}
 
 		virtual const Type* getReturnType() const override { return BOOLEAN; }
 	};
 
 	struct VoidOperation: Operation {
-		VoidOperation() {}
+		constexpr VoidOperation() noexcept {}
 
 		virtual const Type* getReturnType() const override { return VOID; }
 	};
@@ -95,21 +101,22 @@ namespace jdecompiler::operations {
 #include "operations/array-store-operations.cpp"
 #include "operations/invoke-operations.cpp"
 
+#include "operations/declare-variable.cpp"
 #include "operations/store-operations.cpp"
 #include "operations/try-catch-scopes.cpp"
 #include "operations/field-operations.cpp"
-
-#include "operations/conditions.cpp"
 
 #include "operations/array-length.cpp"
 #include "operations/athrow.cpp"
 #include "operations/return-operations.cpp"
 
+#include "operations/condition-scopes.cpp"
+
 #include "operations/const-operation-definitions.cpp"
 
 namespace jdecompiler {
 
-	void StaticInitializerScope::addOperation(const Operation* operation, const StringifyContext& context) const {
+	void StaticInitializerScope::addOperation(const Operation* operation, const DecompilationContext& context) const {
 		using namespace operations;
 
 		if(!fieldsInitialized) {
@@ -121,7 +128,6 @@ namespace jdecompiler {
 				if(field != nullptr) {
 					if(field->initializer == nullptr) {
 						field->initializer = putOperation->value;
-						field->context = &context;
 					} else {
 						code.push_back(operation);
 					}

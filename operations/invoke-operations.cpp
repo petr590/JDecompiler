@@ -17,7 +17,22 @@ namespace jdecompiler::operations {
 				arguments.reserve(size);
 
 				for(uint32_t i = size; i > 0; ) {
-					arguments.push_back(context.stack.popAs(descriptor.arguments[--i]));
+					const Type* requiredType = descriptor.arguments[--i];
+
+					const Operation* argument = context.stack.popAs(requiredType);
+					const Type* argType = argument->getReturnType();
+
+					if(argType != requiredType && requiredType->isIntegral()) {
+						const IntegralType* integralRequiredType = safe_cast<const IntegralType*>(requiredType);
+
+						if((argType->isIntegral() && safe_cast<const IntegralType*>(argType)->getCapacity() < integralRequiredType->getCapacity()) ||
+							(argType == CHAR && integralRequiredType->getCapacity() > VariableCapacityIntegralType::CHAR_CAPACITY)) {
+
+							argument = new CastOperation(argument, requiredType, false);
+						}
+					}
+
+					arguments.push_back(argument);
 				}
 
 				return arguments;
@@ -46,7 +61,7 @@ namespace jdecompiler::operations {
 								argument->allowImplicitCast();
 						};
 
-						if(overloadedMethods.size() == 0) {
+						if(overloadedMethods.empty()) {
 							allowAllImplicitCast();
 
 						} else {
@@ -85,7 +100,9 @@ namespace jdecompiler::operations {
 										}
 									}
 
-									if(resolvedMethods.size() == 0 || !has_value(resolvedMethods, baseStatus)) {
+									if(resolvedMethods.empty() || all_of(resolvedMethods.begin(), resolvedMethods.end(),
+											[baseStatus] (const auto& it) { return it.second > baseStatus; })) {
+
 										allowAllImplicitCast();
 									}
 								}
@@ -126,7 +143,7 @@ namespace jdecompiler::operations {
 
 		public:
 			virtual string toString(const StringifyContext& context) const override {
-				return (object->isReferenceToThis(context.classinfo) ?
+				return (object->isReferenceToThis(context) && JDecompiler::getInstance().omitReferenceToThis() ?
 						EMPTY_STRING : toStringPriority(object, context, Associativity::LEFT) + '.') + descriptor.name + argumentsToString(context);
 			}
 	};
@@ -137,7 +154,7 @@ namespace jdecompiler::operations {
 				InvokeNonStaticOperation(context, descriptor) {
 
 			if(descriptor.clazz == *STRING && (descriptor.name == "indexOf" || descriptor.name == "lastIndexOf") &&
-					(typesEquals(descriptor.arguments, {INT}) || typesEquals(descriptor.arguments, {INT, INT}))) {
+					(equal_values(descriptor.arguments, {INT}) || equal_values(descriptor.arguments, {INT, INT}))) {
 
 				const Operation* charOperation = arguments.back();
 
@@ -165,7 +182,7 @@ namespace jdecompiler::operations {
 			}
 
 			inline bool getIsSuperConstructor(const DecompilationContext& context) const {
-				return (object->isReferenceToThis(context.classinfo) && // check that we invoking this (or super) constructor
+				return (object->isReferenceToThis(context) && // check that we invoking this (or super) constructor
 						context.classinfo.superType != nullptr && descriptor.clazz == *context.classinfo.superType);
 			}
 
@@ -246,7 +263,7 @@ namespace jdecompiler::operations {
 					return (isSuperConstructor ? "super" : toStringPriority(object, context, Associativity::LEFT)) + argumentsToString(context);
 				}
 
-				if(object->isReferenceToThis(context.classinfo) && context.classinfo.superType != nullptr &&
+				if(object->isReferenceToThis(context) && context.classinfo.superType != nullptr &&
 						descriptor.clazz == *context.classinfo.superType)
 					return "super." + descriptor.name + argumentsToString(context);
 

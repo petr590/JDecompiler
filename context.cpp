@@ -7,7 +7,7 @@ namespace jdecompiler {
 		public:
 			pos_t pos = 0;
 
-			inline constexpr Context() noexcept {}
+			constexpr Context() noexcept {}
 
 
 		protected:

@@ -13,7 +13,7 @@ namespace jdecompiler::operations {
 			static inline const Operation* getValue(const Operation* value, const Type* type) {
 				if((type == BYTE || type == SHORT || type == CHAR) && instanceof<const CastOperation*>(value)) {
 					const CastOperation* castValue = static_cast<const CastOperation*>(value);
-					if(castValue->type == INT)
+					if(castValue->type == INT && castValue->value->getReturnType()->isPrimitive())
 						return castValue->value;
 				}
 

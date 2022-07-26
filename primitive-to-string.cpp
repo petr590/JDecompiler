@@ -5,14 +5,14 @@ namespace jdecompiler {
 
 	template<typename T>
 	static string numberConstantToString(T value) {
-		static_assert(is_integral<T>(), "type must be integral");
+		static_assert(is_integral<T>(), "Type must be integral");
 
 		if(JDecompiler::getInstance().useHexNumbersAlways()) {
 			return hexWithPrefix(value);
 		}
 
 		if(JDecompiler::getInstance().canUseHexNumbers()) {
-			if(abs(value) >= 16 && (isPowerOfTwo(value) || isPowerOfTwo(value + 1)))
+			if((value >= 16 || value <= -16) && (isPowerOfTwo(value) || isPowerOfTwo(value + 1)))
 				return hexWithPrefix(value);
 		}
 

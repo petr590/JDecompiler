@@ -1,8 +1,6 @@
 #ifndef JDECOMPILER_ATTRIBUTES_CPP
 #define JDECOMPILER_ATTRIBUTES_CPP
 
-#include "types.cpp"
-
 namespace jdecompiler {
 
 	struct Attribute {
@@ -13,6 +11,11 @@ namespace jdecompiler {
 			Attribute(const string& name, uint32_t length): name(name), length(length) {}
 
 			virtual ~Attribute() {}
+	};
+
+
+	enum class AttributesType {
+		CLASS, FIELD, METHOD, ATTRIBUTE
 	};
 
 
@@ -32,10 +35,8 @@ namespace jdecompiler {
 			template<class T>
 			const T* getExact() const {
 				const T* t = get<T>();
-				if(t != nullptr)
-					return t;
 
-				throw AttributeNotFoundException(typenameof<T>());
+				return t != nullptr ? t : throw AttributeNotFoundException(typenameof<T>());
 			}
 
 			template<class T>
@@ -43,24 +44,26 @@ namespace jdecompiler {
 				return get<T>() != nullptr;
 			}
 
-			static inline const Attribute* readAttribute(ClassInputStream&, const ConstantPool&, const string&, uint32_t);
+			static const Attribute* readAttribute(ClassInputStream&, const ConstantPool&, const string&, uint32_t, AttributesType);
 
-			Attributes(ClassInputStream& instream, const ConstantPool& constPool, uint16_t attributeCount) {
-				//log(attributeCount);
+			Attributes(ClassInputStream& instream, const ConstantPool& constPool, uint16_t attributeCount, AttributesType attributesType) {
+
 				this->reserve(attributeCount);
 
 				for(uint16_t i = 0; i < attributeCount; i++) {
 					const uint16_t addr = instream.readUShort();
-					//log(constPool.size, addr);
+
 					const string& name = constPool.getUtf8Constant(addr);
-					//log(name);
+
 					const uint32_t length = instream.readUInt();
 					const streampos pos = instream.getPos() + (streampos)length;
 
-					const Attribute* attribute = readAttribute(instream, constPool, name, length);
+					const Attribute* attribute = readAttribute(instream, constPool, name, length, attributesType);
 
-					//instream.setPosTo(pos);
-					assert(instream.getPos() == pos);
+					if(instream.getPos() != pos) {
+						throw DecompilationException("When reading the " + attribute->name +
+								" attribute, a different number of bytes was read than its length");
+					}
 
 					this->push_back(attribute);
 				}
@@ -69,11 +72,11 @@ namespace jdecompiler {
 			Attributes(const Attributes&) = delete;
 
 		private:
-			Attributes(nullptr_t) noexcept {}
+			Attributes() noexcept {}
 
 		public:
 			static const Attributes& getEmptyInstance() {
-				static Attributes EMPTY_INSTANCE(nullptr);
+				static Attributes EMPTY_INSTANCE;
 				return EMPTY_INSTANCE;
 			}
 	};
@@ -94,7 +97,9 @@ namespace jdecompiler {
 
 		ConstantValueAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
 				Attribute("ConstantValue", length), value(constPool.get<ConstValueConstant>(instream.readUShort())) {
-			if(length != 2) throw IllegalAttributeException("Length of ConstantValue attribute must be 2");
+
+			if(length != 2)
+				throw IllegalAttributeException("Length of ConstantValue attribute must be 2");
 		}
 
 		/*virtual string toString(const ClassInfo& classinfo) const override {
@@ -150,13 +155,13 @@ namespace jdecompiler {
 				Attribute("Code", length), maxStack(instream.readUShort()), maxLocals(instream.readUShort()),
 				codeLength(instream.readUInt()), code(instream.readBytes(codeLength)),
 				exceptionTable(readExceptionTable(instream, constPool)),
-				attributes(*new Attributes(instream, constPool, instream.readUShort())) {}
+				attributes(*new Attributes(instream, constPool, instream.readUShort(), AttributesType::ATTRIBUTE)) {}
 	};
 
 
 
 	struct AnnotationValue: Stringified {
-		static const AnnotationValue& readValue(ClassInputStream& instream, const ConstantPool& constPool, uint8_t typeTag);
+		static const AnnotationValue& readValue(ClassInputStream&, const ConstantPool&, uint8_t);
 	};
 
 	struct Annotation: Stringified {
@@ -213,7 +218,7 @@ namespace jdecompiler {
 		NumberAnnotationValue(ClassInputStream& instream, const ConstantPool& constPool):
 				NumberAnnotationValue(constPool.get<NumberConstant<ConstT>>(instream.readUShort())) {}
 
-		virtual string toString(const ClassInfo& classinfo) const override {
+		virtual string toString(const ClassInfo&) const override {
 			return primitiveToString(value);
 		}
 	};
@@ -232,7 +237,7 @@ namespace jdecompiler {
 		StringAnnotationValue(ClassInputStream& instream, const ConstantPool& constPool):
 				value(constPool.getUtf8Constant(instream.readUShort())) {}
 
-		virtual string toString(const ClassInfo& classinfo) const override {
+		virtual string toString(const ClassInfo&) const override {
 			return stringToLiteral(value);
 		}
 	};
@@ -324,6 +329,57 @@ namespace jdecompiler {
 	};
 
 
+	struct ParameterAnnotationsAttribute: Attribute {
+		vector<vector<const Annotation*>> parameterAnnotations;
+
+		ParameterAnnotationsAttribute(const string& name, uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
+				Attribute(name, length) {
+
+			uint8_t parametersLength = instream.readUByte();
+			parameterAnnotations.reserve(parametersLength);
+			for(uint8_t i = 0; i < parametersLength; i++) {
+
+				vector<const Annotation*> annotations;
+				uint16_t annotationsLength = instream.readUShort();
+				parameterAnnotations.reserve(annotationsLength);
+				for(uint16_t j = 0; j < annotationsLength; j++) {
+					annotations.push_back(new Annotation(instream, constPool));
+				}
+
+				parameterAnnotations.push_back(annotations);
+			}
+		}
+
+		string parameterAnnotationsToString(size_t index, const ClassInfo& classinfo) const {
+			if(index >= parameterAnnotations.size())
+				return EMPTY_STRING;
+
+			const vector<const Annotation*> annotations = parameterAnnotations[index];
+
+			if(annotations.empty())
+				return EMPTY_STRING;
+
+			if(!JDecompiler::getInstance().printNewLineInParameterAnnotations()) {
+				return join<const Annotation*>(annotations, [&classinfo] (const Annotation* annotation) {
+						return annotation->toString(classinfo);
+					}, " ") + ' ';
+			}
+
+			classinfo.increaseIndent(2);
+
+			string str("\n");
+			for(const Annotation* annotation : annotations)
+				str += classinfo.getIndent() + annotation->toString(classinfo) + '\n';
+
+			str += classinfo.getIndent();
+
+			classinfo.reduceIndent(2);
+
+			return str;
+		}
+	};
+
+
 	struct AnnotationDefaultAttribute: Attribute, Stringified {
 		const AnnotationValue& value;
 
@@ -338,7 +394,7 @@ namespace jdecompiler {
 
 	/*
 	struct XXXAttribute: Attribute {
-		XXXAttribute(string name, uint32_t length, ClassInputStream& instream): Attribute(EMPTY_STRING, length) {}
+		XXXAttribute(string name, uint32_t length, ClassInputStream& instream): Attribute(name, length) {}
 	};
 	*/
 
@@ -362,46 +418,99 @@ namespace jdecompiler {
 
 
 	struct LocalVariableTableAttribute: Attribute {
-		private:
-			struct LocalVariable {
-				const uint16_t startPos, endPos;
-				const string& name;
-				const Type& type;
-				const uint16_t index;
+		struct LocalVariable {
+			const uint16_t startPos, endPos;
+			const string& name;
+			const Type& type;
 
-				LocalVariable(ClassInputStream& instream, const ConstantPool& constPool):
-						startPos(instream.readUShort()), endPos(startPos + instream.readUShort()), name(constPool.getUtf8Constant(instream.readUShort())),
-						type(*parseType(constPool.getUtf8Constant(instream.readUShort()))), index(instream.readUShort()) {}
-			};
+			LocalVariable(ClassInputStream& instream, const ConstantPool& constPool):
+					startPos(instream.readUShort()), endPos(startPos + instream.readUShort()), name(constPool.getUtf8Constant(instream.readUShort())),
+					type(*parseType(constPool.getUtf8Constant(instream.readUShort()))) {}
+		};
 
-			vector<const LocalVariable*> localVariableTable;
+		vector<vector<const LocalVariable*>> localVariableTable;
 
-		public:
-			LocalVariableTableAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
-					Attribute("LocalVariableTable", length) {
+		LocalVariableTableAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
+				Attribute("LocalVariableTable", length) {
 
-				const uint16_t localVariableTableLength = instream.readUShort();
-				localVariableTable.reserve(localVariableTableLength);
-				for(uint16_t i = 0; i < localVariableTableLength; i++)
-					localVariableTable.push_back(new LocalVariable(instream, constPool));
+			for(uint16_t i = instream.readUShort(); i > 0; i--) {
+				const LocalVariable* localVar = new LocalVariable(instream, constPool);
+				uint16_t index = instream.readUShort();
+
+				if(index >= localVariableTable.size()) {
+					uint16_t j = localVariableTable.size();
+
+					localVariableTable.resize(index + 1);
+
+					for(; j <= index; j++) {
+						localVariableTable[j] = vector<const LocalVariable*>();
+					}
+				}
+
+				localVariableTable[index].push_back(localVar);
 			}
+		}
 	};
 
 
-	struct ClassSignature {
-		vector<ReferenceType> parameters;
+	struct Signature {
+		public:
+			const vector<const GenericParameter*> genericParameters;
+
+		protected:
+			Signature(const char*& str): genericParameters(parseGeneric(str)) {}
 	};
 
 
-	/*struct SignatureAttribute: Attribute {
-		const ClassSignature* classSignature;
+	struct ClassSignature: Signature {
+		const ClassType& superClass;
+		vector<const ClassType*> interfaces;
 
-		SignatureAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
-				Attribute("Signature", length), classSignature(new ClassSignature(constPool.get<Utf8Constant>(instream.readUShort()))) {
+		ClassSignature(const char* str):
+				Signature(str), superClass(*parseClassType(str)) {
+
+			const char* const srcStr = str;
+
+			while(*str != '\0') {
+				if(str[0] != 'L')
+					throw InvalidSignatureException(srcStr, str - srcStr);
+				interfaces.push_back(new ClassType(str += 1));
+			}
+		}
+	};
+
+
+	struct FieldSignature {
+		const Type& type;
+
+		FieldSignature(const char* str): type(*parseParameter(str)) {}
+	};
+
+
+	struct MethodSignature: Signature {
+		const vector<const Type*> arguments;
+		const Type* const returnType;
+
+		MethodSignature(const char* str): Signature(str), arguments(parseMethodArguments(str)), returnType(parseReturnType(str)) {}
+	};
+
+
+	template<class Signature>
+	struct SignatureAttribute: Attribute {
+
+		const Signature& signature;
+
+		SignatureAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool): Attribute("Signature", length),
+				signature(*new Signature(constPool.getUtf8Constant(instream.readUShort()).c_str())) {
 
 			if(length != 2) throw IllegalAttributeException("Length of Signature attribute must be 2");
 		}
-	};*/
+	};
+
+
+	typedef SignatureAttribute<ClassSignature>   ClassSignatureAttribute;
+	typedef SignatureAttribute<FieldSignature>   FieldSignatureAttribute;
+	typedef SignatureAttribute<MethodSignature> MethodSignatureAttribute;
 
 
 	struct BootstrapMethod {
@@ -456,48 +565,94 @@ namespace jdecompiler {
 
 
 	struct InnerClassesAttribute: Attribute {
-		public:
-			vector<const InnerClass*> classes;
+		vector<const InnerClass*> classes;
 
-			InnerClassesAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
-					Attribute("InnerClasses", length) {
+		InnerClassesAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
+				Attribute("InnerClasses", length) {
 
-				for(uint16_t i = instream.readUShort(); i > 0; i--)
-					classes.push_back(new InnerClass(instream, constPool));
-			}
+			const uint16_t size = instream.readUShort();
+			classes.reserve(size);
 
-			inline const InnerClass* find(const ClassType& classType) const {
-				const auto result = find_if(classes.begin(), classes.end(),
-						[&classType] (const InnerClass* innerClass) { return innerClass->classType == classType; });
-				return result == classes.end() ? nullptr : *result;
-			}
+			for(uint16_t i = size; i > 0; i--)
+				classes.push_back(new InnerClass(instream, constPool));
+		}
+
+		inline const InnerClass* find(const ClassType& classType) const {
+			const auto result = find_if(classes.begin(), classes.end(),
+					[&classType] (const InnerClass* innerClass) { return innerClass->classType == classType; });
+			return result == classes.end() ? nullptr : *result;
+		}
 	};
 
 
 	struct NestMembersAttribute: Attribute {
-		public:
-			vector<const ClassType*> nestMembers;
+		vector<const ClassType*> nestMembers;
 
-			NestMembersAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
-					Attribute("NestMembers", length) {
-				for(uint16_t i = instream.readUShort(); i > 0; i--)
-					nestMembers.push_back(new ClassType(constPool.get<ClassConstant>(instream.readUShort())));
-			}
+		NestMembersAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
+				Attribute("NestMembers", length) {
+
+			const uint16_t size = instream.readUShort();
+			nestMembers.reserve(size);
+
+			for(uint16_t i = size; i > 0; i--)
+				nestMembers.push_back(new ClassType(constPool.get<ClassConstant>(instream.readUShort())));
+		}
 	};
 
 
-	inline const Attribute* Attributes::readAttribute(ClassInputStream& instream, const ConstantPool& constPool, const string& name, uint32_t length) {
-		if(name == "ConstantValue") return new ConstantValueAttribute(length, instream, constPool);
-		if(name == "Code") return new CodeAttribute(length, instream, constPool);
-		if(name == "Exceptions") return new ExceptionsAttribute(length, instream, constPool);
-		if(name == "Deprecated") return new DeprecatedAttribute(length);
-		if(name == "RuntimeVisibleAnnotations" || name == "RuntimeInvisibleAnnotations") return new AnnotationsAttribute(name, length, instream, constPool);
-		//if(name == "Signature") return new SignatureAttribute(length, instream, constPool);
-		if(name == "BootstrapMethods") return new BootstrapMethodsAttribute(length, instream, constPool);
-		if(name == "AnnotationDefault") return new AnnotationDefaultAttribute(length, instream, constPool);
-		if(name == "LocalVariableTable") return new LocalVariableTableAttribute(length, instream, constPool);
-		if(name == "InnerClasses") return new InnerClassesAttribute(length, instream, constPool);
-		if(name == "NestMembers") return new NestMembersAttribute(length, instream, constPool);
+	struct SourceFileAttribute: Attribute {
+		const string& sourceFile;
+
+		SourceFileAttribute(uint32_t length, ClassInputStream& instream, const ConstantPool& constPool):
+				Attribute("SourceFile", length), sourceFile(constPool.getUtf8Constant(instream.readUShort())) {
+
+			if(length != 2)
+				throw IllegalAttributeException("Length of SourceFile attribute must be 2");
+		}
+	};
+
+
+	inline const Attribute* Attributes::readAttribute(ClassInputStream& instream, const ConstantPool& constPool,
+			const string& name, uint32_t length, AttributesType attributesType) {
+
+		if(attributesType != AttributesType::ATTRIBUTE) {
+			if(name == "Deprecated") return new DeprecatedAttribute(length);
+			if(name == "RuntimeVisibleAnnotations" || name == "RuntimeInvisibleAnnotations")
+				return new AnnotationsAttribute(name, length, instream, constPool);
+			if(name == "RuntimeVisibleParameterAnnotations" || name == "RuntimeInvisibleParameterAnnotations")
+				return new ParameterAnnotationsAttribute(name, length, instream, constPool);
+			if(name == "Signature") {
+				switch(attributesType) {
+					case AttributesType::CLASS:  return new  ClassSignatureAttribute(length, instream, constPool);
+					case AttributesType::FIELD:  return new  FieldSignatureAttribute(length, instream, constPool);
+					case AttributesType::METHOD: return new MethodSignatureAttribute(length, instream, constPool);
+					default: throw Exception("Seriously?");
+				}
+			}
+		}
+
+		switch(attributesType) {
+			case AttributesType::CLASS:
+				if(name == "BootstrapMethods") return new BootstrapMethodsAttribute(length, instream, constPool);
+				if(name == "InnerClasses") return new InnerClassesAttribute(length, instream, constPool);
+				if(name == "NestMembers") return new NestMembersAttribute(length, instream, constPool);
+				if(name == "SourceFile") return new SourceFileAttribute(length, instream, constPool);
+				break;
+
+			case AttributesType::FIELD:
+				if(name == "ConstantValue") return new ConstantValueAttribute(length, instream, constPool);
+				break;
+
+			case AttributesType::METHOD:
+				if(name == "Code") return new CodeAttribute(length, instream, constPool);
+				if(name == "Exceptions") return new ExceptionsAttribute(length, instream, constPool);
+				if(name == "AnnotationDefault") return new AnnotationDefaultAttribute(length, instream, constPool);
+				break;
+
+			case AttributesType::ATTRIBUTE:
+				if(name == "LocalVariableTable") return new LocalVariableTableAttribute(length, instream, constPool);
+		}
+
 		return new UnknownAttribute(name, length, instream);
 	}
 }

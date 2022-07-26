@@ -7,6 +7,9 @@
 
 namespace util {
 
+	using std::ostream;
+
+
 	struct StackIndexOutOfBoundsException: IndexOutOfBoundsException {
 		StackIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length, "stack") {}
 	};
@@ -26,12 +29,12 @@ namespace util {
 	struct stack {
 
 		private:
-			class Entry {
+			class entry {
 				public:
 					T value;
-					Entry* const next;
+					entry* const next;
 
-					Entry(T value, Entry* next): value(value), next(next) {}
+					entry(T value, entry* next): value(value), next(next) {}
 
 					void deleteNext() const {
 						if(next != nullptr) {
@@ -45,39 +48,39 @@ namespace util {
 
 			struct iterator {
 				protected:
-					Entry* entry;
+					entry* ent;
 					friend struct stack;
 
-					constexpr iterator(Entry* entry): entry(entry) {}
+					constexpr iterator(entry* ent): ent(ent) {}
 
 				public:
-					constexpr iterator(const iterator& other): entry(other.entry) {}
+					constexpr iterator(const iterator& other): ent(other.ent) {}
 
 					T& operator*() {
-						return entry->value;
+						return ent->value;
 					}
 
 					const T& operator*() const {
-						return entry->value;
+						return ent->value;
 					}
 
 					iterator& operator++() {
-						entry = entry->next;
+						ent = ent->next;
 						return *this;
 					}
 
 					iterator operator++(int) {
 						iterator old(*this);
-						entry = entry->next;
+						ent = ent->next;
 						return old;
 					}
 
 					iterator& operator=(const iterator& other) {
-						entry = other.entry;
+						ent = other.ent;
 					}
 
 					friend bool operator==(const iterator& iterator1, const iterator& iterator2) {
-						return iterator1.entry == iterator2.entry;
+						return iterator1.ent == iterator2.ent;
 					}
 
 					friend bool operator!=(const iterator& iterator1, const iterator& iterator2) {
@@ -86,7 +89,7 @@ namespace util {
 			};
 
 
-			Entry* firstEntry;
+			entry* firstEntry;
 			uint16_t length;
 
 			iterator beginIterator;
@@ -101,12 +104,12 @@ namespace util {
 
 			stack(): firstEntry(nullptr), length(0), beginIterator(nullptr) {}
 
-			stack(T value): firstEntry(new Entry(value, nullptr)), length(1), beginIterator(firstEntry) {}
+			stack(T value): firstEntry(new entry(value, nullptr)), length(1), beginIterator(firstEntry) {}
 
 			void push(T value) {
-				firstEntry = new Entry(value, firstEntry);
+				firstEntry = new entry(value, firstEntry);
 				length++;
-				beginIterator.entry = firstEntry;
+				beginIterator.ent = firstEntry;
 			}
 
 			inline void push(T value, T values...) {
@@ -117,12 +120,12 @@ namespace util {
 			T pop() {
 				checkEmptyStack();
 
-				const Entry copiedEntry = *firstEntry;
+				const entry copiedEntry = *firstEntry;
 				delete firstEntry;
 				firstEntry = copiedEntry.next;
 				length--;
 
-				beginIterator.entry = firstEntry;
+				beginIterator.ent = firstEntry;
 
 				return copiedEntry.value;
 			}
@@ -138,7 +141,7 @@ namespace util {
 				if(index >= length)
 					throw StackIndexOutOfBoundsException(index, length);
 
-				const Entry* currentEntry = firstEntry;
+				const entry* currentEntry = firstEntry;
 				for(uint16_t i = 0; i < index; i++)
 					currentEntry = currentEntry->next;
 				return currentEntry->value;

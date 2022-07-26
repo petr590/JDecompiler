@@ -5,7 +5,7 @@ namespace jdecompiler {
 
 	struct Stringified {
 		public:
-			virtual string toString(const ClassInfo& classinfo) const = 0;
+			virtual string toString(const ClassInfo&) const = 0;
 
 			virtual ~Stringified() {}
 	};
@@ -13,7 +13,15 @@ namespace jdecompiler {
 
 	struct ClassElement: Stringified {
 		public:
-			virtual bool canStringify(const ClassInfo& classinfo) const = 0;
+			const uint16_t modifiers;
+
+			constexpr ClassElement(uint16_t modifiers) noexcept: modifiers(modifiers) {}
+
+			virtual bool canStringify(const ClassInfo&) const = 0;
+
+			inline bool isSynthetic() const {
+				return modifiers & ACC_SYNTHETIC;
+			}
 	};
 
 
@@ -32,7 +40,7 @@ namespace jdecompiler {
 					clazz(clazz), thisType(thisType), superType(superType), interfaces(interfaces),
 					constPool(constPool), attributes(attributes), modifiers(modifiers) {}
 
-			const char* const EMPTY_INDENT = "";
+			static const char* const EMPTY_INDENT;
 
 		private:
 			mutable vector<const ClassType*> imports;
@@ -41,7 +49,7 @@ namespace jdecompiler {
 			mutable const char* indent = EMPTY_INDENT;
 
 		public:
-			bool addImport(const ClassType* clazz) const;
+			bool addImport(const ClassType*) const;
 
 			string importsToString() const;
 
@@ -101,8 +109,6 @@ namespace jdecompiler {
 			mutable const DisassemblerContext* emptyDisassemblerContext = nullptr;
 
 		public:
-			const StringifyContext* getFieldStringifyContext() const;
-
 			const DisassemblerContext& getEmptyDisassemblerContext() const;
 
 
@@ -110,6 +116,8 @@ namespace jdecompiler {
 
 			ClassInfo& operator=(const ClassInfo&) = delete;
 	};
+
+	const char* const ClassInfo::EMPTY_INDENT = "";
 }
 
 #endif

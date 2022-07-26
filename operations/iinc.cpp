@@ -13,7 +13,7 @@ namespace jdecompiler::operations {
 			bool isShortInc, isPostInc = false;
 
 		public:
-			IIncOperation(const DecompilationContext& context, uint16_t index, int16_t value);
+			IIncOperation(const DecompilationContext&, uint16_t index, int16_t value);
 
 			virtual string toString(const StringifyContext& context) const override {
 				if(isShortInc) {
@@ -30,6 +30,10 @@ namespace jdecompiler::operations {
 
 			virtual Priority getPriority() const override {
 				return isShortInc ? (isPostInc ? Priority::POST_INCREMENT : Priority::PRE_INCREMENT) : Priority::ASSIGNMENT;
+			}
+
+			virtual bool isIncrement() const override {
+				return true;
 			}
 	};
 }

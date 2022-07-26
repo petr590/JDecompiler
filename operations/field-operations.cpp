@@ -24,7 +24,7 @@ namespace jdecompiler::operations {
 			}
 
 			inline string instanceFieldToString(const StringifyContext& context, const Operation* object) const {
-				return object->isReferenceToThis(context.classinfo) && !context.getCurrentScope()->hasVariable(descriptor.name) ?
+				return object->isReferenceToThis(context) && !context.getCurrentScope()->hasVariable(descriptor.name) ?
 							descriptor.name : object->toString(context) + '.' + descriptor.name;
 			}
 	};
@@ -106,6 +106,17 @@ namespace jdecompiler::operations {
 			virtual Priority getPriority() const override {
 				return Priority::ASSIGNMENT;
 			}
+
+			virtual bool canAddToCode() const {
+				const Class* clazz = JDecompiler::getInstance().getClass(this->clazz.getEncodedName());
+				if(clazz != nullptr) {
+					const Field* field = clazz->getField(descriptor);
+					if(field != nullptr)
+						return !field->isSynthetic() || JDecompiler::getInstance().showSynthetic();
+				}
+
+				return true;
+			}
 	};
 
 	struct PutStaticFieldOperation: PutFieldOperation {
@@ -115,8 +126,8 @@ namespace jdecompiler::operations {
 				returnType = getDupReturnType<Dup1Operation, Dup2Operation>(context, value);
 			}
 
-			PutStaticFieldOperation(const DecompilationContext& context, const MethodrefConstant* methodref):
-					PutStaticFieldOperation(context, methodref->clazz, methodref->nameAndType) {}
+			PutStaticFieldOperation(const DecompilationContext& context, const FieldrefConstant* fieldref):
+					PutStaticFieldOperation(context, fieldref->clazz, fieldref->nameAndType) {}
 
 			virtual string toString(const StringifyContext& context) const override {
 				return staticFieldToString(context) + " = " + value->toString(context);
@@ -132,8 +143,8 @@ namespace jdecompiler::operations {
 				returnType = getDupReturnType<DupX1Operation, Dup2X1Operation>(context, value);
 			}
 
-			PutInstanceFieldOperation(const DecompilationContext& context, const MethodrefConstant* methodref):
-					PutInstanceFieldOperation(context, methodref->clazz, methodref->nameAndType) {}
+			PutInstanceFieldOperation(const DecompilationContext& context, const FieldrefConstant* fieldref):
+					PutInstanceFieldOperation(context, fieldref->clazz, fieldref->nameAndType) {}
 
 			virtual string toString(const StringifyContext& context) const override {
 				return instanceFieldToString(context, object) + " = " + value->toString(context);

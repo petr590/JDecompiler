@@ -47,15 +47,15 @@ namespace jdecompiler::operations {
 					CatchScope(context, startIndex, endIndex, vector<const ClassType*>(catchTypes), hasNext) {}
 
 
-			virtual void addOperation(const Operation* operation, const StringifyContext& context) const override {
+			virtual void addOperation(const Operation* operation, const DecompilationContext& context) const override {
 				if(exceptionVariable == nullptr) {
 					if(instanceof<const StoreOperation*>(operation)) {
 						exceptionVariableIndex = static_cast<const StoreOperation*>(operation)->index;
 						exceptionVariable = new NamedVariable(catchType, true, "ex");
 						return;
-					} else {
-						context.warning("first instruction in the catch or finally block should be `astore`");
-					}
+					} /*else {
+						//context.classinfo.warning("first instruction in the catch or finally block should be `astore`"); // TODO
+					}*/
 				}
 				Scope::addOperation(operation, context);
 			}

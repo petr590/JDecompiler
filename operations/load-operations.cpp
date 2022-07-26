@@ -8,17 +8,22 @@ namespace jdecompiler::operations {
 			const uint16_t index;
 			const Variable& variable;
 
-			LoadOperation(const Type* requiredType, const DecompilationContext& context, uint16_t index):
-					index(index), variable(context.getCurrentScope()->getVariable(index, true)) {
-				variable.castTypeTo(requiredType);
-			}
+		protected:
+			const Operation* incOperation = nullptr;
+
+		public:
+			LoadOperation(const Type*, const DecompilationContext&, uint16_t);
 
 			virtual string toString(const StringifyContext& context) const override {
-				return context.getCurrentScope()->getNameFor(variable);
+				return incOperation != nullptr ? incOperation->toString(context) : context.getCurrentScope()->getNameFor(variable);
 			}
 
 			virtual const Type* getReturnType() const override {
 				return variable.getType();
+			}
+
+			virtual bool isIncrement() const override {
+				return incOperation != nullptr;
 			}
 
 			virtual void onCastReturnType(const Type* newType) const override {
@@ -49,8 +54,8 @@ namespace jdecompiler::operations {
 	struct ALoadOperation: LoadOperation {
 		ALoadOperation(const DecompilationContext& context, uint16_t index): LoadOperation(AnyObjectType::getInstance(), context, index) {}
 
-		virtual bool isReferenceToThis(const ClassInfo& classinfo) const override {
-			return !(classinfo.modifiers & ACC_STATIC) && index == 0;
+		virtual bool isReferenceToThis(const StringifyContext& context) const override {
+			return !(context.modifiers & ACC_STATIC) && index == 0;
 		}
 	};
 }

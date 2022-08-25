@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_ARRAY_STORE_OPERATIONS_CPP
 #define JDECOMPILER_ARRAY_STORE_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct ArrayStoreOperation: VoidOperation {
 		protected:

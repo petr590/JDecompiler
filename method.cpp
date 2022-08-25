@@ -12,7 +12,7 @@ namespace jdecompiler {
 	}
 
 
-	string MethodDescriptor::toString(const StringifyContext& context, const Attributes& attributes, size_t argsStart) const {
+	string MethodDescriptor::toString(const StringifyContext& context, const Attributes& attributes) const {
 		const bool isNonStatic = !(context.modifiers & ACC_STATIC);
 
 		const MethodSignature* signature = attributes.has<MethodSignatureAttribute>() ? &attributes.get<MethodSignatureAttribute>()->signature : nullptr;
@@ -24,7 +24,7 @@ namespace jdecompiler {
 				(signature == nullptr ? returnType : signature->returnType)->toString(context.classinfo) + ' ' + name);
 
 
-		uint32_t offset = argsStart + (uint32_t)isNonStatic;
+		uint32_t offset = static_cast<uint32_t>(isNonStatic);
 
 		const auto getVarName = [&context, &offset] (const Type* type, size_t i) {
 			return context.getCurrentScope()->getNameFor(
@@ -61,11 +61,7 @@ namespace jdecompiler {
 		}
 
 
-		return str + '(' + join<const Type*>(argsStart == 0 ? arguments : vector(arguments.begin() + argsStart, arguments.end()), concater) + ')';
-	}
-
-	string MethodDescriptor::toString(const StringifyContext& context, const Attributes& attributes) const {
-		return this->toString(context, attributes, 0);
+		return str + '(' + join<const Type*>(arguments, concater) + ')';
 	}
 
 
@@ -98,9 +94,17 @@ namespace jdecompiler {
 				));
 	}
 
-	Method::Method(uint16_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, const ClassInfo& classinfo):
+	Method::Method(modifiers_t modifiers, const MethodDescriptor& descriptor, const Attributes& attributes, const ClassInfo& classinfo):
 			ClassElement(modifiers), descriptor(descriptor), attributes(attributes), codeAttribute(attributes.get<CodeAttribute>()),
-			context(decompileCode(classinfo)), scope(context.methodScope) {}
+			context(decompileCode(classinfo)), scope(context.methodScope) {
+
+		if(descriptor.isStaticInitializer()) {
+			if(modifiers != ACC_STATIC)
+				throw IllegalModifiersException(hexWithPrefix<4>(modifiers) + ": static initializer must have only static modifier");
+			if(attributes.has<ExceptionsAttribute>())
+				throw IllegalAttributeException("Static initializer cannot have Exceptions attribute");
+		}
+	}
 
 	string Method::toString(const ClassInfo& classinfo) const {
 
@@ -153,15 +157,15 @@ namespace jdecompiler {
 		}
 
 		if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
-			str += annotationsAttribute->toString(classinfo);
+			str += annotationsAttribute->toString(classinfo) + '\n';
+
+		if(!errorMessage.empty()) {
+			str += classinfo.getIndent() + (string)"// Exception while decompiling method: " + errorMessage + '\n';
+		}
 
 		str += classinfo.getIndent();
 
 		if(descriptor.isStaticInitializer()) {
-			if(modifiers != ACC_STATIC)
-				throw IllegalModifiersException(hexWithPrefix<4>(modifiers) + ": static initializer must have only static modifier");
-			if(attributes.has<ExceptionsAttribute>())
-				throw IllegalAttributeException("static initializer cannot have Exceptions attribute");
 			str += "static";
 		} else {
 			str += modifiersToString(classinfo) + descriptor.toString(context, attributes);
@@ -174,7 +178,7 @@ namespace jdecompiler {
 				str += " default " + annotationDefaultAttr->toString(context.classinfo);
 		}
 
-		FormatString comment;
+		format_string comment;
 
 		if(modifiers & ACC_SYNTHETIC)
 			comment += "synthetic";
@@ -188,11 +192,7 @@ namespace jdecompiler {
 		if(!comment.empty())
 			comment += "method";
 
-		if(!errorMessage.empty()) {
-			comment += (comment.empty() ? EMPTY_STRING : "; ") + "Exception while decompiling method: " + errorMessage;
-		}
-
-		return str + (codeAttribute == nullptr || !errorMessage.empty() ? ';' + (comment.empty() ? EMPTY_STRING : " // " + (string)comment) :
+		return str + (codeAttribute == nullptr || !errorMessage.empty() ? (comment.empty() ? ";" : "; // " + (string)comment) :
 				(comment.empty() ? " " : " /* " + (string)comment + " */ ") + scope.toString(context));
 				//&context.classinfo == &classinfo ? context : DecompilationContext(context, classinfo))); // For anonymous classes
 	}
@@ -207,8 +207,8 @@ namespace jdecompiler {
 				(modifiers & ACC_BRIDGE && JDecompiler::getInstance().showBridge()));
 	}
 
-	FormatString Method::modifiersToString(const ClassInfo& classinfo) const {
-		FormatString str;
+	format_string Method::modifiersToString(const ClassInfo& classinfo) const {
+		format_string str;
 
 		switch(modifiers & ACC_ACCESS_FLAGS) {
 			case ACC_VISIBLE: break;

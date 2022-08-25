@@ -9,6 +9,10 @@ namespace jdecompiler {
 
 			constexpr Context() noexcept {}
 
+			Context(const Context&) = delete;
+
+			Context& operator=(const Context&) = delete;
+
 
 		protected:
 			template<typename Arg, typename... Args>

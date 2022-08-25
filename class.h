@@ -6,14 +6,6 @@
 
 namespace jdecompiler {
 
-	struct Version {
-		const uint16_t majorVersion, minorVersion;
-
-		constexpr Version(uint16_t majorVersion, uint16_t minorVersion): majorVersion(majorVersion), minorVersion(minorVersion) {}
-
-		friend string to_string(const Version&);
-	};
-
 	struct Class: ClassElement {
 		public:
 			const Version version;
@@ -40,7 +32,7 @@ namespace jdecompiler {
 
 		protected:
 			Class(const Version&, const ClassType&, const ClassType*, const ConstantPool&,
-					uint16_t, const vector<const ClassType*>&, const Attributes&,
+					modifiers_t, const vector<const ClassType*>&, const Attributes&,
 					const vector<FieldDataHolder>&, const vector<MethodDataHolder>&,
 					const vector<const GenericParameter*>&);
 
@@ -49,7 +41,7 @@ namespace jdecompiler {
 			static const Class* readClass(ClassInputStream&);
 
 			template<class>
-			static const Class* createClass(ClassInputStream&, const Version&, const ClassType&, const ClassType*, const ConstantPool&, uint16_t,
+			static const Class* createClass(ClassInputStream&, const Version&, const ClassType&, const ClassType*, const ConstantPool&, modifiers_t,
 					const vector<const ClassType*>&, const Attributes&, const vector<FieldDataHolder>&, const vector<MethodDataHolder>&,
 					const vector<const GenericParameter*>&);
 
@@ -77,16 +69,17 @@ namespace jdecompiler {
 				return copy_if(methods, predicate);
 			}
 
-
+		protected:
 			virtual string toString(const ClassInfo& classinfo) const override {
-				return toString0<false>(classinfo);
-			}
-
-			inline string toString() const {
-				return toString(classinfo);
+				return thisType.isPackageInfo ? packageInfoToString(classinfo) : toString0<false>(classinfo);
 			}
 
 			virtual string anonymousToString(const ClassInfo&) const;
+
+		public:
+			inline string toString() const {
+				return toString(classinfo);
+			}
 
 			inline string anonymousToString() const {
 				return anonymousToString(classinfo);
@@ -97,29 +90,24 @@ namespace jdecompiler {
 			template<bool>
 			string toString0(const ClassInfo&) const;
 
-
-			template<typename T>
-			inline void warning(const T& message) const {
-				cerr << thisType.toString() << ": warning: " << message << endl;
-			}
+			string annotationsToString(const ClassInfo&) const;
 
 
-		public:
-			inline bool canStringify() const {
-				return !((modifiers & ACC_SYNTHETIC && !JDecompiler::getInstance().showSynthetic()) ||
-						(thisType.isNested && JDecompiler::getInstance().hasClass(thisType.enclosingClass->getEncodedName())));
-			}
-
-			virtual bool canStringify(const ClassInfo&) const override {
-				return this->canStringify();
-			}
+			string packageInfoToString(const ClassInfo&) const;
 
 
-		protected:
+			virtual string headersToString(const ClassInfo&) const;
+
+			string packageToString(const ClassInfo&) const;
+
+			string versionCommentToString() const;
+
+
 			virtual string anonymousDeclarationToString(const ClassInfo&) const;
 
-
 			virtual string declarationToString(const ClassInfo&) const;
+
+			string modifiersToString(modifiers_t) const;
 
 
 			virtual string bodyToString(const ClassInfo& classinfo) const {
@@ -129,15 +117,26 @@ namespace jdecompiler {
 
 			virtual string fieldsToString(const ClassInfo&) const;
 
-
 			virtual string methodsToString(const ClassInfo&) const;
 
 			virtual string innerClassesToString(const ClassInfo&) const;
 
-			string modifiersToString(uint16_t) const;
 
+		public:
+			inline bool canStringify() const {
+				return !((modifiers & ACC_SYNTHETIC && !JDecompiler::getInstance().showSynthetic() && !thisType.isPackageInfo) ||
+						(thisType.isNested && JDecompiler::getInstance().hasClass(thisType.enclosingClass->getEncodedName())));
+			}
 
-			virtual string headersToString(const ClassInfo&) const;
+			virtual bool canStringify(const ClassInfo&) const override {
+				return this->canStringify();
+			}
+
+		protected:
+			template<typename T>
+			inline void warning(const T& message) const {
+				cerr << thisType.toString() << ": warning: " << message << endl;
+			}
 	};
 
 

@@ -4,16 +4,16 @@
 namespace jdecompiler {
 
 	namespace javaLang {
-		static const ClassType
-				&Void = ClassType("java/lang/Void"),
-				&Byte = ClassType("java/lang/Byte"),
-				&Character = ClassType("java/lang/Character"),
-				&Short = ClassType("java/lang/Short"),
-				&Integer = ClassType("java/lang/Integer"),
-				&Long = ClassType("java/lang/Long"),
-				&Float = ClassType("java/lang/Float"),
-				&Double = ClassType("java/lang/Double"),
-				&Boolean = ClassType("java/lang/Boolean"),
+		static inline const ClassType
+				Void("java/lang/Void"),
+				Byte("java/lang/Byte"),
+				Character("java/lang/Character"),
+				Short("java/lang/Short"),
+				Integer("java/lang/Integer"),
+				Long("java/lang/Long"),
+				Float("java/lang/Float"),
+				Double("java/lang/Double"),
+				Boolean("java/lang/Boolean"),
 
 				&Object = *OBJECT,
 				&String = *STRING,
@@ -26,7 +26,7 @@ namespace jdecompiler {
 	}
 
 	namespace javaLangAnnotation {
-		static const ClassType& Annotation = ClassType("java/lang/annotation/Annotation");
+		static inline const ClassType Annotation("java/lang/annotation/Annotation");
 	}
 }
 

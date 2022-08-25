@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_INSTANCEOF_OPERATION_CPP
 #define JDECOMPILER_INSTANCEOF_OPERATION_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct InstanceofOperation: BooleanOperation {
 		protected:

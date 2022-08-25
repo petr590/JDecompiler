@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_POP_OPERATION_CPP
 #define JDECOMPILER_POP_OPERATION_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	template<TypeSize size>
 	struct PopOperation: VoidOperation, TypeSizeTemplatedOperation<size> {

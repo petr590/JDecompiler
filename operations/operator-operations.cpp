@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_OPERATOR_OPERATIONS_CPP
 #define JDECOMPILER_OPERATOR_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct OperatorOperation: ReturnableOperation<> {
 		public:
@@ -73,8 +73,8 @@ namespace jdecompiler::operations {
 						toStringPriority(operand2, context, Associativity::RIGHT);
 			}
 
-			string toShortFormString(const StringifyContext& context, const Variable& variable) const {
-				return context.getCurrentScope()->getNameFor(variable) + ' ' + stringOperator + "= " + operand2->toString(context);
+			string toShortFormString(const StringifyContext& context, const string& name) const {
+				return name + ' ' + stringOperator + "= " + operand2->toString(context);
 			}
 	};
 

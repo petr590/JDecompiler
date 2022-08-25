@@ -1,12 +1,12 @@
 #ifndef JDECOMPILER_BLOCK_INSTRUCTIONS_CPP
 #define JDECOMPILER_BLOCK_INSTRUCTIONS_CPP
 
-namespace jdecompiler::instructions {
+namespace jdecompiler {
 
 	struct BlockInstruction: Instruction {
 
 		protected:
-			constexpr BlockInstruction() noexcept {}
+			BlockInstruction() noexcept {}
 
 		public:
 			virtual const Block* toBlock(const DisassemblerContext&) const = 0;
@@ -17,43 +17,28 @@ namespace jdecompiler::instructions {
 	};
 
 
+	struct JumpInstruction: BlockInstruction {
+		protected:
+			const offset_t offset;
 
-	struct IfInstruction: BlockInstruction {
-		const offset_t offset;
+			JumpInstruction(offset_t offset) noexcept: offset(offset) {}
+	};
 
-		IfInstruction(offset_t offset): offset(offset) {}
+
+
+	struct IfInstruction: JumpInstruction {
+
+		IfInstruction(offset_t offset) noexcept: JumpInstruction(offset) {}
 
 		virtual const Block* toBlock(const DisassemblerContext& context) const override final {
-			/*const Block* currentBlock = context.getCurrentBlock();
-
-			const index_t index = context.posToIndex(context.getPos() + offset) - 1;
-
-			if(instanceof<const IfBlock*>(currentBlock)) {
-				const IfBlock* ifBlock = static_cast<const IfBlock*>(currentBlock);
-
-				if(offset > 0) {
-				}
-			}*/
-
 			return createBlock(context);
 		}
 
-		virtual const Operation* toOperation(const DecompilationContext& context) const override final {
-			/*const Scope* currentScope = context.getCurrentScope();
-
-			const index_t index = context.posToIndex(context.pos + offset);
-
-			if(instanceof<const IfScope*>(currentScope)) {
-				const IfScope* ifScope = static_cast<const IfScope*>(currentScope);
-
-				if(offset > 0) {
-				}
-			}*/
-
+		virtual const Operation* toOperation(const DecompilationContext&) const override final {
 			return nullptr;
 		}
 
-		virtual const Block* createBlock(const DisassemblerContext& context) const = 0;
+		virtual const Block* createBlock(const DisassemblerContext&) const = 0;
 	};
 
 	struct IfCmpInstruction: IfInstruction {
@@ -161,11 +146,9 @@ namespace jdecompiler::instructions {
 	};
 
 
-	struct GotoInstruction: BlockInstruction {
+	struct GotoInstruction: JumpInstruction {
 		public:
-			const offset_t offset;
-
-			GotoInstruction(offset_t offset): offset(offset) {}
+			GotoInstruction(offset_t offset) noexcept: JumpInstruction(offset) {}
 
 		protected:
 			mutable bool accepted = false;
@@ -173,6 +156,8 @@ namespace jdecompiler::instructions {
 			inline void setAccepted() const {
 				accepted = true;
 			}
+
+			mutable const SwitchBlock* switchBlock = nullptr;
 
 		public:
 			virtual const Block* toBlock(const DisassemblerContext& context) const override {
@@ -182,6 +167,7 @@ namespace jdecompiler::instructions {
 				}
 
 				const index_t index = context.posToIndex(context.pos + offset);
+				const index_t index_m1 = index - 1;
 
 				const Block* const currentBlock = context.getCurrentBlock();
 
@@ -193,10 +179,6 @@ namespace jdecompiler::instructions {
 					if(offset > 0 && context.index == ifBlock->end() /* check if goto instruction in the end of ifBlock */) {
 						const Block* parentBlock = ifBlock->parentBlock;
 						assert(parentBlock != nullptr);
-
-						/* I don't remember why there is index minus 1 instead of index,
-						   but since I wrote that, then it should be so :) */
-						index_t index_m1 = index - 1;
 
 						//logerr(index_m1, ifBlock->end(), parentBlock->end());
 						if(index_m1 <= parentBlock->end()) {
@@ -228,14 +210,16 @@ namespace jdecompiler::instructions {
 							return nullptr;
 						}
 					}
+
 				} else if(instanceof<const TryBlock*>(currentBlock)) {
 					const TryBlock* tryBlock = static_cast<const TryBlock*>(currentBlock);
 
-					if(context.getIndex() == tryBlock->end()) {
+					if(context.index == tryBlock->end()) {
 						setAccepted();
-						return nullptr;
+						tryBlock->handlers.back()->endIndex = index;
+						return nullptr;//new CatchBlock(context, tryBlock);
 					}
-						//return new CatchBlock(context, tryBlock);
+
 				}
 
 				if(offset < 0) {
@@ -245,8 +229,6 @@ namespace jdecompiler::instructions {
 						if(instanceof<const InfiniteLoopBlock*>(block)) {
 							const InfiniteLoopBlock* loopBlock = static_cast<const InfiniteLoopBlock*>(block);
 
-							//log(loopBlock->endIndex, context.index);
-
 							loopBlock->endIndex = max(loopBlock->endIndex, context.index);
 						}
 
@@ -255,10 +237,32 @@ namespace jdecompiler::instructions {
 
 					setAccepted();
 					return new InfiniteLoopBlock(context, index);
+
+				} else {
+					for(const Block* block = currentBlock; block != nullptr; block = block->parentBlock) {
+
+						if(index_m1 >= block->endIndex && instanceof<const SwitchBlock*>(block)) {
+
+							const SwitchBlock* switchBlock = static_cast<const SwitchBlock*>(block);
+
+							if(index_m1 > switchBlock->endIndex) {
+								if(!switchBlock->endIndexFixed())
+									switchBlock->endIndex = index_m1;
+								else
+									continue;
+							}
+
+							switchBlock->fixEndIndex();
+
+							this->switchBlock = switchBlock;
+
+							return nullptr;
+						}
+					}
 				}
 
 				// UNSAFE BEHIAVOR
-				/*if(offset > 0 && index >= currentBlock->start() && index - 1 <= currentBlock->end()) { // goto in the borders of current Block
+				/*if(offset > 0 && index >= currentBlock->start() && index_m1 <= currentBlock->end()) { // goto in the borders of current Block
 					const_cast<DisassemblerContext&>(context).skip(offset);
 					setAccepted();
 					return nullptr;
@@ -271,6 +275,9 @@ namespace jdecompiler::instructions {
 
 				if(accepted)
 					return nullptr;
+
+				if(switchBlock != nullptr)
+					return new BreakOperation(context, switchBlock->getExistsScope(context));
 
 				const index_t index = context.posToIndex(context.pos + offset);
 
@@ -286,6 +293,21 @@ namespace jdecompiler::instructions {
 							to_string(context.pos) + " to pos " + to_string(context.pos + offset));
 
 				return nullptr;
+			}
+	};
+
+
+	struct SwitchInstruction: BlockInstruction {
+		protected:
+			const offset_t defaultOffset;
+			map<jint, offset_t> offsetTable;
+
+		public:
+			SwitchInstruction(offset_t defaultOffset, const map<jint, offset_t>& offsetTable):
+					defaultOffset(defaultOffset), offsetTable(offsetTable) {}
+
+			virtual const Block* toBlock(const DisassemblerContext& context) const override {
+				return new SwitchBlock(context, defaultOffset, offsetTable);
 			}
 	};
 }

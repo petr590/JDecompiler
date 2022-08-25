@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_CONST_OPERATIONS_CPP
 #define JDECOMPILER_CONST_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	template<typename T>
 	struct ConstantTypeOf {
@@ -30,6 +30,16 @@ namespace jdecompiler::operations {
 				return returnType;
 			}
 
+			virtual string toString(const StringifyContext& context) const override {
+				return toString(context, ConstantDecompilationContext(context.classinfo));
+			}
+
+			virtual string toString(const StringifyContext&, const ConstantDecompilationContext&) const override = 0;
+
+			virtual bool isAbstractConstOperation() const override final {
+				return true;
+			}
+
 		protected:
 			virtual void onCastReturnType(const Type* newType) const override {
 				returnType = newType;
@@ -47,7 +57,7 @@ namespace jdecompiler::operations {
 			static const ClassType& WRAPPER_CLASS;
 
 		protected:
-			static const Operation* valueOf(const T&, const ConstantDecompilationContext);
+			virtual const Operation* findConstant(const ConstantDecompilationContext&) const;
 
 			static bool canUseConstant(const FieldInfo* fieldinfo, const ClassType& clazz, const FieldDescriptor& descriptor) {
 				return fieldinfo == nullptr || fieldinfo->clazz != clazz || fieldinfo->descriptor != descriptor;
@@ -61,51 +71,50 @@ namespace jdecompiler::operations {
 			ConstOperation(const T& value): ConstOperation(TYPE, value) {}
 
 		public:
-			virtual string toString(const StringifyContext&) const override {
+			virtual string toString(const StringifyContext& context, const ConstantDecompilationContext& constantContext) const override {
+				const Operation* operation = findConstant(constantContext);
+				if(operation != nullptr)
+					return operation->toString(context);
+
 				return primitiveToString(value);
 			}
 	};
 
 	template<typename T>
-	const Type* const ConstOperation<T>::TYPE = exactTypeByBuiltinType<T>();
+	const Type* const ConstOperation<T>::TYPE = typeByBuiltinJavaType<T>();
 
-	template<> const ClassType& ConstOperation<int32_t>::WRAPPER_CLASS = javaLang::Integer;
-	template<> const ClassType& ConstOperation<int64_t>::WRAPPER_CLASS = javaLang::Long;
-	template<> const ClassType& ConstOperation<float>  ::WRAPPER_CLASS = javaLang::Float;
-	template<> const ClassType& ConstOperation<double> ::WRAPPER_CLASS = javaLang::Double;
+	template<> const ClassType& ConstOperation<jint>   ::WRAPPER_CLASS = javaLang::Integer;
+	template<> const ClassType& ConstOperation<jlong>  ::WRAPPER_CLASS = javaLang::Long;
+	template<> const ClassType& ConstOperation<jfloat> ::WRAPPER_CLASS = javaLang::Float;
+	template<> const ClassType& ConstOperation<jdouble>::WRAPPER_CLASS = javaLang::Double;
 
 
-	struct IConstOperation: ConstOperation<int32_t> {
+	struct IConstOperation: ConstOperation<jint> {
 		private:
-			static inline const Type* getTypeByValue(int32_t value) {
-				if((bool)value == value)     return ANY_INT_OR_BOOLEAN;
-				if((int8_t)value == value)   return value > 0 ? ANY_INT : ANY_SIGNED_INT;
-				if((char16_t)value == value) return (int16_t)value == value ? CHAR_OR_SHORT_OR_INT : CHAR_OR_INT;
-				if((int16_t)value == value)  return SHORT_OR_INT;
+			static inline const Type* getTypeByValue(jint value) {
+				if((jbool)value == value)  return ANY_INT_OR_BOOLEAN;
+				if((jbyte)value == value)  return value > 0 ? ANY_INT : ANY_SIGNED_INT;
+				if((jchar)value == value)  return (jshort)value == value ? CHAR_OR_SHORT_OR_INT : CHAR_OR_INT;
+				if((jshort)value == value) return SHORT_OR_INT;
 				return INT;
 			}
 
-		protected:
-			IConstOperation(int32_t value): ConstOperation(getTypeByValue(value), value) {}
-
 		public:
-			static const Operation* valueOf(int32_t value, const ConstantDecompilationContext context) {
-				const Operation* result = ConstOperation<int32_t>::valueOf(value, context);
-				return result == nullptr ? new IConstOperation(value) : result;
-			}
+			IConstOperation(jint value): ConstOperation(getTypeByValue(value), value) {}
 
-			virtual string toString(const StringifyContext&) const override {
+			virtual string toString(const StringifyContext& context, const ConstantDecompilationContext& constantContext) const override {
+				if(const Operation* operation = findConstant(constantContext))
+					return operation->toString(context);
+
+				returnType = returnType->getReducedType();
+
 				if(returnType->isStrictSubtypeOf(INT))     return primitiveToString(value);
-				if(returnType->isStrictSubtypeOf(SHORT))   return primitiveToString((int16_t)value);
-				if(returnType->isStrictSubtypeOf(CHAR))    return primitiveToString((char16_t)value);
-				if(returnType->isStrictSubtypeOf(BYTE))    return primitiveToString((int8_t)value);
-				if(returnType->isStrictSubtypeOf(BOOLEAN)) return primitiveToString((bool)value);
+				if(returnType->isStrictSubtypeOf(SHORT))   return primitiveToString((jshort)value);
+				if(returnType->isStrictSubtypeOf(CHAR))    return primitiveToString((jchar)value);
+				if(returnType->isStrictSubtypeOf(BYTE))    return primitiveToString((jbyte)value);
+				if(returnType->isStrictSubtypeOf(BOOLEAN)) return primitiveToString((jbool)value);
 				throw IllegalStateException("Illegal type of iconst operation: " + returnType->toString());
 			}
-
-			/*virtual void onCastReturnType(const Type* newType) const override {
-				returnType = newType;
-			}*/
 	};
 
 
@@ -119,33 +128,27 @@ namespace jdecompiler::operations {
 
 		public:
 			virtual const Type* getImplicitType() const override {
-				return (int32_t)ConstOperation<T>::value == ConstOperation<T>::value ? INT : ConstOperation<T>::returnType;
+				return (jint)ConstOperation<T>::value == ConstOperation<T>::value ? INT : ConstOperation<T>::returnType;
 			}
 
 			virtual void allowImplicitCast() const override {
-				implicit = (int32_t)ConstOperation<T>::value == ConstOperation<T>::value;
+				implicit = (jint)ConstOperation<T>::value == ConstOperation<T>::value;
 			}
 
-			virtual string toString(const StringifyContext&) const override {
-				return implicit ? primitiveToString((int32_t)ConstOperation<T>::value) : primitiveToString(ConstOperation<T>::value);
+			virtual string toString(const StringifyContext& context, const ConstantDecompilationContext& constantContext) const override {
+				if(const Operation* operation = this->findConstant(constantContext))
+					return operation->toString(context);
+
+				return implicit ? primitiveToString((jint)ConstOperation<T>::value) : primitiveToString(ConstOperation<T>::value);
 			}
 	};
 
 
 
-	struct LConstOperation: IntConvertibleConstOperation<int64_t> {
-		protected:
-			LConstOperation(int64_t value): IntConvertibleConstOperation(value) {}
-
+	struct LConstOperation: IntConvertibleConstOperation<jlong> {
 		public:
-			static const Operation* valueOf(int64_t, const ConstantDecompilationContext);
+			LConstOperation(jlong value): IntConvertibleConstOperation(value) {}
 	};
-
-
-	const Operation* LConstOperation::valueOf(int64_t value, const ConstantDecompilationContext context) {
-		const Operation* result = ConstOperation<int64_t>::valueOf(value, context);
-		return result == nullptr ? new LConstOperation(value) : result;
-	}
 
 
 
@@ -153,14 +156,15 @@ namespace jdecompiler::operations {
 	struct FPConstOperation: IntConvertibleConstOperation<T> {
 		static_assert(is_floating_point<T>(), "Only float or double allowed");
 
-		public:
-			static const Operation* valueOf(T, const ConstantDecompilationContext);
+		protected:
+			virtual const Operation* findConstant(const ConstantDecompilationContext&) const override;
 
+		public:
 			FPConstOperation(T value): IntConvertibleConstOperation<T>(value) {}
 	};
 
-	using FConstOperation = FPConstOperation<float>;
-	using DConstOperation = FPConstOperation<double>;
+	using FConstOperation = FPConstOperation<jfloat>;
+	using DConstOperation = FPConstOperation<jdouble>;
 
 
 
@@ -171,16 +175,11 @@ namespace jdecompiler::operations {
 
 			StringConstOperation(const StringConstant* value): StringConstOperation(value->value) {}
 
-			static const Operation* valueOf(const StringConstant* value, const ConstantDecompilationContext context) {
-				return valueOf(value->value, context);
-			}
+		public:
+			virtual string toString(const StringifyContext& context, const ConstantDecompilationContext& constantContext) const override {
+				if(const Operation* operation = findConstant(constantContext))
+					return operation->toString(context);
 
-			static const Operation* valueOf(const string& value, const ConstantDecompilationContext context) {
-				const Operation* operation = ConstOperation<string>::valueOf(value, context);
-				return operation == nullptr ? new StringConstOperation(value) : operation;
-			}
-
-			virtual string toString(const StringifyContext& context) const override {
 				if(JDecompiler::getInstance().multilineStringAllowed()) {
 					size_t lnPos = value.find('\n');
 
@@ -211,10 +210,10 @@ namespace jdecompiler::operations {
 
 	struct EmptyStringConstOperation: Operation {
 		private:
-			EmptyStringConstOperation() {}
+			constexpr EmptyStringConstOperation() noexcept {}
 
 		public:
-			virtual string toString(const StringifyContext& context) const override {
+			virtual string toString(const StringifyContext&) const override {
 				return "\"\"";
 			}
 

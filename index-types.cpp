@@ -9,13 +9,13 @@ namespace jdecompiler {
 		POS_MARKER, INDEX_MARKER, OFFSET_MARKER
 	};
 
-	template<typename T, index_marker_t M>
+	template<typename, index_marker_t>
 	struct abstract_index_impl;
 
 
 	typedef abstract_index_impl<uint32_t, index_marker_t::INDEX_MARKER> index_t;
 	typedef abstract_index_impl<uint32_t, index_marker_t::POS_MARKER> pos_t;
-	typedef abstract_index_impl<uint32_t, index_marker_t::OFFSET_MARKER> offset_t;
+	typedef abstract_index_impl<int32_t,  index_marker_t::OFFSET_MARKER> offset_t;
 
 
 	template<typename T>
@@ -39,27 +39,27 @@ namespace jdecompiler {
 			}
 
 		template<index_marker_t M>
-		inline friend abstract_index_impl<T, M>& operator++ (abstract_index_impl<T, M>& val) {
+		inline friend abstract_index_impl<T, M>& operator++(abstract_index_impl<T, M>& val) {
 			val.value++;
 			return val;
 		}
 
 		template<index_marker_t M>
-		inline friend abstract_index_impl<T, M>& operator-- (abstract_index_impl<T, M>& val) {
+		inline friend abstract_index_impl<T, M>& operator--(abstract_index_impl<T, M>& val) {
 			val.value--;
 			return val;
 		}
 
 
 		template<index_marker_t M>
-		inline friend abstract_index_impl<T, M> operator++ (abstract_index_impl<T, M>& val, int) {
+		inline friend abstract_index_impl<T, M> operator++(abstract_index_impl<T, M>& val, int) {
 			abstract_index_impl<T, M> copy(val);
 			val.value++;
 			return copy;
 		}
 
 		template<index_marker_t M>
-		inline friend abstract_index_impl<T, M> operator-- (abstract_index_impl<T, M>& val, int) {
+		inline friend abstract_index_impl<T, M> operator--(abstract_index_impl<T, M>& val, int) {
 			abstract_index_impl<T, M> copy(val);
 			val.value--;
 			return copy;
@@ -67,44 +67,44 @@ namespace jdecompiler {
 
 
 		template<index_marker_t M>
-		inline friend constexpr abstract_index_impl<T, M> operator+ (uint32_t val1, const abstract_index_impl<T, M>& val2) {
+		inline friend constexpr abstract_index_impl<T, M> operator+(uint32_t val1, const abstract_index_impl<T, M>& val2) {
 			return abstract_index_impl<T, M>(val1 + val2.value);
 		}
 
 		template<index_marker_t M>
-		inline friend constexpr abstract_index_impl<T, M> operator+ (const abstract_index_impl<T, M>& val1, uint32_t val2) {
+		inline friend constexpr abstract_index_impl<T, M> operator+(const abstract_index_impl<T, M>& val1, uint32_t val2) {
 			return abstract_index_impl<T, M>(val1.value + val2);
 		}
 
 
 		template<index_marker_t M>
-		inline friend constexpr abstract_index_impl<T, M> operator- (uint32_t val1, const abstract_index_impl<T, M>& val2) {
+		inline friend constexpr abstract_index_impl<T, M> operator-(uint32_t val1, const abstract_index_impl<T, M>& val2) {
 			return abstract_index_impl<T, M>(val1 - val2.value);
 		}
 
 		template<index_marker_t M>
-		inline friend constexpr abstract_index_impl<T, M> operator- (const abstract_index_impl<T, M>& val1, uint32_t val2) {
+		inline friend constexpr abstract_index_impl<T, M> operator-(const abstract_index_impl<T, M>& val1, uint32_t val2) {
 			return abstract_index_impl<T, M>(val1.value - val2);
 		}
 
 
-		inline friend constexpr pos_t operator+ (const pos_t& pos, const offset_t& offset);
-		inline friend constexpr pos_t operator- (const pos_t& pos, const offset_t& offset);
+		inline friend constexpr pos_t operator+(const pos_t& pos, const offset_t& offset);
+		inline friend constexpr pos_t operator-(const pos_t& pos, const offset_t& offset);
 
 
 		template<index_marker_t M>
-		inline friend constexpr abstract_index_impl<T, M>& operator+= (abstract_index_impl<T, M>& val1, uint32_t val2) {
+		inline friend constexpr abstract_index_impl<T, M>& operator+=(abstract_index_impl<T, M>& val1, uint32_t val2) {
 			val1.value += val2;
 			return val1;
 		}
 
 		template<index_marker_t M>
-		inline friend constexpr abstract_index_impl<T, M>& operator-= (abstract_index_impl<T, M>& val1, uint32_t val2) {
+		inline friend constexpr abstract_index_impl<T, M>& operator-=(abstract_index_impl<T, M>& val1, uint32_t val2) {
 			val1.value -= val2;
 			return val1;
 		}
 
-		inline friend ostream& operator<< (ostream& out, const abstract_index_t& val) {
+		inline friend ostream& operator<<(ostream& out, const abstract_index_t& val) {
 			return out << val.value;
 		}
 
@@ -147,11 +147,11 @@ namespace jdecompiler {
 		inline constexpr operator offset_t() const = delete;
 
 
-		inline friend constexpr pos_t operator+ (const pos_t& val1, const pos_t& val2) {
+		inline friend constexpr pos_t operator+(const pos_t& val1, const pos_t& val2) {
 			return pos_t(val1.value + val2.value);
 		}
 
-		inline friend constexpr pos_t operator- (const pos_t& val1, const pos_t& val2) {
+		inline friend constexpr pos_t operator-(const pos_t& val1, const pos_t& val2) {
 			return pos_t(val1.value - val2.value);
 		}
 	};
@@ -171,11 +171,11 @@ namespace jdecompiler {
 	};
 
 
-	inline constexpr pos_t operator+ (const pos_t& pos, const offset_t& offset) {
+	inline constexpr pos_t operator+(const pos_t& pos, const offset_t& offset) {
 		return pos_t(pos.value + offset.value);
 	}
 
-	inline constexpr pos_t operator- (const pos_t& pos, const offset_t& offset) {
+	inline constexpr pos_t operator-(const pos_t& pos, const offset_t& offset) {
 		return pos_t(pos.value - offset.value);
 	}
 

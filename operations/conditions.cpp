@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_CONDITION_OPERATIONS_CPP
 #define JDECOMPILER_CONDITION_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	//template<BasicType type>
 	struct CmpOperation: BooleanOperation {
@@ -19,19 +19,19 @@ namespace jdecompiler::operations {
 	struct LCmpOperation: CmpOperation {
 		LCmpOperation(const DecompilationContext& context): CmpOperation(context, LONG) {}
 
-		virtual string toString(const StringifyContext& context) const override { throw Exception("Illegal using of lcmp: toString()"); }
+		virtual string toString(const StringifyContext&) const override { throw Exception("Illegal using of lcmp: toString()"); }
 	};
 
 	struct FCmpOperation: CmpOperation {
 		FCmpOperation(const DecompilationContext& context): CmpOperation(context, FLOAT) {}
 
-		virtual string toString(const StringifyContext& context) const override { throw Exception("Illegal using of fcmp: toString()"); }
+		virtual string toString(const StringifyContext&) const override { throw Exception("Illegal using of fcmp: toString()"); }
 	};
 
 	struct DCmpOperation: CmpOperation {
 		DCmpOperation(const DecompilationContext& context): CmpOperation(context, DOUBLE) {}
 
-		virtual string toString(const StringifyContext& context) const override { throw Exception("Illegal using of dcmp: toString()"); }
+		virtual string toString(const StringifyContext&) const override { throw Exception("Illegal using of dcmp: toString()"); }
 	};
 
 
@@ -150,7 +150,7 @@ namespace jdecompiler::operations {
 					generalType = operand2->getReturnType()->castNoexcept(operand1->getReturnType());
 
 				if(generalType == nullptr)
-					throw DecompilationException("incopatible types for operator " + compareType.getOperator(false) +
+					throw DecompilationException("Incopatible types for operator " + compareType.getOperator(false) +
 							": " + operand1->getReturnType()->toString() + " and " + operand2->getReturnType()->toString());
 
 				operand1->castReturnTypeTo(generalType);
@@ -282,7 +282,7 @@ namespace jdecompiler::operations {
 				        instanceof<const IConstOperation*>(falseCase) && static_cast<const IConstOperation*>(falseCase)->value == 0) {}
 
 		virtual string toString(const StringifyContext& context) const override {
-			return isShort && trueCase->getReturnType()->isSubtypeOf(BOOLEAN) && falseCase->getReturnType()->isSubtypeOf(BOOLEAN) ?
+			return isShort && trueCase->getReturnType()->isStrictSubtypeOf(BOOLEAN) && falseCase->getReturnType()->isStrictSubtypeOf(BOOLEAN) ?
 					condition->toString(context) :
 					condition->toString(context) + " ? " + trueCase->toString(context) + " : " + falseCase->toString(context);
 		}

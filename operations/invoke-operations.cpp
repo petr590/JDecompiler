@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_INVOKE_OPERATIONS_CPP
 #define JDECOMPILER_INVOKE_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct InvokeOperation: Operation {
 		public:
@@ -275,7 +275,7 @@ namespace jdecompiler::operations {
 			}
 
 			virtual bool canAddToCode() const override {
-				return !(isSuperConstructor && arguments.empty()) && !(isEnumSuperConstructor && arguments.size() == 2);
+				return !((isSuperConstructor && arguments.empty()) || (isEnumSuperConstructor && arguments.size() == 2));
 			}
 	};
 
@@ -299,59 +299,70 @@ namespace jdecompiler::operations {
 
 
 	struct ConcatStringsOperation: InvokeOperation {
-		const StringConstOperation* const pattern;
+		public:
+			const StringConstOperation* const pattern;
 
-		vector<const Operation*> operands;
+		protected:
+			mutable vector<const Operation*> operands;
+			friend struct StoreOperation;
+			friend struct PutFieldOperation;
 
-		ConcatStringsOperation(const DecompilationContext& context, const MethodDescriptor& concater,
-				const StringConstOperation* pattern, const vector<const Operation*>& staticArguments):
-				InvokeOperation(context, concater, true), pattern(pattern) {
+		public:
+			ConcatStringsOperation(const DecompilationContext& context, const MethodDescriptor& concater,
+					const StringConstOperation* pattern, const vector<const Operation*>& staticArguments):
+					InvokeOperation(context, concater, true), pattern(pattern) {
 
-			auto arg = arguments.end();
-			auto staticArg = staticArguments.begin();
+				auto arg = arguments.end();
+				auto staticArg = staticArguments.begin();
 
-			string str;
+				string str;
 
-			for(const char* cp = pattern->value.c_str(); *cp != '\0'; cp++) {
-				if(*cp == '\1' || *cp == '\2') {
-					if(!str.empty()) {
-						operands.push_back(StringConstOperation::valueOf(str, context.classinfo));
-						str.clear();
+				for(const char* cp = pattern->value.c_str(); *cp != '\0'; cp++) {
+					if(*cp == '\1' || *cp == '\2') {
+						if(!str.empty()) {
+							operands.push_back(new StringConstOperation(str));
+							str.clear();
+						}
+
+						switch(*cp) {
+							case '\1': operands.push_back(*(--arg)); break;
+							case '\2': operands.push_back(*(staticArg++)); break;
+							default: throw Exception("WTF??"); // 🙃️
+						}
+
+					} else {
+						str += *cp;
 					}
+				}
 
-					switch(*cp) {
-						case '\1': operands.push_back(*(--arg)); break;
-						case '\2': operands.push_back(*(staticArg++)); break;
-						default: throw Exception("WTF??"); // 🙃️
-					}
+				if(!str.empty())
+					operands.push_back(new StringConstOperation(str));
 
-				} else {
-					str += *cp;
+				insertEmptyStringIfNecessary();
+			}
+
+		protected:
+			void insertEmptyStringIfNecessary() const {
+				if((operands.size() == 1 && *operands[0]->getReturnType() != *STRING) ||
+					(operands.size() > 1 && *operands[0]->getReturnType() != *STRING && *operands[1]->getReturnType() != *STRING)) {
+
+					operands.insert(operands.begin(), EmptyStringConstOperation::getInstance());
 				}
 			}
 
-			if(!str.empty())
-				operands.push_back(StringConstOperation::valueOf(str, context.classinfo));
-
-			if((operands.size() == 1 && *operands[0]->getReturnType() != *STRING) ||
-				(operands.size() > 1 && *operands[0]->getReturnType() != *STRING && *operands[1]->getReturnType() != *STRING)) {
-
-				operands.insert(operands.begin(), EmptyStringConstOperation::getInstance());
+		public:
+			virtual string toString(const StringifyContext& context) const override {
+				return join<const Operation*>(operands,
+						[this, &context] (const Operation* operation) { return toStringPriority(operation, context, Associativity::RIGHT); }, " + ");
 			}
-		}
 
-		virtual string toString(const StringifyContext& context) const override {
-			return join<const Operation*>(operands,
-					[this, &context] (const Operation* operation) { return toStringPriority(operation, context, Associativity::RIGHT); }, " + ");
-		}
+			virtual const Type* getReturnType() const override {
+				return STRING;
+			}
 
-		virtual const Type* getReturnType() const override {
-			return STRING;
-		}
-
-		virtual Priority getPriority() const override {
-			return Priority::PLUS;
-		}
+			virtual Priority getPriority() const override {
+				return Priority::PLUS;
+			}
 	};
 }
 

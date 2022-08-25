@@ -1,7 +1,8 @@
 #ifndef JDECOMPILER_NEW_ARRAY_OPERATIONS_CPP
 #define JDECOMPILER_NEW_ARRAY_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
+
 	struct NewArrayOperation: Operation {
 		protected:
 			const ArrayType* const arrayType;
@@ -19,7 +20,7 @@ namespace jdecompiler::operations {
 					arrayType(arrayType), lengths(arrayType->nestingLevel) {
 
 				if(dimensions > arrayType->nestingLevel)
-					throw DecompilationException("instruction newarray (or another derivative of it)"
+					throw DecompilationException("Instruction newarray (or another derivative of it)"
 							"has too many dimensions (" + to_string(dimensions) + ") for its array type " + arrayType->toString());
 
 				for(uint16_t i = dimensions; i > 0; )

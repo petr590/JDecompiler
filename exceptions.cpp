@@ -4,26 +4,11 @@
 #include "util/hex.cpp"
 #include "util/exception.cpp"
 #include "util/index-out-of-bounds-exception.cpp"
+#include "util/illegal-argument-exception.cpp"
+#include "util/illegal-state-exception.cpp"
+#include "util/stack.cpp"
 
 namespace jdecompiler {
-
-	struct IllegalArgumentException: Exception {
-		IllegalArgumentException(const string& message): Exception(message) {}
-	};
-
-	struct IllegalStateException: Exception {
-		IllegalStateException(const string& message): Exception(message) {}
-	};
-
-	struct AssertionError: Exception {
-		AssertionError(const string& message): Exception(message) {}
-	};
-
-
-	struct CastException: Exception {
-		CastException(): Exception() {}
-		CastException(const string& message): Exception(message) {}
-	};
 
 
 	struct BytecodeIndexOutOfBoundsException: IndexOutOfBoundsException {
@@ -59,8 +44,8 @@ namespace jdecompiler {
 
 
 	struct InvalidTypeNameException: DisassemblingException {
-		InvalidTypeNameException(const string& encodedName): DisassemblingException('\'' + encodedName + '\'') {}
-		InvalidTypeNameException(const string& encodedName, size_t pos): DisassemblingException('\'' + encodedName + "' (at pos " + to_string(pos) + ')') {}
+		InvalidTypeNameException(const string& encodedName): DisassemblingException('"' + encodedName + '"') {}
+		InvalidTypeNameException(const string& encodedName, size_t pos): DisassemblingException('"' + encodedName + "\" (at pos " + to_string(pos) + ')') {}
 	};
 
 	struct InvalidClassNameException: InvalidTypeNameException {
@@ -89,8 +74,12 @@ namespace jdecompiler {
 
 
 	struct IllegalModifiersException: DecompilationException {
-		IllegalModifiersException(uint16_t modifiers): DecompilationException(hexWithPrefix<4>(modifiers)) {}
-			IllegalModifiersException(const string& message): DecompilationException(message) {}
+		IllegalModifiersException(modifiers_t modifiers): DecompilationException(hexWithPrefix<4>(modifiers)) {}
+		IllegalModifiersException(const string& message): DecompilationException(message) {}
+	};
+
+	struct IllegalPackageInfoException: DecompilationException {
+		IllegalPackageInfoException(const string& message): DecompilationException(message) {}
 	};
 
 	struct IllegalMethodDescriptorException: DisassemblingException {
@@ -108,6 +97,10 @@ namespace jdecompiler {
 		TypeSizeMismatchException(const string& message): DecompilationException(message) {}
 		TypeSizeMismatchException(const string& requiredSizeName, const string& sizeName, const string& typeName):
 				DecompilationException("Required " + requiredSizeName + ", got " + sizeName + " of type " + typeName) {}
+	};
+
+	struct EmptyCodeStackException: DecompilationException {
+		EmptyCodeStackException(const EmptyStackException& ex): DecompilationException(ex.what()) {}
 	};
 
 

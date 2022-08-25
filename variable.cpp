@@ -55,6 +55,7 @@ namespace jdecompiler {
 	Variable::Variable(const Type* type, bool declared, bool isFixedType): type(type), declared(declared), isFixedType(isFixedType) {}
 
 
+	template<bool widest = true>
 	const Type* Variable::setType(const Type* newType) const {
 		if(isFixedType) {
 			if(type->isSubtypeOf(newType))
@@ -69,7 +70,7 @@ namespace jdecompiler {
 		typeSettingLocked = true;
 
 		for(const Operation* operation : bindedOperations) {
-			newType = operation->getReturnTypeAsWidest(newType);
+			newType = widest ? operation->getReturnTypeAsWidest(newType) : operation->getReturnTypeAs(newType);
 		}
 
 		typeSettingLocked = false;

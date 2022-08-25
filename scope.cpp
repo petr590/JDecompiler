@@ -70,6 +70,8 @@ namespace jdecompiler {
 
 	string Scope::getNameFor(const Variable* var) const {
 
+		assert(var != nullptr);
+
 		if(!has(variables, var)) {
 			return parentScope != nullptr ? parentScope->getNameFor(var) :
 					throw IllegalStateException("Variable of type " + var->getType()->toString() + " is not found");
@@ -143,22 +145,48 @@ namespace jdecompiler {
 	}
 
 	string Scope::toStringImpl(const StringifyContext& context) const {
-		string str = (label.empty() ? EMPTY_STRING : label + ": ") + getHeader(context) + "{\n";
-		const size_t baseSize = str.size();
+		const string header = getHeader(context);
+		string str = (label.empty() ? EMPTY_STRING : label + ": ") + header;
 
 		context.classinfo.increaseIndent();
+
+		bool omitBrackets = false;
+
+		if(JDecompiler::getInstance().omitBrackets() && this->canOmitBrackets()) {
+
+			switch(this->getStringifiedOperationsCount()) {
+				case 0:
+					context.classinfo.reduceIndent();
+					return str + ';';
+				case 1:
+					str += '\n';
+					omitBrackets = true;
+					break;
+				default:
+					str += header.empty() ? "{\n" : " {\n";
+			}
+
+		} else {
+			str += header.empty() ? "{\n" : " {\n";
+		}
+
+		const size_t baseSize = str.size();
 
 		for(auto i = code.begin(); i != code.end(); ++i) {
 			const Operation* operation = *i;
 
-			if(operation->canStringify() && !operation->isRemoved() && canPrintNextOperation(i)) {
+			if(operation->canStringify() && canPrintNextOperation(i)) {
 				assert(operation->getReturnType() == VOID);
+
 				str += operation->getFrontSeparator(context.classinfo) + operation->toString(context) +
 						operation->getBackSeparator(context.classinfo);
 			}
 		}
 
 		context.classinfo.reduceIndent();
+
+		if(omitBrackets)
+			return str;
 
 		if(str.size() == baseSize) {
 			str.back() = '}';
@@ -168,6 +196,17 @@ namespace jdecompiler {
 		return str + context.classinfo.getIndent() + '}';
 	}
 
+
+	bool Scope::bracketsOmitted() const {
+		return JDecompiler::getInstance().omitBrackets() && this->canOmitBrackets() && getStringifiedOperationsCount() <= 1;
+	}
+
+	size_t Scope::getStringifiedOperationsCount() const {
+		return accumulate(code.begin(), code.end(), 0,
+					[] (size_t count, const Operation* operation) { return operation->canStringify() ? count + 1 : count; });
+	}
+
+
 	void Scope::addOperation(const Operation* operation, const DecompilationContext& context) const {
 		this->update(context);
 
@@ -175,9 +214,26 @@ namespace jdecompiler {
 			code.push_back(operation);
 			if(instanceof<const Scope*>(operation))
 				innerScopes.push_back(static_cast<const Scope*>(operation));
+
 		} else {
 			tempCode.push_back(operation);
 		}
+	}
+
+	bool Scope::removeOperation(const Operation* operation) const {
+		const auto foundOperation = find(code.begin(), code.end(), operation);
+
+		if(foundOperation != code.end()) {
+			code.erase(foundOperation);
+			return true;
+		}
+
+		for(const Scope* scope : innerScopes) {
+			if(scope->removeOperation(operation))
+				return true;
+		}
+
+		return false;
 	}
 
 	void Scope::update(const DecompilationContext& context) const {

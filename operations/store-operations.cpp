@@ -1,23 +1,28 @@
 #ifndef JDECOMPILER_STORE_OPERATIONS_CPP
 #define JDECOMPILER_STORE_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct StoreOperation: TransientReturnableOperation {
+		/* The changed order of the fields is needed to optimize the size of the object (size decreased from 72 to 56 bytes)
+		   Yes, I have nothing else to do but optimize the size of c++ objects */
 		public:
 			const Operation* const value;
-			const uint16_t index;
 			const Variable& variable;
 
+			const uint16_t index;
+
 		protected:
+			bool declare = false;
 			mutable int_fast8_t inc = 0;
+			bool isStringAppend = false;
+
 			const BinaryOperatorOperation* shortFormOperator = nullptr;
 			const Operation* revokeIncrementOperation = nullptr;
-			bool declare = false;
 
 		public:
 			StoreOperation(const Type* requiredType, const DecompilationContext& context, uint16_t index):
-					value(context.stack.popAs(requiredType)), index(index), variable(context.getCurrentScope()->getVariable(index, false)) {
+					value(context.stack.popAs(requiredType)), variable(context.getCurrentScope()->getVariable(index, false)), index(index) {
 
 				initReturnType<Dup1Operation, Dup2Operation>(context, value);
 
@@ -38,9 +43,11 @@ namespace jdecompiler::operations {
 				const Operation* rawValue = value->getOriginalOperation();
 				if(instanceof<const InvokeOperation*>(rawValue)) {
 					const string methodName = static_cast<const InvokeOperation*>(rawValue)->descriptor.name;
-					if(stringStartsWith(methodName, "get")) {
+					if(stringStartsWith(methodName, "get") && methodName.size() > 3) {
 						variable.addName(toLowerCamelCase(methodName.substr(3)));
-					} else if(stringStartsWith(methodName, "is")) {
+					} else if(stringStartsWith(methodName, "as") && methodName.size() > 2) {
+						variable.addName(toLowerCamelCase(methodName.substr(2)));
+					} else if(stringStartsWith(methodName, "is") && methodName.size() > 2) {
 						variable.addName(methodName);
 					}
 				}
@@ -89,11 +96,23 @@ namespace jdecompiler::operations {
 											inc = incValue << isPostInc; // post-inc if return type is void, else pre-inc
 										} else if(returnType != VOID) {
 											revokeIncrementOperation = constOperation;
-											context.warning("Cannot decompile bytecode exactly: it contains post-increment by a number,"
+											context.warning("cannot decompile bytecode exactly: it contains post-increment by a number,"
 															"other than one or minus one");
 										}
 									}
 								}
+							}
+						}
+
+					} else if(const ConcatStringsOperation* concatOperation = dynamic_cast<const ConcatStringsOperation*>(rawValue)) {
+						vector<const Operation*>& operands = concatOperation->operands;
+
+						if(const ALoadOperation* aloadOperation = dynamic_cast<const ALoadOperation*>(operands[0])) {
+							if(aloadOperation->index == index) {
+								isStringAppend = true;
+								operands.erase(operands.begin());
+								if(operands.size() > 1)
+									concatOperation->insertEmptyStringIfNecessary();
 							}
 						}
 					}
@@ -127,9 +146,13 @@ namespace jdecompiler::operations {
 					}
 
 					return revokeIncrementOperation != nullptr ?
-							'(' + shortFormOperator->toShortFormString(context, variable) + ") " + // x++ is equivalent (x += 1) - 1
-									shortFormOperator->getOppositeOperator() + ' ' + revokeIncrementOperation->toString(context) :
-							shortFormOperator->toShortFormString(context, variable);
+						'(' + shortFormOperator->toShortFormString(context, context.getCurrentScope()->getNameFor(variable)) + ") " + // x++ is equivalent (x += 1) - 1
+								shortFormOperator->getOppositeOperator() + ' ' + revokeIncrementOperation->toString(context) :
+						shortFormOperator->toShortFormString(context, context.getCurrentScope()->getNameFor(variable));
+				}
+
+				if(isStringAppend) {
+					return context.getCurrentScope()->getNameFor(variable) + " += " + valueToString(context);
 				}
 
 				return context.getCurrentScope()->getNameFor(variable) + " = " + valueToString(context);
@@ -190,7 +213,17 @@ namespace jdecompiler::operations {
 	};
 
 	struct AStoreOperation: StoreOperation {
-		AStoreOperation(const DecompilationContext& context, uint16_t index): StoreOperation(AnyObjectType::getInstance(), context, index) {}
+		protected:
+			bool isCatchScopeHandler = false;
+
+			void handleCatchScope();
+
+		public:
+			AStoreOperation(const DecompilationContext& context, uint16_t index): StoreOperation(AnyObjectType::getInstance(), context, index) {
+				handleCatchScope();
+			}
+
+			virtual bool canAddToCode() const override;
 	};
 }
 

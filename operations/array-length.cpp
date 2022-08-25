@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_ARRAY_LENGTH_OPERATION_CPP
 #define JDECOMPILER_ARRAY_LENGTH_OPERATION_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct ArrayLengthOperation: IntOperation {
 		protected:

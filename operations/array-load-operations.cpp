@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_ARRAY_LOAD_OPERATIONS_CPP
 #define JDECOMPILER_ARRAY_LOAD_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct ArrayLoadOperation: Operation {
 		public:

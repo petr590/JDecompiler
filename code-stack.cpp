@@ -13,7 +13,27 @@ namespace jdecompiler {
 		CodeStack() {}
 
 		inline const Operation* pop() {
-			return stack<const Operation*>::pop();
+			try {
+				return stack<const Operation*>::pop();
+			} catch(const EmptyStackException& ex) {
+				throw EmptyCodeStackException(ex);
+			}
+		}
+
+		inline const Operation* top() {
+			try {
+				return stack<const Operation*>::top();
+			} catch(const EmptyStackException& ex) {
+				throw EmptyCodeStackException(ex);
+			}
+		}
+
+		inline const Operation* lookup(size_t index) {
+			try {
+				return stack<const Operation*>::lookup(index);
+			} catch(const EmptyStackException& ex) {
+				throw EmptyCodeStackException(ex);
+			}
 		}
 
 		template<class O>

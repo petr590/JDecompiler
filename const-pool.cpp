@@ -13,9 +13,9 @@
 namespace jdecompiler {
 
 	struct Constant {
-		virtual const char* getConstantName() const = 0;
-
 		virtual ~Constant() {}
+
+		virtual const char* getConstantName() const = 0;
 
 		virtual uint8_t getPositions() const {
 			return 1;
@@ -36,7 +36,7 @@ namespace jdecompiler {
 			const InterConstant** interPool;
 
 		public:
-			ConstantPool(ClassInputStream& instream);
+			ConstantPool(ClassInputStream&);
 
 		private:
 			template<typename C>
@@ -88,7 +88,7 @@ namespace jdecompiler {
 			}
 
 		public:
-			const Constant*& operator[] (uint16_t index) const {
+			const Constant*& operator[](uint16_t index) const {
 				checkIndex(index);
 				return pool[index];
 			}
@@ -141,9 +141,9 @@ namespace jdecompiler {
 	struct ConstValueConstant: Constant {
 		DEFINE_CONSTANT_NAME(ConstantValue);
 
-		virtual string toString(const ClassInfo& classinfo) const = 0;
+		virtual string toString(const ClassInfo&) const = 0;
 
-		virtual const Operation* toOperation(const ConstantDecompilationContext) const = 0;
+		virtual const Operation* toOperation() const = 0;
 	};
 
 
@@ -158,40 +158,40 @@ namespace jdecompiler {
 	};
 
 
-	struct IntegerConstant: NumberConstant<int32_t> {
+	struct IntegerConstant: NumberConstant<jint> {
 		DEFINE_CONSTANT_NAME(Integer);
 
-		IntegerConstant(const int32_t value): NumberConstant(value) {};
+		IntegerConstant(const jint value): NumberConstant(value) {};
 
-		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
+		virtual const Operation* toOperation() const override;
 	};
 
-	struct FloatConstant: NumberConstant<float> {
+	struct FloatConstant: NumberConstant<jfloat> {
 		DEFINE_CONSTANT_NAME(Float);
 
-		FloatConstant(const float value): NumberConstant(value) {};
+		FloatConstant(const jfloat value): NumberConstant(value) {};
 
-		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
+		virtual const Operation* toOperation() const override;
 	};
 
-	struct LongConstant: NumberConstant<int64_t> {
+	struct LongConstant: NumberConstant<jlong> {
 		DEFINE_CONSTANT_NAME(Long);
 
-		LongConstant(const int64_t value): NumberConstant(value) {};
+		LongConstant(const jlong value): NumberConstant(value) {};
 
-		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
+		virtual const Operation* toOperation() const override;
 
 		virtual uint8_t getPositions() const override {
 			return 2;
 		}
 	};
 
-	struct DoubleConstant: NumberConstant<double> {
+	struct DoubleConstant: NumberConstant<jdouble> {
 		DEFINE_CONSTANT_NAME(Double);
 
-		DoubleConstant(const  double value): NumberConstant(value) {};
+		DoubleConstant(const jdouble value): NumberConstant(value) {};
 
-		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
+		virtual const Operation* toOperation() const override;
 
 		virtual uint8_t getPositions() const override {
 			return 2;
@@ -210,7 +210,7 @@ namespace jdecompiler {
 
 		virtual string toString(const ClassInfo&) const override;
 
-		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
+		virtual const Operation* toOperation() const override;
 	};
 
 
@@ -227,7 +227,7 @@ namespace jdecompiler {
 			return stringToLiteral(value);
 		}
 
-		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
+		virtual const Operation* toOperation() const override;
 	};
 
 
@@ -306,11 +306,11 @@ namespace jdecompiler {
 					throw IllegalStateException("referenceKind is " + to_string(referenceKind) + ", must be in the range 1 to 9");
 			}
 
-			virtual string toString(const ClassInfo& classinfo) const override {
+			virtual string toString(const ClassInfo&) const override {
 				return "#MethodHandle#";
 			}
 
-			virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
+			virtual const Operation* toOperation() const override;
 	};
 
 
@@ -326,7 +326,7 @@ namespace jdecompiler {
 
 		virtual string toString(const ClassInfo&) const override;
 
-		virtual const Operation* toOperation(const ConstantDecompilationContext) const override;
+		virtual const Operation* toOperation() const override;
 	};
 
 	struct InvokeDynamicConstant: Constant {

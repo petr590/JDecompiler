@@ -5,7 +5,7 @@
 
 namespace jdecompiler {
 
-	struct DisassemblerContext: Context {
+	struct DisassemblerContext final: Context {
 		public:
 			const ConstantPool& constPool;
 			const uint32_t length;
@@ -36,15 +36,19 @@ namespace jdecompiler {
 
 					next();
 				}
+			}
 
-				const index_t lastIndex = index;
-				assert(lastIndex == instructions.size());
+		protected:
+			friend struct Method;
 
-				currentBlock = new RootBlock(lastIndex);
+			void decompile() {
+				const index_t size = instructions.size();
+
+				currentBlock = new RootBlock(size);
 
 				index = 0;
 
-				for(const Instruction* instruction = instructions[0]; index < lastIndex; instruction = instructions[++index]) {
+				for(const Instruction* instruction = instructions[0]; index < size; instruction = instructions[++index]) {
 					pos = posMap[index];
 
 					if(instruction != nullptr) {
@@ -59,6 +63,7 @@ namespace jdecompiler {
 			}
 
 
+		public:
 			inline const vector<Instruction*>& getInstructions() const {
 				return instructions;
 			}
@@ -95,21 +100,32 @@ namespace jdecompiler {
 				while(index >= currentBlock->end()) {
 					if(currentBlock->parentBlock == nullptr)
 						throw DecompilationException("Unexpected end of global function block " + currentBlock->toDebugString());
-					log("End of", currentBlock->toDebugString());
+					log(index, "  end of ", currentBlock->toDebugString());
 					currentBlock = currentBlock->parentBlock;
 				}
 
 				for(auto i = inactiveBlocks.begin(); i != inactiveBlocks.end(); ) {
 					const Block* block = *i;
-					if(block->start() <= index) {
+					if(index >= block->start()) {
 						if(block->end() > currentBlock->end()) {
-							throw DecompilationException("Block " + block->toDebugString() +
-									" is out of bounds of the parent block " + currentBlock->toDebugString());
+							if(block->end() != static_cast<index_t>(-1))
+								throw DecompilationException("Block " + block->toDebugString() +
+										" is out of bounds of the parent block " + currentBlock->toDebugString());
+
+							block->endIndex = currentBlock->end();
 						}
 
-						log("Start of", block->toDebugString());
+						log(index, "start of ", block->toDebugString());
 
 						currentBlock->addInnerBlock(block);
+						assert(block != currentBlock);
+
+						if(block->parentBlock == nullptr) {
+							block->parentBlock = currentBlock; // crutch for tryBlocks
+						} else {
+							assert(block->parentBlock == currentBlock);
+						}
+
 						currentBlock = block;
 						inactiveBlocks.erase(i);
 					} else
@@ -118,32 +134,32 @@ namespace jdecompiler {
 			}
 
 			inline uint8_t next() {
-				return (uint8_t)bytes[++pos];
+				return static_cast<uint8_t>(bytes[++pos]);
 			}
 
 
 			inline int8_t nextByte() {
-				return (int8_t)next();
+				return static_cast<int8_t>(next());
 			}
 
 			inline uint8_t nextUByte() {
-				return (uint8_t)next();
+				return static_cast<uint8_t>(next());
 			}
 
 			inline int16_t nextShort() {
-				return (int16_t)(next() << 8 | next());
+				return static_cast<int16_t>(nextUShort());
 			}
 
 			inline uint16_t nextUShort() {
-				return (uint16_t)(next() << 8 | next());
+				return static_cast<uint16_t>(next() << 8 | next());
 			}
 
 			inline int32_t nextInt() {
-				return (int32_t)(next() << 24 | next() << 16 | next() << 8 | next());
+				return static_cast<int32_t>(nextUInt());
 			}
 
 			inline uint32_t nextUInt() {
-				return (uint32_t)(next() << 24 | next() << 16 | next() << 8 | next());
+				return static_cast<uint32_t>(next() << 24 | next() << 16 | next() << 8 | next());
 			}
 
 			inline uint8_t current() const {
@@ -157,16 +173,8 @@ namespace jdecompiler {
 			Instruction* nextInstruction();
 
 		public:
-			inline pos_t getPos() const {
-				return pos;
-			}
-
-			inline index_t getIndex() const {
-				return index;
-			}
-
 			inline void skip(int32_t count) {
-				pos += (uint32_t)count;
+				pos += static_cast<uint32_t>(count);
 			}
 
 			index_t posToIndex(pos_t pos) const {

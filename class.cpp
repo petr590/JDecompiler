@@ -4,36 +4,20 @@
 #include "class.h"
 #include "field.cpp"
 #include "method.cpp"
+#include "version.cpp"
 #include "enum-class.cpp"
 
 namespace jdecompiler {
-
-	string to_string(const Version& version) {
-		static const map<uint16_t, const string> versionTable {
-				// I have not found an official indication of version JDK Beta, JDK 1.0 and JDK 1.1 numbers, and I'm too lazy to check it
-				{43, "JDK Beta"}, {44, "JDK 1.0"}, {45, "JDK 1.1"}, {46, "Java 1.2"}, {47, "Java 1.3"}, {48, "Java 1.4"},
-				{49, "Java 5"  }, {50, "Java 6" }, {51, "Java 7" }, {52, "Java 8"  }, {53, "Java 9"  }, {54, "Java 10"},
-				{55, "Java 11" }, {56, "Java 12"}, {57, "Java 13"}, {58, "Java 14" }, {59, "Java 15" }, {60, "Java 16"},
-				{61, "Java 17" }, {62, "Java 18"}, {63, "Java 19"}
-		};
-
-		return to_string(version.majorVersion) + '.' + to_string(version.minorVersion) +
-				(has(versionTable, version.majorVersion) ? " (" + versionTable.at(version.majorVersion) + ')' : EMPTY_STRING);
-	}
 
 	const vector<const Field*> Class::createFields(const vector<FieldDataHolder>& fieldsData, const ClassInfo& classinfo) const {
 		vector<const Field*> fields;
 		fields.reserve(fieldsData.size());
 
 		for(const FieldDataHolder& fieldData : fieldsData) {
-			if(!JDecompiler::getInstance().failOnError()) {
-				try {
-					fields.push_back(fieldData.createField(classinfo));
-				} catch(DecompilationException& ex) {
-					cerr << "Exception while decompiling field " << fieldData.descriptor.toString() << ": " << ex.toString() << endl;
-				}
-			} else {
+			try {
 				fields.push_back(fieldData.createField(classinfo));
+			} catch(DecompilationException& ex) {
+				cerr << "Exception while decompiling field " << fieldData.descriptor.toString() << ": " << ex.toString() << endl;
 			}
 		}
 
@@ -69,9 +53,18 @@ namespace jdecompiler {
 			const vector<const GenericParameter*>& genericParameters):
 			ClassElement(modifiers), version(version), thisType(thisType), superType(superType),
 			constPool(constPool), interfaces(interfaces), attributes(attributes),
-			classinfo(*new ClassInfo(*this, thisType, superType, interfaces, constPool, attributes, modifiers)),
+			classinfo(*new ClassInfo(*this, thisType, superType, interfaces, constPool, attributes, modifiers, version)),
 			fields(createFields(fieldsData, classinfo)), constants(filterConstants(fields)), methods(createMethods(methodsData, classinfo)),
-			genericParameters(genericParameters), fieldStringifyContext(getFieldStringifyContext()) {}
+			genericParameters(genericParameters), fieldStringifyContext(getFieldStringifyContext()) {
+
+		if(thisType.isPackageInfo) {
+			if(modifiers != (ACC_INTERFACE | ACC_ABSTRACT | ACC_SYNTHETIC))
+				throw IllegalModifiersException("package-info must have only interface, abstract and synthetic modifiers");
+
+			if(!fields.empty() || !methods.empty() || attributes.has<InnerClassesAttribute>())
+				throw IllegalPackageInfoException("package-info must not have fields, methods or inner classes attribute");
+		}
+	}
 
 
 	const Class* Class::readClass(ClassInputStream& instream) {
@@ -201,8 +194,7 @@ namespace jdecompiler {
 	string Class::toString0(const ClassInfo& classinfo) const {
 		string str;
 
-		if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
-			str += annotationsAttribute->toString(classinfo) + '\n';
+		str += annotationsToString(classinfo);
 
 		str += (isAnonymous ? anonymousDeclarationToString(classinfo) : declarationToString(classinfo)) + " {\n";
 
@@ -221,6 +213,53 @@ namespace jdecompiler {
 
 
 		return headersToString(classinfo) + str;
+	}
+
+	inline string Class::annotationsToString(const ClassInfo& classinfo) const {
+		if(const AnnotationsAttribute* annotationsAttribute = attributes.get<AnnotationsAttribute>())
+			return annotationsAttribute->toString(classinfo) + '\n';
+		return EMPTY_STRING;
+	}
+
+
+	string Class::packageInfoToString(const ClassInfo& classinfo) const {
+		string str;
+
+		str += annotationsToString(classinfo);
+
+		str += packageToString(classinfo);
+
+		str += classinfo.importsToString();
+
+		if(str.back() == '\n')
+			str.pop_back();
+
+		return str;
+	}
+
+
+	string Class::headersToString(const ClassInfo& classinfo) const {
+		if(thisType.isNested)
+			return EMPTY_STRING;
+
+		string str;
+
+		str += versionCommentToString();
+
+		str += packageToString(classinfo);
+
+		str += classinfo.importsToString();
+
+		return str;
+	}
+
+
+	inline string Class::packageToString(const ClassInfo& classinfo) const {
+		return thisType.packageName.empty() ? EMPTY_STRING : (string)classinfo.getIndent() + "package " + thisType.packageName + ";\n\n";
+	}
+
+	inline string Class::versionCommentToString() const {
+		return JDecompiler::getInstance().printClassVersion() ? "/* Java version: " + to_string(version) + " */\n" : EMPTY_STRING;
 	}
 
 
@@ -273,66 +312,8 @@ namespace jdecompiler {
 	}
 
 
-	string Class::fieldsToString(const ClassInfo& classinfo) const {
-		string str;
-
-		bool anyFieldStringified = false;
-
-		for(const Field* field : fields) {
-			if(field->canStringify(classinfo)) {
-				str += '\n' + field->toString(fieldStringifyContext) + ';';
-				anyFieldStringified = true;
-			}
-		}
-
-		if(anyFieldStringified)
-			str += '\n';
-
-		return str;
-	}
-
-
-	string Class::methodsToString(const ClassInfo& classinfo) const {
-		string str;
-
-		for(const Method* method : methods) {
-			if(method->canStringify(classinfo)) {
-				log("stringify of", method->descriptor.toString());
-				str += '\n' + method->toString(classinfo) + '\n';
-			}
-		}
-
-		return str;
-	}
-
-	string Class::innerClassesToString(const ClassInfo& classinfo) const {
-		string str;
-
-		const NestMembersAttribute* nestMembers = attributes.get<NestMembersAttribute>();
-
-		if(nestMembers != nullptr) {
-
-			for(const ClassType* nestMember : nestMembers->nestMembers) {
-				if(nestMember->isAnonymous)
-					continue;
-
-				const Class* nestClass = JDecompiler::getInstance().getClass(nestMember->getClassEncodedName());
-
-				if(nestClass != nullptr) {
-					nestClass->classinfo.copyFormattingFrom(classinfo);
-					str += '\n' + nestClass->toString() + '\n';
-					nestClass->classinfo.resetFormatting();
-				} else {
-					warning("cannot load inner class " + nestMember->getName());
-				}
-			}
-		}
-
-		return str;
-	}
-
 	string Class::modifiersToString(uint16_t modifiers) const {
-		FormatString str;
+		format_string str;
 
 		bool isInnerProtected = false;
 
@@ -393,18 +374,62 @@ namespace jdecompiler {
 	}
 
 
-	string Class::headersToString(const ClassInfo& classinfo) const {
-		if(thisType.isNested)
-			return EMPTY_STRING;
+	string Class::fieldsToString(const ClassInfo& classinfo) const {
+		string str;
 
-		string headers = JDecompiler::getInstance().printClassVersion() ? "/* Java version: " + to_string(version) + " */\n" : EMPTY_STRING;
+		bool anyFieldStringified = false;
 
-		if(!thisType.packageName.empty())
-			headers += (string)classinfo.getIndent() + "package " + thisType.packageName + ";\n\n";
+		for(const Field* field : fields) {
+			if(field->canStringify(classinfo)) {
+				str += '\n' + field->toString(fieldStringifyContext) + ';';
+				anyFieldStringified = true;
+			}
+		}
 
-		headers += classinfo.importsToString();
+		if(anyFieldStringified)
+			str += '\n';
 
-		return headers;
+		return str;
+	}
+
+
+	string Class::methodsToString(const ClassInfo& classinfo) const {
+		string str;
+
+		for(const Method* method : methods) {
+			if(method->canStringify(classinfo)) {
+				log("stringify of", method->descriptor.toString());
+				str += '\n' + method->toString(classinfo) + '\n';
+			}
+		}
+
+		return str;
+	}
+
+	string Class::innerClassesToString(const ClassInfo& classinfo) const {
+		string str;
+
+		const NestMembersAttribute* nestMembers = attributes.get<NestMembersAttribute>();
+
+		if(nestMembers != nullptr) {
+
+			for(const ClassType* nestMember : nestMembers->nestMembers) {
+				if(nestMember->isAnonymous)
+					continue;
+
+				const Class* nestClass = JDecompiler::getInstance().getClass(nestMember->getClassEncodedName());
+
+				if(nestClass != nullptr) {
+					nestClass->classinfo.copyFormattingFrom(classinfo);
+					str += '\n' + nestClass->toString() + '\n';
+					nestClass->classinfo.resetFormatting();
+				} else {
+					warning("cannot load inner class " + nestMember->getName());
+				}
+			}
+		}
+
+		return str;
 	}
 }
 

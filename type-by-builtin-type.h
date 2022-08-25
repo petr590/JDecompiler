@@ -3,12 +3,12 @@
 
 namespace jdecompiler {
 
-	namespace BuiltinTypes {
-		/* Serves as a marker for the function typeByBuiltinType */
+	namespace builtinJavaTypes {
+		/* Serves as a marker for the function typeByBuiltinJavaType */
 		struct MarkerStruct {
 			MarkerStruct() = delete;
 			MarkerStruct(const MarkerStruct&) = delete;
-			MarkerStruct& operator= (const MarkerStruct&) = delete;
+			MarkerStruct& operator=(const MarkerStruct&) = delete;
 		};
 
 		struct Object: MarkerStruct {};
@@ -18,28 +18,28 @@ namespace jdecompiler {
 		struct MethodHandle: MarkerStruct {};
 	};
 
-	template<typename T>
-	static const Type* typeByBuiltinType();
+	template<typename>
+	static const Type* typeByBuiltinJavaType();
 
-	template<> inline const Type* typeByBuiltinType<bool>() { return BOOLEAN; }
-	template<> inline const Type* typeByBuiltinType<int32_t>() { return ANY_INT_OR_BOOLEAN; }
-	template<> inline const Type* typeByBuiltinType<int64_t>() { return LONG; }
-	template<> inline const Type* typeByBuiltinType<float>() { return FLOAT; }
-	template<> inline const Type* typeByBuiltinType<double>() { return DOUBLE; }
-	template<> inline const Type* typeByBuiltinType<BuiltinTypes::Object>() { return AnyObjectType::getInstance(); }
-	template<> inline const Type* typeByBuiltinType<BuiltinTypes::String>() { return STRING; }
-	template<> inline const Type* typeByBuiltinType<BuiltinTypes::Class>() { return CLASS; }
-	template<> inline const Type* typeByBuiltinType<BuiltinTypes::MethodType>() { return METHOD_TYPE; }
-	template<> inline const Type* typeByBuiltinType<BuiltinTypes::MethodHandle>() { return METHOD_HANDLE; }
-	template<> inline const Type* typeByBuiltinType<string>() { return STRING; }
+	template<> inline const Type* typeByBuiltinJavaType<jbool>() { return BOOLEAN; }
+	template<> inline const Type* typeByBuiltinJavaType<jint>() { return ANY_INT_OR_BOOLEAN; }
+	template<> inline const Type* typeByBuiltinJavaType<jlong>() { return LONG; }
+	template<> inline const Type* typeByBuiltinJavaType<jfloat>() { return FLOAT; }
+	template<> inline const Type* typeByBuiltinJavaType<jdouble>() { return DOUBLE; }
+	template<> inline const Type* typeByBuiltinJavaType<builtinJavaTypes::Object>() { return AnyObjectType::getInstance(); }
+	template<> inline const Type* typeByBuiltinJavaType<builtinJavaTypes::String>() { return STRING; }
+	template<> inline const Type* typeByBuiltinJavaType<builtinJavaTypes::Class>() { return CLASS; }
+	template<> inline const Type* typeByBuiltinJavaType<builtinJavaTypes::MethodType>() { return METHOD_TYPE; }
+	template<> inline const Type* typeByBuiltinJavaType<builtinJavaTypes::MethodHandle>() { return METHOD_HANDLE; }
+	template<> inline const Type* typeByBuiltinJavaType<string>() { return STRING; }
 
 	template<typename T>
-	static inline const Type* exactTypeByBuiltinType() {
-		return typeByBuiltinType<T>();
+	static inline const Type* exactTypeByBuiltinJavaType() {
+		return typeByBuiltinJavaType<T>();
 	}
 
-	template<>
-	inline const Type* exactTypeByBuiltinType<int32_t>() { return INT; }
+	template<> inline const Type* exactTypeByBuiltinJavaType<jint>() { return INT; }
+	template<> inline const Type* exactTypeByBuiltinJavaType<builtinJavaTypes::Object>() { return OBJECT; }
 
 }
 

@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_NEW_OPERATION_CPP
 #define JDECOMPILER_NEW_OPERATION_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 	struct NewOperation: Operation {
 		public:
 			const ClassType clazz;

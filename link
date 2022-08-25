@@ -1,0 +1,2 @@
+#!/bin/sh
+g++ $(./compiler-params) *.o -ldl -Wl,-rpath='$ORIGIN' -o jdecompiler

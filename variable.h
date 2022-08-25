@@ -28,7 +28,12 @@ namespace jdecompiler {
 				return type;
 			}
 
-			const Type* setType(const Type* newType) const;
+			template<bool widest = true>
+			const Type* setType(const Type*) const;
+
+			inline const Type* setTypeShrinking(const Type* newType) const {
+				return setType<false>(newType);
+			}
 
 			inline const Type* castTypeTo(const Type* requiredType) const {
 				return setType(type->castTo(requiredType));

@@ -20,31 +20,31 @@ namespace jdecompiler {
 	}
 
 
-	static inline string primitiveToString(bool value) {
+	static inline string primitiveToString(jbool value) {
 		return value ? "true" : "false";
 	}
 
-	static inline string primitiveToString(char16_t c) {
+	static inline string primitiveToString(jchar c) {
 		return '\'' + charToString<'\''>(c) + '\'';
 	}
 
-	static inline string primitiveToString(int8_t num) { // byte
+	static inline string primitiveToString(jbyte num) {
 		return numberConstantToString(num);
 	}
 
-	static inline string primitiveToString(int16_t num) { // short
+	static inline string primitiveToString(jshort num) {
 		return numberConstantToString(num);
 	}
 
-	static inline string primitiveToString(int32_t num) { // int
+	static inline string primitiveToString(jint num) {
 		return numberConstantToString(num);
 	}
 
-	static inline string primitiveToString(int64_t num) { // long
+	static inline string primitiveToString(jlong num) {
 		return numberConstantToString(num) + JDecompiler::getInstance().getLongPostfix();
 	}
 
-	static string primitiveToString(float num) {
+	static string primitiveToString(jfloat num) {
 		static const string integralFloatPostfix = (JDecompiler::getInstance().useTrailingZero() ? ".0" : EMPTY_STRING) +
 				JDecompiler::getInstance().getFloatPostfix();
 		// NaN and Infinity should be handled separately, but that's just in case
@@ -63,7 +63,7 @@ namespace jdecompiler {
 		return out.str();
 	}
 
-	static string primitiveToString(double num) {
+	static string primitiveToString(jdouble num) {
 		static const string integralDoublePostfix = JDecompiler::getInstance().useDoublePostfix() ?
 				(JDecompiler::getInstance().useTrailingZero() ? ".0" : EMPTY_STRING) + JDecompiler::getInstance().getDoublePostfix() : ".0";
 

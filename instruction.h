@@ -5,7 +5,7 @@ namespace jdecompiler {
 
 	struct Instruction {
 		protected:
-			constexpr Instruction() noexcept {}
+			explicit constexpr Instruction() noexcept {}
 
 		public:
 			virtual ~Instruction() {}

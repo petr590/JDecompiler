@@ -2,6 +2,7 @@
 #define JDECOMPILER_FIELD_H
 
 #include "code.h"
+#include "class-element.cpp"
 
 namespace jdecompiler {
 
@@ -35,8 +36,25 @@ namespace jdecompiler {
 		const ClassType& clazz;
 		const FieldDescriptor& descriptor;
 
-		FieldInfo(const ClassType& clazz, const FieldDescriptor& descriptor):
+		explicit FieldInfo(const ClassType& clazz, const FieldDescriptor& descriptor):
 				clazz(clazz), descriptor(descriptor) {}
+	};
+
+
+	struct ConstantDecompilationContext {
+		const ClassInfo& classinfo;
+		const FieldInfo* const fieldinfo;
+
+		explicit ConstantDecompilationContext(const ClassInfo& classinfo):
+				classinfo(classinfo), fieldinfo(nullptr) {}
+
+		explicit ConstantDecompilationContext(const ClassInfo& classinfo, const ClassType& clazz, const FieldDescriptor& descriptor):
+				classinfo(classinfo), fieldinfo(new FieldInfo(clazz, descriptor)) {}
+
+		~ConstantDecompilationContext() {
+			if(fieldinfo != nullptr)
+				delete fieldinfo;
+		}
 	};
 
 
@@ -59,7 +77,7 @@ namespace jdecompiler {
 			friend void StaticInitializerScope::addOperation(const Operation*, const DecompilationContext&) const;
 
 		public:
-			Field(uint16_t, const FieldDescriptor&, const Attributes&, const ClassInfo&);
+			Field(modifiers_t, const FieldDescriptor&, const Attributes&, const ClassInfo&);
 			Field(const ClassInfo&, ClassInputStream&);
 
 		private:
@@ -83,14 +101,14 @@ namespace jdecompiler {
 			}
 
 		private:
-			static FormatString modifiersToString(uint16_t);
+			static format_string modifiersToString(modifiers_t);
 
 	};
 
 
 	struct FieldDataHolder {
 		public:
-			const uint16_t modifiers;
+			const modifiers_t modifiers;
 			const FieldDescriptor& descriptor;
 			const Attributes& attributes;
 

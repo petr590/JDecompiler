@@ -56,6 +56,10 @@ namespace jdecompiler {
 		return true;
 	}
 
+	inline void Operation::remove(const DecompilationContext& context) const {
+		context.methodScope.removeOperation(this, context);
+	}
+
 	bool Operation::canStringify() const {
 		return true;
 	}

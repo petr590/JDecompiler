@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_RETURN_OPERATIONS_CPP
 #define JDECOMPILER_RETURN_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct ReturnOperation: VoidOperation {
 		public:

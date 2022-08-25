@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_TRY_CATCH_SCOPES_CPP
 #define JDECOMPILER_TRY_CATCH_SCOPES_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct CatchBlockDataHolder {
 		index_t startIndex;
@@ -16,11 +16,11 @@ namespace jdecompiler::operations {
 			TryScope(const DecompilationContext& context, index_t startIndex, index_t endIndex):
 					Scope(startIndex, endIndex, context) {}
 
-			virtual string getHeader(const StringifyContext& context) const override {
-				return "try ";
+			virtual string getHeader(const StringifyContext&) const override {
+				return "try";
 			}
 
-			virtual string getBackSeparator(const ClassInfo& classinfo) const override {
+			virtual string getBackSeparator(const ClassInfo&) const override {
 				return EMPTY_STRING;
 			}
 	};
@@ -33,14 +33,21 @@ namespace jdecompiler::operations {
 
 		protected:
 			mutable vector<const Operation*> tmpStack;
-			mutable Variable* exceptionVariable = nullptr;
+			mutable const Variable* exceptionVariable = nullptr;
 			mutable uint16_t exceptionVariableIndex;
 			const bool hasNext;
 
 		public:
 			CatchScope(const DecompilationContext& context, index_t startIndex, index_t endIndex,
 					const vector<const ClassType*>& catchTypes, bool hasNext):
-					Scope(startIndex, endIndex, context), catchTypes(catchTypes), catchType(catchTypes[0]), hasNext(hasNext) {}
+					Scope(startIndex, endIndex, context), catchTypes(catchTypes), catchType(catchTypes[0]), hasNext(hasNext) {
+
+				tmpStack.reserve(context.stack.size());
+				while(!context.stack.empty())
+					tmpStack.push_back(context.stack.pop());
+
+				context.stack.push(new LoadCatchedExceptionOperation(this, catchTypes.size() == 1 ? catchType : THROWABLE));
+			}
 
 			CatchScope(const DecompilationContext& context, index_t startIndex, index_t endIndex,
 					const initializer_list<const ClassType*>& catchTypes, bool hasNext):
@@ -67,7 +74,7 @@ namespace jdecompiler::operations {
 			}
 
 
-			virtual string getFrontSeparator(const ClassInfo& classinfo) const override {
+			virtual string getFrontSeparator(const ClassInfo&) const override {
 				return " ";
 			}
 
@@ -75,43 +82,57 @@ namespace jdecompiler::operations {
 				return catchType == nullptr ? "finally" :
 						"catch(" + join<const ClassType*>(catchTypes,
 								[&context] (const ClassType* catchType) { return catchType->toString(context.classinfo); }, " | ") +
-									' ' + context.getCurrentScope()->getNameFor(*exceptionVariable) + ") ";
+									' ' + context.getCurrentScope()->getNameFor(*exceptionVariable) + ')';
 			}
 
-			virtual string getBackSeparator(const ClassInfo& classinfo) const override {
+			virtual string getBackSeparator(const ClassInfo&) const override {
 				return hasNext ? EMPTY_STRING : "\n";
 			}
 
-			void initiate(const DecompilationContext& context) {
-				tmpStack.reserve(context.stack.size());
-				while(!context.stack.empty())
-					tmpStack.push_back(context.stack.pop());
-
-				context.stack.push(new LoadCatchedExceptionOperation(catchTypes.empty() ? catchType : THROWABLE));
-			}
-
-		protected:
 			struct LoadCatchedExceptionOperation: Operation {
-				const ClassType* const catchType;
+				public:
+					const CatchScope* const catchScope;
+					const ClassType* const catchType;
 
-				LoadCatchedExceptionOperation(const ClassType* catchType): catchType(catchType) {}
+				protected:
+					friend struct CatchScope;
+					friend struct AStoreOperation;
 
-				virtual const Type* getReturnType() const override {
-					return catchType;
-				}
+					LoadCatchedExceptionOperation(const CatchScope* catchScope, const ClassType* catchType):
+							catchScope(catchScope), catchType(catchType) {}
 
-				virtual string toString(const StringifyContext& context) const override {
-					throw Exception("Illegal using of LoadCatchedExceptionOperation: toString()");
-				}
+					inline void setExceptionVariable(const Variable& var) const {
+						catchScope->exceptionVariable = &var;
+					}
+
+				public:
+					virtual const Type* getReturnType() const override {
+						return catchType;
+					}
+
+					virtual string toString(const StringifyContext&) const override {
+						throw Exception("Illegal using of LoadCatchedExceptionOperation: toString()");
+					}
 			};
 
-		public:
 			virtual void finalize(const DecompilationContext& context) const override {
 				reverse(tmpStack.begin(), tmpStack.end());
 				for(const Operation* operation : tmpStack)
 					context.stack.push(operation);
 			}
 	};
+
+	void AStoreOperation::handleCatchScope() {
+		if(instanceof<const CatchScope::LoadCatchedExceptionOperation*>(value)) {
+			isCatchScopeHandler = true;
+			variable.addName("ex");
+			static_cast<const CatchScope::LoadCatchedExceptionOperation*>(value)->setExceptionVariable(variable);
+		}
+	}
+
+	bool AStoreOperation::canAddToCode() const {
+		return !isCatchScopeHandler;
+	}
 }
 
 #endif

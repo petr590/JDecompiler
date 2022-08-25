@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_FIELD_OPERATIONS_CPP
 #define JDECOMPILER_FIELD_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct FieldOperation: Operation {
 		public:
@@ -91,20 +91,118 @@ namespace jdecompiler::operations {
 		protected:
 			const Type* returnType;
 
+			mutable int_fast8_t inc = 0;
+			bool isStringAppend = false;
+
+			const BinaryOperatorOperation* shortFormOperator = nullptr;
+			const Operation* revokeIncrementOperation = nullptr;
+
+
 			PutFieldOperation(const DecompilationContext& context, const ClassType& clazz, const FieldDescriptor& descriptor):
 					FieldOperation(clazz, descriptor), value(context.stack.popAs(&descriptor.type)) {
 
 				value->allowImplicitCast();
 				value->addVariableName(descriptor.name);
+
+				// Merge with StoreOperation (duplicate code)
+
+				bool isPostInc = returnType == VOID;
+
+				const Operation* rawValue = value->getOriginalOperation();
+
+				const BinaryOperatorOperation* binaryOperator = dynamic_cast<const BinaryOperatorOperation*>(rawValue);
+
+				if(binaryOperator == nullptr && instanceof<const CastOperation*>(rawValue))
+					binaryOperator = dynamic_cast<const BinaryOperatorOperation*>(static_cast<const CastOperation*>(rawValue)->value);
+
+				if(binaryOperator != nullptr) {
+					if(const GetFieldOperation* getFieldOperation = dynamic_cast<const GetFieldOperation*>(binaryOperator->operand1->getOriginalOperation())) {
+
+						if(getFieldOperation->descriptor == descriptor && !getFieldOperation->isIncrement()) {
+							shortFormOperator = binaryOperator;
+
+							const AbstractConstOperation* constOperation = dynamic_cast<const AbstractConstOperation*>(binaryOperator->operand2);
+
+							if(constOperation != nullptr) { // post increment
+								int_fast8_t incValue = instanceof<const AddOperatorOperation*>(binaryOperator) ? 1 :
+											instanceof<const SubOperatorOperation*>(binaryOperator) ? -1 : 0;
+
+								if(incValue != 0) {
+									//initReturnType<Dup1Operation, Dup2Operation>(context, binaryOperator->operand1);
+
+									bool isShortInc =
+										instanceof<const IConstOperation*>(constOperation) ?
+											static_cast<const IConstOperation*>(constOperation)->value == 1 :
+										instanceof<const LConstOperation*>(constOperation) ?
+											static_cast<const LConstOperation*>(constOperation)->value == 1 :
+										instanceof<const FConstOperation*>(constOperation) ?
+											static_cast<const FConstOperation*>(constOperation)->value == 1 :
+										instanceof<const DConstOperation*>(constOperation) ?
+											static_cast<const DConstOperation*>(constOperation)->value == 1 : false;
+
+									if(isShortInc) {
+										inc = incValue << isPostInc; // post-inc if return type is void, else pre-inc
+									} else if(returnType != VOID) {
+										revokeIncrementOperation = constOperation;
+										context.warning("cannot decompile bytecode exactly: it contains post-increment by a number,"
+														"other than one or minus one");
+									}
+								}
+							}
+						}
+					}
+
+				} else if(const ConcatStringsOperation* concatOperation = dynamic_cast<const ConcatStringsOperation*>(rawValue)) {
+					vector<const Operation*>& operands = concatOperation->operands;
+
+					if(const GetFieldOperation* getFieldOperation = dynamic_cast<const GetFieldOperation*>(operands[0])) {
+						if(getFieldOperation->descriptor == descriptor) {
+							isStringAppend = true;
+							operands.erase(operands.begin());
+							if(operands.size() > 1)
+								concatOperation->insertEmptyStringIfNecessary();
+						}
+					}
+				}
 			}
 
 		public:
+			virtual string toString(const StringifyContext& context) const override {
+
+				if(shortFormOperator != nullptr) { // Increment
+					if(inc != 0) {
+						const string
+								name = fieldToString(context),
+								incStr = inc > 0 ? "++" : "--";
+
+						return inc & 0x1 ? incStr + name : name + incStr;
+					}
+
+					return revokeIncrementOperation != nullptr ?
+							'(' + shortFormOperator->toShortFormString(context, fieldToString(context)) + ") " + // x++ is equivalent (x += 1) - 1
+									shortFormOperator->getOppositeOperator() + ' ' + revokeIncrementOperation->toString(context) :
+							shortFormOperator->toShortFormString(context, fieldToString(context));
+				}
+
+				if(isStringAppend) {
+					return fieldToString(context) + " += " + value->toString(context);
+				}
+
+				return fieldToString(context) + " = " + value->toString(context);
+			}
+
+			virtual string fieldToString(const StringifyContext&) const = 0;
+
 			virtual const Type* getReturnType() const override {
 				return returnType;
 			}
 
 			virtual Priority getPriority() const override {
 				return Priority::ASSIGNMENT;
+			}
+
+			virtual bool isIncrement() const override {
+				return inc != 0;
 			}
 
 			virtual bool canAddToCode() const {
@@ -129,8 +227,8 @@ namespace jdecompiler::operations {
 			PutStaticFieldOperation(const DecompilationContext& context, const FieldrefConstant* fieldref):
 					PutStaticFieldOperation(context, fieldref->clazz, fieldref->nameAndType) {}
 
-			virtual string toString(const StringifyContext& context) const override {
-				return staticFieldToString(context) + " = " + value->toString(context);
+			virtual string fieldToString(const StringifyContext& context) const override {
+				return staticFieldToString(context);
 			}
 	};
 
@@ -146,8 +244,8 @@ namespace jdecompiler::operations {
 			PutInstanceFieldOperation(const DecompilationContext& context, const FieldrefConstant* fieldref):
 					PutInstanceFieldOperation(context, fieldref->clazz, fieldref->nameAndType) {}
 
-			virtual string toString(const StringifyContext& context) const override {
-				return instanceFieldToString(context, object) + " = " + value->toString(context);
+			virtual string fieldToString(const StringifyContext& context) const override {
+				return instanceFieldToString(context, object);
 			}
 	};
 }

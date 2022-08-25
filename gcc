@@ -1,5 +1,3 @@
 #!/bin/sh
-
 file="$1"
-shift
-g++ $(./compiler-params) -c "$@" "$file.cpp" -o "$file.o"
+shift && g++ $(./compiler-params) -c "$@" "$file.cpp" -o "$file.o"

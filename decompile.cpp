@@ -6,8 +6,6 @@
 namespace jdecompiler {
 
 	Instruction* DisassemblerContext::nextInstruction() {
-		using namespace instructions;
-
 		switch(current()) {
 			case 0x00: return nullptr;
 			case 0x01: return AConstNull::getInstance();
@@ -156,22 +154,23 @@ namespace jdecompiler {
 			case 0xAA: {
 				skip(3 - (pos & 0x3)); // alignment by 4 bytes
 				offset_t defaultOffset = nextInt();
-				int32_t low = nextInt(), high = nextInt();
+				jint low = nextInt(), high = nextInt();
 				if(high < low)
 					throw InstructionFormatError("tableswitch: high < low (low = " + to_string(low) +
-							", high = " + to_string(high) + ")");
+							", high = " + to_string(high) + ')');
 
-				map<int32_t, offset_t> offsetTable;
-				for(int32_t i = 0, size = high - low + 1; i < size; i++)
-					offsetTable[i + low] = nextInt();
+				map<jint, offset_t> offsetTable;
+				for(jint i = low; i <= high; ++i)
+					offsetTable[i] = nextInt();
+
 				return new SwitchInstruction(defaultOffset, offsetTable);
 			}
 			case 0xAB: {
 				skip(3 - (pos & 0x3)); // alignment by 4 bytes
 				offset_t defaultOffset = nextInt();
-				map<int32_t, offset_t> offsetTable;
-				for(uint32_t i = nextUInt(); i > 0; i--) {
-					int32_t value = nextInt();
+				map<jint, offset_t> offsetTable;
+				for(uint32_t i = nextUInt(); i > 0; --i) {
+					jint value = nextInt();
 					offsetTable[value] = nextInt();
 				}
 				return new SwitchInstruction(defaultOffset, offsetTable);
@@ -229,10 +228,8 @@ namespace jdecompiler {
 	}
 
 	const StringifyContext& Method::decompileCode(const ClassInfo& classinfo) {
-		using namespace operations;
-		using namespace instructions;
 
-		log("decompiling of", descriptor.toString());
+		log("decompiling of ", descriptor.toString());
 
 		const bool hasCodeAttribute = codeAttribute != nullptr;
 		const bool isNonStatic = !(modifiers & ACC_STATIC);
@@ -246,7 +243,7 @@ namespace jdecompiler {
 			localsCount = isNonStatic;
 
 			for(const Type* arg : descriptor.arguments) {
-				localsCount += static_cast<unsigned>(arg->getSize());
+				localsCount += static_cast<uint16_t>(arg->getSize());
 			}
 		}
 
@@ -266,96 +263,104 @@ namespace jdecompiler {
 
 		StringifyContext& stringifyContext = *new StringifyContext(decompilationContext);
 
-		// -------------------------------------------------- Add arguments --------------------------------------------------
-		{
-			const uint32_t argumentsCount = descriptor.arguments.size();
+		try {
 
-			if(hasCodeAttribute && codeAttribute->attributes.has<LocalVariableTableAttribute>()) {
-				const LocalVariableTableAttribute* localVariableTableAttr = codeAttribute->attributes.get<LocalVariableTableAttribute>();
+			// -------------------------------------------------- Add arguments --------------------------------------------------
+			{
+				const uint32_t argumentsCount = descriptor.arguments.size();
 
-				using LocalVariable = LocalVariableTableAttribute::LocalVariable;
+				if(hasCodeAttribute && codeAttribute->attributes.has<LocalVariableTableAttribute>()) {
+					const LocalVariableTableAttribute* localVariableTableAttr = codeAttribute->attributes.get<LocalVariableTableAttribute>();
 
-				for(size_t i = 0, size = localVariableTableAttr->localVariableTable.size(); i < size; i++) {
-					const vector<const LocalVariable*>& localVars = localVariableTableAttr->localVariableTable[i];
+					using LocalVariable = LocalVariableTableAttribute::LocalVariable;
 
-					const bool declared = i < (argumentsCount + isNonStatic);
+					for(size_t i = 0, size = localVariableTableAttr->localVariableTable.size(); i < size; i++) {
+						const vector<const LocalVariable*>& localVars = localVariableTableAttr->localVariableTable[i];
 
-					for(const LocalVariable* localVar : localVars) {
+						const bool declared = i < (argumentsCount + isNonStatic);
 
-						if(localVar->startPos == 0 && localVar->endPos == disassemblerContext.length) {
-							methodScope->addVariable(new NamedVariable(&localVar->type, declared, localVar->name));
-							goto ContinueOuter;
+						for(const LocalVariable* localVar : localVars) {
+
+							if(localVar->startPos == 0 && localVar->endPos == disassemblerContext.length) {
+								methodScope->addVariable(new NamedVariable(&localVar->type, declared, localVar->name));
+								goto ContinueOuter;
+							}
 						}
+						// If no variable found, add empty variable
+						methodScope->addVariable(new UnnamedVariable(i < argumentsCount ? descriptor.arguments[i] : AnyType::getInstance(), declared));
+
+						ContinueOuter:;
 					}
-					// If no variable found, add empty variable
-					methodScope->addVariable(new UnnamedVariable(i < argumentsCount ? descriptor.arguments[i] : AnyType::getInstance(), declared));
-
-					ContinueOuter:;
-				}
-
-			} else {
-
-				static const ArrayType STRING_ARRAY(STRING);
-
-				if(descriptor.name == "main" && descriptor.returnType == VOID &&
-						(modifiers & ACC_STATIC) && (modifiers & ACC_ACCESS_FLAGS) == ACC_PUBLIC &&
-						argumentsCount == 1 && *descriptor.arguments[0] == STRING_ARRAY) { // public static void main(String[] args)
-					methodScope->addVariable(new NamedVariable(&STRING_ARRAY, true, "args"));
 
 				} else {
 
-					if(isNonStatic)
-						methodScope->addVariable(new NamedVariable(&classinfo.thisType, true, "this"));
+					static const ArrayType STRING_ARRAY(STRING);
 
-					for(uint32_t i = 0; i < argumentsCount; i++)
-						methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i], true));
+					if(descriptor.name == "main" && descriptor.returnType == VOID &&
+							(modifiers & ACC_STATIC) && (modifiers & ACC_ACCESS_FLAGS) == ACC_PUBLIC &&
+							argumentsCount == 1 && *descriptor.arguments[0] == STRING_ARRAY) { // public static void main(String[] args)
+						methodScope->addVariable(new NamedVariable(&STRING_ARRAY, true, "args"));
+
+					} else {
+
+						if(isNonStatic)
+							methodScope->addVariable(new NamedVariable(&classinfo.thisType, true, "this"));
+
+						for(uint32_t i = 0; i < argumentsCount; i++)
+							methodScope->addVariable(new UnnamedVariable(descriptor.arguments[i], true));
+					}
 				}
 			}
-		}
 
-		// ---------------------------------------------- Add try-catch blocks -----------------------------------------------
-		// TODO
-		/*vector<TryBlock*> tryBlocks;
+			{ // ---------------------------------------------- Add try-catch blocks -----------------------------------------------
+				vector<TryBlock*> tryBlocks;
 
-		for(const CodeAttribute::ExceptionHandler* exceptionAttribute : codeAttribute->exceptionTable) {
+				for(const CodeAttribute::ExceptionHandler* exceptionAttribute : codeAttribute->exceptionTable) {
 
-			const index_t
-					tryStartIndex = decompilationContext.disassemblerContext.posToIndex(exceptionAttribute->startPos),
-					tryEndIndex = decompilationContext.disassemblerContext.posToIndex(exceptionAttribute->endPos);
+					const index_t
+							startIndex = disassemblerContext.posToIndex(exceptionAttribute->startPos),
+							endIndex = disassemblerContext.posToIndex(exceptionAttribute->endPos);
 
-			const auto tryBlocksFindResult = find_if(tryBlocks.begin(), tryBlocks.end(),
-					[tryStartIndex, tryEndIndex] (TryBlock* tryBlock) { return tryBlock->startIndex == tryStartIndex && tryBlock->endIndex == tryEndIndex; });
+					const auto tryBlocksFindResult = find_if(tryBlocks.begin(), tryBlocks.end(),
+							[startIndex, endIndex] (TryBlock* tryBlock) { return tryBlock->startIndex == startIndex && tryBlock->endIndex == endIndex; });
 
 
-			TryBlock* tryBlock;
+					const index_t catchStartIndex = disassemblerContext.posToIndex(exceptionAttribute->handlerPos) - 1;
 
-			if(tryBlocksFindResult != tryBlocks.end()) {
-				tryBlock = *tryBlocksFindResult;
-			} else {
-				tryBlock = new TryBlock(tryStartIndex, tryEndIndex);
-				tryBlocks.push_back(tryBlock);
-				disassemblerContext.addBlock(tryBlock);
+					TryBlock* tryBlock;
+
+					if(tryBlocksFindResult != tryBlocks.end()) {
+						tryBlock = *tryBlocksFindResult;
+						CatchBlock* catchBlock = tryBlock->handlers.back();
+						catchBlock->hasNext = true;
+						catchBlock->endIndex = catchStartIndex;
+					} else {
+						tryBlock = new TryBlock(startIndex, endIndex);
+						tryBlocks.push_back(tryBlock);
+						disassemblerContext.addBlock(tryBlock);
+					}
+
+					const auto handlersFindResult = find_if(tryBlock->handlers.begin(), tryBlock->handlers.end(),
+							[catchStartIndex] (CatchBlock* handler) { return handler->startIndex == catchStartIndex; });
+
+					if(handlersFindResult != tryBlock->handlers.end()) {
+						(*handlersFindResult)->catchTypes.push_back(exceptionAttribute->catchType);
+					} else {
+						CatchBlock* catchBlock = new CatchBlock(catchStartIndex, exceptionAttribute->catchType);
+						tryBlock->handlers.push_back(catchBlock);
+						disassemblerContext.addBlock(catchBlock);
+					}
+				}
 			}
 
-			const index_t catchStartIndex = disassemblerContext.posToIndex(exceptionAttribute->handlerPos) - 1;
-
-			const auto handlersFindResult = find_if(tryBlock->handlers.begin(), tryBlock->handlers.end(),
-					[catchStartIndex] (CatchBlockDataHolder& handlerData) { return handlerData.startIndex == catchStartIndex; });
-
-			if(handlersFindResult != tryBlock->handlers.end()) {
-				handlersFindResult->catchTypes.push_back();
-			} else {
-				tryBlock->handlers.push_back(new CatchBlock(catchStartIndex, exceptionAttribute->catchType, exceptionAttribute->catchType));
-			}
-		}*/
+			disassemblerContext.decompile();
 
 
-		// ------------------------------------------------- Decompile code --------------------------------------------------
+			// ------------------------------------------------- Decompile code --------------------------------------------------
 
-		const vector<Instruction*>& instructions = disassemblerContext.getInstructions();
-		vector<const Block*> blocks = disassemblerContext.getBlocks();
+			const vector<Instruction*>& instructions = disassemblerContext.getInstructions();
+			vector<const Block*> blocks = disassemblerContext.getBlocks();
 
-		function<void()> decompile = [&] () {
 			for(uint32_t i = 0, exprIndex = 0, instructionsSize = instructions.size(); i < instructionsSize; i++) {
 
 				decompilationContext.index = i;
@@ -363,42 +368,21 @@ namespace jdecompiler {
 
 				decompilationContext.exprIndexTable[i] = exprIndex;
 
-				if(decompilationContext.stack.empty())
-					decompilationContext.exprStartIndex = i;
+				try {
 
-				/*if(instructions[i] != nullptr && decompilationContext.addOperation(instructions[i]->toOperation(decompilationContext))) {
-					exprIndex++;
-				}*/
+					if(decompilationContext.stack.empty())
+						decompilationContext.exprStartIndex = i;
 
-				if(instructions[i] != nullptr) {
+					/*if(instructions[i] != nullptr && decompilationContext.addOperation(instructions[i]->toOperation(decompilationContext))) {
+						exprIndex++;
+					}*/
 
-					const Operation* operation = instructions[i]->toOperation(decompilationContext);
+					if(instructions[i] != nullptr) {
 
-					if(operation != nullptr) {
+						const Operation* operation = instructions[i]->toOperation(decompilationContext);
 
-						if(operation->getReturnType() != VOID) {
-							decompilationContext.stack.push(operation);
-						} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == VReturn::getInstance())) {
-							decompilationContext.getCurrentScope()->addOperation(operation, decompilationContext);
-							exprIndex++;
-						}
-
-						if(instanceof<const Scope*>(operation))
-							decompilationContext.addScope(static_cast<const Scope*>(operation));
-					}
-				}
-
-				decompilationContext.getCurrentScope()->update(decompilationContext);
-
-				for(auto iter = blocks.begin(); iter != blocks.end(); ) {
-					const Block* block = *iter;
-
-					assert(!(block->start() < i));
-
-					if(block->start() == i) { // Do not increment iterator when erase element
-
-						const Operation* operation = block->toOperation(decompilationContext);
 						if(operation != nullptr) {
+
 							if(operation->getReturnType() != VOID) {
 								decompilationContext.stack.push(operation);
 							} else if(operation->canAddToCode() && !(i == instructionsSize - 1 && operation == VReturn::getInstance())) {
@@ -409,32 +393,59 @@ namespace jdecompiler {
 							if(instanceof<const Scope*>(operation))
 								decompilationContext.addScope(static_cast<const Scope*>(operation));
 						}
-
-						blocks.erase(iter);
-
-					} else {
-						++iter;
 					}
+
+					decompilationContext.getCurrentScope()->update(decompilationContext);
+
+					decompilationContext.updateScopes();
+
+					for(auto iter = blocks.begin(); iter != blocks.end(); ) {
+						const Block* block = *iter;
+
+						assert(!(block->start() < i));
+
+						if(block->start() == i) { // Do not increment iterator when erase element
+
+							const Scope* scope = block->getScope(decompilationContext);
+
+							if(scope != nullptr) {
+								if(scope->canAddToCode()) {
+									decompilationContext.getCurrentScope()->addOperation(scope, decompilationContext);
+									exprIndex++;
+								}
+
+								decompilationContext.addScope(scope);
+							}
+
+							blocks.erase(iter);
+
+						} else {
+							++iter;
+						}
+					}
+
+					if(instructions[i] != nullptr && instanceof<const IfInstruction*>(instructions[i])) // Hack
+						decompilationContext.exprStartIndex = i + 1;
+
+					//decompilationContext.updateScopes();
+
+				} catch(const DecompilationException& ex) {
+					errorMessage = ex.toString();
+
+					cerr << "Exception while decompiling method " << descriptor.toString()
+							<< " at pos " << decompilationContext.pos
+							<< ", at instruction " << (instructions[i] == nullptr ? "null" : short_typenameof(*instructions[i]))
+							<< ": " << errorMessage << endl;
+
+					return stringifyContext;
 				}
-
-				if(instructions[i] != nullptr && instanceof<const IfInstruction*>(instructions[i])) // Hack
-					decompilationContext.exprStartIndex = i + 1;
-
-				decompilationContext.updateScopes();
 			}
-		};
 
+			methodScope->reduceVariableTypes();
 
-		if(!JDecompiler::getInstance().failOnError()) {
-			try {
-				decompile();
-			} catch(const DecompilationException& ex) {
-				cerr << "Exception while decompiling method " << descriptor.toString() << ": " << ex.toString() << endl;
-			} catch(const EmptyStackException& ex) {
-				cerr << "Exception while decompiling method " << descriptor.toString() << ": " << ex.toString() << endl;
-			}
-		} else {
-			decompile();
+		} catch(const DecompilationException& ex) {
+			errorMessage = ex.toString();
+			cerr << "Exception while decompiling method " << descriptor.toString() << ": " << errorMessage << endl;
 		}
 
 		return stringifyContext;

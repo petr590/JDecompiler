@@ -1,46 +1,71 @@
-#ifndef FORMAT_STRING_CPP
-#define FORMAT_STRING_CPP
+#ifndef UTIL_FORMAT_STRING_CPP
+#define UTIL_FORMAT_STRING_CPP
 
-namespace jdecompiler {
+#include <string>
 
-	class FormatString {
-		private: string value;
+namespace util {
+
+	using std::string;
+
+	class format_string {
+		private:
+			string value;
 
 		public:
-			FormatString() noexcept: value() {}
-			FormatString(const string& value): value(value) {}
+			format_string() noexcept: value() {}
+			format_string(const string& value): value(value) {}
 
 
-			friend FormatString operator+(const FormatString& formatStr, const char* str) {
-				return FormatString(formatStr.value + (formatStr.empty() || *str == '\0' ? str : ' ' + (string)str));
+			friend format_string operator+(const format_string& format_str, const char* str) {
+				return format_string(format_str.value + (format_str.empty() || *str == '\0' ? str : ' ' + static_cast<string>(str)));
 			}
 
-			friend FormatString operator+(const FormatString& formatStr, const string& str) {
-				return FormatString(formatStr.value + (formatStr.empty() || str.empty() ? str : ' ' + str));
+			friend format_string operator+(const format_string& format_str, const string& str) {
+				return format_string(format_str.value + (format_str.empty() || str.empty() ? str : ' ' + str));
 			}
 
-			friend FormatString operator+(const char* str, const FormatString& formatStr) {
-				return FormatString(str + (formatStr.empty() || *str == '\0' ? (string)formatStr : ' ' + (string)formatStr));
+			friend format_string operator+(const char* str, const format_string& format_str) {
+				return format_string(str + (format_str.empty() || *str == '\0' ? static_cast<string>(format_str) : ' ' + static_cast<string>(format_str)));
 			}
 
-			friend FormatString operator+(const string& str, const FormatString& formatStr) {
-				return FormatString(str + (formatStr.empty() || str.empty() ? (string)formatStr : ' ' + (string)formatStr));
+			friend format_string operator+(const string& str, const format_string& format_str) {
+				return format_string(str + (format_str.empty() || str.empty() ? static_cast<string>(format_str) : ' ' + static_cast<string>(format_str)));
 			}
 
 
-			friend FormatString& operator+=(FormatString& formatStr, const char* str) {
-				formatStr.value += (formatStr.empty() || *str == '\0' ? str : ' ' + (string)str);
-				return formatStr;
+			format_string& operator+=(const char* str) {
+				if(!value.empty() && *str != '\0')
+					value += ' ';
+
+				value += str;
+
+				return *this;
 			}
 
-			friend FormatString& operator+=(FormatString& formatStr, const string& str) {
-				formatStr.value += (formatStr.empty() || str.empty() ? str : ' ' + str);
-				return formatStr;
+			format_string& operator+=(const string& str) {
+				if(!value.empty() && !str.empty())
+					value += ' ';
+
+				value += str;
+
+				return *this;
 			}
 
+
+			inline size_t size() const {
+				return value.size();
+			}
 
 			inline bool empty() const {
 				return value.empty();
+			}
+
+			inline void clear() {
+				value.clear();
+			}
+
+			inline const char* c_str() const {
+				return value.c_str();
 			}
 
 

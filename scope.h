@@ -13,8 +13,8 @@ namespace jdecompiler {
 			mutable vector<Variable*> variables;
 			mutable uint16_t lastAddedVarIndex = 0;
 
-			friend struct operations::IfScope;
-			friend struct operations::InfiniteLoopScope;
+			friend struct IfScope;
+			friend struct InfiniteLoopScope;
 
 			mutable vector<const Operation*> code, tempCode;
 			mutable umap<const Variable*, string> varNames;
@@ -88,30 +88,54 @@ namespace jdecompiler {
 
 			virtual string toStringImpl(const StringifyContext&) const;
 
+
+			bool bracketsOmitted() const;
+
+			size_t getStringifiedOperationsCount() const;
+
 		protected:
-			virtual inline bool canPrintNextOperation(const vector<const Operation*>::const_iterator&) const { return true; }
+			virtual inline bool canPrintNextOperation(const vector<const Operation*>::const_iterator&) const {
+				return true;
+			}
+
+			virtual inline bool canOmitBrackets() const {
+				return false;
+			}
 
 			virtual inline string getHeader(const StringifyContext&) const {
 				return EMPTY_STRING;
 			}
 
 			virtual inline string getBackSeparator(const ClassInfo&) const override {
-				return "\n\n";
+				return bracketsOmitted() ? "\n" : "\n\n";
 			}
 
 		public:
 			virtual void addOperation(const Operation*, const DecompilationContext&) const;
 
+		protected:
+			bool removeOperation(const Operation*) const;
+
+		public:
 			void update(const DecompilationContext&) const;
 
 			inline bool isEmpty() const {
 				return code.empty() || all_of(code.begin(), code.end(),
-						[] (const Operation* operation) { return !operation->canStringify() || operation->isRemoved(); });
+						[] (const Operation* operation) { return !operation->canStringify(); });
 			}
 
 			virtual const Type* getReturnType() const override;
 
 			virtual bool canAddToCode() const override;
+
+			void reduceVariableTypes() const {
+				for(const Variable* variable : variables)
+					if(variable != nullptr)
+						variable->setTypeShrinking(variable->getType()->getReducedType());
+
+				for(const Scope* scope : innerScopes)
+					scope->reduceVariableTypes();
+			}
 
 
 		protected:
@@ -134,17 +158,26 @@ namespace jdecompiler {
 			virtual bool isContinuable() const;
 
 			inline string toDebugString() const {
-				return typenameof(*this) + " {" + to_string(startIndex) + ".." + to_string(endIndex) + '}';
+				return short_typenameof(*this) + " {" + to_string(startIndex) + ".." + to_string(endIndex) + '}';
+			}
+
+			inline friend ostream& operator<<(ostream& out, const Scope* scope) {
+				return out << (scope != nullptr ? scope->toDebugString() : "null");
 			}
 
 			inline friend ostream& operator<<(ostream& out, const Scope& scope) {
-				return out << (&scope != nullptr ? scope.toDebugString() : "null");
+				return out << &scope;
 			}
 	};
 
 
 	struct MethodScope: Scope {
 		MethodScope(index_t, index_t, uint16_t localsCount);
+
+		void removeOperation(const Operation* operation, const DecompilationContext&) const {
+			if(!Scope::removeOperation(operation))
+				throw DecompilationException("Cannot remove operation of type " + typenameof(*operation) + ": it was not found");
+		}
 	};
 
 

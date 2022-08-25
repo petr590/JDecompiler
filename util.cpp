@@ -248,6 +248,20 @@ namespace jdecompiler {
 
 		return true;
 	}
+
+
+	bool stringEndsWith(const string& str, const string& search) {
+		if(search.size() > str.size())
+			return false;
+
+		const char* cstr = str.c_str() + (str.size() - search.size());
+		for(char c : search) {
+			if(*(cstr++) != c)
+				return false;
+		}
+
+		return true;
+	}
 }
 
 #endif

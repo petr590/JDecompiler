@@ -5,9 +5,9 @@
 
 namespace jdecompiler {
 
-	void finish() {
+	using std::signal;
 
-		log("finish()");
+	void finish() {
 
 		if(JDecompiler::jvm != nullptr) {
 			delete JDecompiler::jvm;

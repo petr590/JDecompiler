@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_DECLARE_VARIABLE_CPP
 #define JDECOMPILER_DECLARE_VARIABLE_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct DeclareVariableOperation: VoidOperation {
 		public:

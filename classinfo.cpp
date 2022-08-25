@@ -1,29 +1,9 @@
 #ifndef JDECOMPILER_CLASSINFO_CPP
 #define JDECOMPILER_CLASSINFO_CPP
 
+#include "version.cpp"
+
 namespace jdecompiler {
-
-	struct Stringified {
-		public:
-			virtual string toString(const ClassInfo&) const = 0;
-
-			virtual ~Stringified() {}
-	};
-
-
-	struct ClassElement: Stringified {
-		public:
-			const uint16_t modifiers;
-
-			constexpr ClassElement(uint16_t modifiers) noexcept: modifiers(modifiers) {}
-
-			virtual bool canStringify(const ClassInfo&) const = 0;
-
-			inline bool isSynthetic() const {
-				return modifiers & ACC_SYNTHETIC;
-			}
-	};
-
 
 	struct ClassInfo {
 		public:
@@ -33,12 +13,13 @@ namespace jdecompiler {
 			const vector<const ClassType*> interfaces;
 			const ConstantPool& constPool;
 			const Attributes& attributes;
-			const uint16_t modifiers;
+			const modifiers_t modifiers;
+			const Version version;
 
 			ClassInfo(const Class& clazz, const ClassType& thisType, const ClassType* superType, const vector<const ClassType*>& interfaces,
-					const ConstantPool& constPool, const Attributes& attributes, uint16_t modifiers):
+					const ConstantPool& constPool, const Attributes& attributes, modifiers_t modifiers, const Version& version):
 					clazz(clazz), thisType(thisType), superType(superType), interfaces(interfaces),
-					constPool(constPool), attributes(attributes), modifiers(modifiers) {}
+					constPool(constPool), attributes(attributes), modifiers(modifiers), version(version) {}
 
 			static const char* const EMPTY_INDENT;
 

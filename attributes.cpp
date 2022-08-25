@@ -106,8 +106,8 @@ namespace jdecompiler {
 			return value->toString(classinfo);
 		}*/
 
-		const Operation* getInitializer(const ConstantDecompilationContext context) const {
-			return value->toOperation(context);
+		const Operation* getInitializer() const {
+			return value->toOperation();
 		}
 	};
 
@@ -223,12 +223,12 @@ namespace jdecompiler {
 		}
 	};
 
-	using BooleanAnnotationValue = NumberAnnotationValue<bool, int32_t>;
-	using CharAnnotationValue = NumberAnnotationValue<char, int32_t>;
-	using IntegerAnnotationValue = NumberAnnotationValue<int32_t>;
-	using FloatAnnotationValue = NumberAnnotationValue<float>;
-	using LongAnnotationValue = NumberAnnotationValue<int64_t>;
-	using DoubleAnnotationValue = NumberAnnotationValue<double>;
+	using BooleanAnnotationValue = NumberAnnotationValue<jbool, jint>;
+	using CharAnnotationValue    = NumberAnnotationValue<jchar, jint>;
+	using IntegerAnnotationValue = NumberAnnotationValue<jint>;
+	using FloatAnnotationValue   = NumberAnnotationValue<jfloat>;
+	using LongAnnotationValue    = NumberAnnotationValue<jlong>;
+	using DoubleAnnotationValue  = NumberAnnotationValue<jdouble>;
 
 
 	struct StringAnnotationValue: AnnotationValue {
@@ -321,10 +321,8 @@ namespace jdecompiler {
 		}
 
 		virtual string toString(const ClassInfo& classinfo) const override {
-			string str;
-			for(const Annotation* annotation : annotations)
-				str += classinfo.getIndent() + annotation->toString(classinfo) + '\n';
-			return str;
+			return join<const Annotation*>(annotations,
+					[&classinfo] (const Annotation* annotation) { return classinfo.getIndent() + annotation->toString(classinfo); }, "\n");
 		}
 	};
 
@@ -546,7 +544,7 @@ namespace jdecompiler {
 					bootstrapMethods.push_back(new BootstrapMethod(instream, constPool));
 			}
 
-			inline const BootstrapMethod* operator[] (uint16_t index) const {
+			inline const BootstrapMethod* operator[](uint16_t index) const {
 				return bootstrapMethods[index];
 			}
 	};
@@ -556,7 +554,7 @@ namespace jdecompiler {
 		const ClassType classType;
 		const ClassConstant* const outerClass;
 		const Utf8Constant* const innerName;
-		const uint16_t modifiers;
+		const modifiers_t modifiers;
 
 		InnerClass(ClassInputStream& instream, const ConstantPool& constPool):
 				classType(constPool.get<ClassConstant>(instream.readUShort())), outerClass(constPool.getNullable<ClassConstant>(instream.readUShort())),

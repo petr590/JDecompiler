@@ -3,7 +3,7 @@
 
 #include "conditions.cpp"
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct ConditionScope: Scope {
 		protected:
@@ -28,7 +28,7 @@ namespace jdecompiler::operations {
 				this->condition = condition;
 			}
 
-			friend struct instructions::IfBlock;
+			friend struct IfBlock;
 
 		private:
 			struct ElseScope: Scope {
@@ -43,7 +43,7 @@ namespace jdecompiler::operations {
 							Scope(ifScope->endIndex, endIndex, ifScope->parentScope), ifScope(ifScope) {}
 
 					virtual inline string getHeader(const StringifyContext&) const override {
-						return " else ";
+						return "else";
 					}
 
 					virtual string toStringImpl(const StringifyContext& context) const override {
@@ -56,7 +56,11 @@ namespace jdecompiler::operations {
 						return this->Scope::toStringImpl(context);
 					}
 
-					virtual inline string getFrontSeparator(const ClassInfo&) const override {
+					virtual bool canOmitBrackets() const override {
+						return true;
+					}
+
+					virtual string getFrontSeparator(const ClassInfo&) const override {
 						return EMPTY_STRING;
 					}
 
@@ -80,7 +84,7 @@ namespace jdecompiler::operations {
 
 		private:
 			mutable index_t bodyStartIndex;
-			friend struct instructions::IfBlock;
+			friend struct IfBlock;
 
 			const ElseScope* const elseScope;
 			mutable const Operation* assertOperation = nullptr;
@@ -105,14 +109,19 @@ namespace jdecompiler::operations {
 
 		protected:
 			virtual string getHeader(const StringifyContext& context) const override {
-				return "if(" + condition->toString(context) + ") ";
+				return "if(" + condition->toString(context) + ')';
 			}
 
 			virtual string toStringImpl(const StringifyContext& context) const override {
 				if(assertOperation != nullptr)
 					return "assert " + assertOperation->toString(context) + ';';
 
-				return ConditionScope::toStringImpl(context);
+				return ConditionScope::toStringImpl(context) +
+						(elseScope != nullptr && !this->bracketsOmitted() ? " " : context.classinfo.getIndent());
+			}
+
+			virtual bool canOmitBrackets() const override {
+				return true;
 			}
 
 			virtual inline string getBackSeparator(const ClassInfo& classinfo) const override {
@@ -223,6 +232,10 @@ namespace jdecompiler::operations {
 				const ContinueOperation* continueOperation = dynamic_cast<const ContinueOperation*>(*i);
 				return continueOperation == nullptr || continueOperation->loopScope != this;
 			}
+
+			virtual bool canOmitBrackets() const override {
+				return true;
+			}
 	};
 
 
@@ -237,7 +250,7 @@ namespace jdecompiler::operations {
 	}
 
 
-	string ContinueOperation::toString(const StringifyContext& context) const {
+	string ContinueOperation::toString(const StringifyContext&) const {
 		return hasLabel ? "continue " + loopScope->getLabel() : "continue";
 	}
 
@@ -248,7 +261,7 @@ namespace jdecompiler::operations {
 					LoopScope(context, startIndex, endIndex, condition) {}
 
 			virtual string getHeader(const StringifyContext& context) const override {
-				return "while(" + condition->toString(context) + ") ";
+				return "while(" + condition->toString(context) + ')';
 			}
 	};
 
@@ -258,7 +271,7 @@ namespace jdecompiler::operations {
 					LoopScope(context, startIndex, endIndex, condition) {}
 
 			virtual string getHeader(const StringifyContext& context) const override {
-				return "for(" + condition->toString(context) + ") ";
+				return "for(" + condition->toString(context) + ')';
 			}
 	};
 
@@ -296,8 +309,8 @@ namespace jdecompiler::operations {
 				return initializing != nullptr || !updatingOperations.empty() ?
 						"for(" + (initializing != nullptr ? initializing->toString(context) : EMPTY_STRING) + "; " + condition->toString(context) + ';'
 								+ (!updatingOperations.empty() ? ' ' + rjoin<const Operation*>(updatingOperations,
-										[&context] (const Operation* operation) { return operation->toString(context); }, ", ") : EMPTY_STRING) + ") " :
-						"while(" + condition->toString(context) + ") ";
+										[&context] (const Operation* operation) { return operation->toString(context); }, ", ") : EMPTY_STRING) + ')' :
+						"while(" + condition->toString(context) + ')';
 			}
 
 
@@ -346,24 +359,22 @@ namespace jdecompiler::operations {
 		public:
 			const Operation* const value;
 			const index_t defaultIndex;
-			const map<int32_t, index_t> indexTable;
+			const map<jint, index_t> indexTable;
 
 		protected:
-			static const map<int32_t, index_t> offsetTableToIndexTable(const DecompilationContext& context, const map<int32_t, offset_t>& offsetTable) {
-				map<int32_t, index_t> indexTable;
+			static const map<jint, index_t> offsetTableToIndexTable(const DecompilationContext& context, const map<jint, offset_t>& offsetTable) {
+				map<jint, index_t> indexTable;
 
-				for(const auto& entry : offsetTable)
+				for(const auto entry : offsetTable)
 					indexTable[entry.first] = context.posToIndex(context.pos + entry.second);
 
 				return indexTable;
 			}
 
 		public:
-			SwitchScope(const DecompilationContext& context, offset_t defaultOffset, map<int32_t, offset_t> offsetTable):
-					Scope(context.index,
-						context.posToIndex(context.pos + max(defaultOffset, max_element(offsetTable.begin(), offsetTable.end(),
-							[] (auto& e1, auto& e2) { return e1.second < e2.second; })->second)),
-						context),
+			SwitchScope(const DecompilationContext& context, index_t startIndex, index_t endIndex,
+					offset_t defaultOffset, const map<jint, offset_t>& offsetTable):
+					Scope(startIndex, endIndex, context),
 					value(context.stack.popAs(ANY_INT)), defaultIndex(context.posToIndex(context.pos + defaultOffset)),
 					indexTable(offsetTableToIndexTable(context, offsetTable)) {}
 
@@ -378,22 +389,38 @@ namespace jdecompiler::operations {
 				const index_t defaultExprIndex = exprIndexTable.at(defaultIndex);
 
 				uint32_t i = exprIndexTable.at(this->startIndex);
+
+				vector<jint> cases;
+				cases.reserve(indexTable.size());
+
 				for(const Operation* operation : code) {
-					if(i == defaultExprIndex) {
-						context.classinfo.reduceIndent();
-						str += context.classinfo.getIndent() + (string)"default:\n";
-						context.classinfo.increaseIndent();
-					} else {
-						for(auto& entry : indexTable) {
-							if(i == exprIndexTable.at(entry.second)) {
-								context.classinfo.reduceIndent();
-								str += context.classinfo.getIndent() + (string)"case " + to_string(entry.first) + ":\n";
-								context.classinfo.increaseIndent();
-								break;
-							}
-						}
+
+					context.classinfo.reduceIndent();
+
+					/*for(const auto entry : indexTable) {
+						if(i == exprIndexTable.at(entry.second))
+							str += context.classinfo.getIndent() + (string)"case " + to_string(entry.first) + ":\n";
+					}*/
+
+					transform_if(indexTable.begin(), indexTable.end(), back_inserter(cases),
+							[&exprIndexTable, i] (const auto& entry) { return i == exprIndexTable.at(entry.second); },
+							[&exprIndexTable, i] (const auto& entry) { return entry.first; });
+
+					if(!cases.empty()) {
+						str += context.classinfo.version.majorVersion >= JAVA_12 ?
+							context.classinfo.getIndent() + (string)"case " + join<jint>(cases, [&context] (jint value) { return to_string(value); }) + ":\n" :
+							join<jint>(cases, [&context] (jint value)
+								{ return context.classinfo.getIndent() + (string)"case " + to_string(value) + ":\n"; }, EMPTY_STRING);
+
+						cases.clear();
 					}
-					str += context.classinfo.getIndent() + operation->toString(context) + (instanceof<const Scope*>(operation) ? "\n" : ";\n");
+
+					if(i == defaultExprIndex)
+						str += context.classinfo.getIndent() + (string)"default:\n";
+
+					context.classinfo.increaseIndent();
+
+					str += context.classinfo.getIndent() + operation->toString(context) + operation->getBackSeparator(context.classinfo);
 					i++;
 				}
 
@@ -419,29 +446,39 @@ namespace jdecompiler::operations {
 				Scope(context.index, context.index, context) {}
 
 		virtual string toStringImpl(const StringifyContext&) const override {
-			return "while(true) {}";
+			return JDecompiler::getInstance().omitBrackets() ? "while(true);" : "while(true) {}";
 		}
 	};
 
 	struct BreakOperation: VoidOperation {
-		const Scope* const scope;
-		bool hasLabel;
+		public:
+			const Scope* const scope;
+			bool hasLabel;
 
-		BreakOperation(const DecompilationContext& context, const Scope* scope):
-				scope(scope), hasLabel([&context, scope] () {
-					for(const Scope* currentScope = context.getCurrentScope(); currentScope != nullptr; currentScope = currentScope->parentScope) {
-						if(currentScope->isBreakable() && currentScope != scope)
+		protected:
+			bool mustHaveLabel(const DecompilationContext& context) {
+				for(const Scope* currentScope = context.getCurrentScope(); currentScope != nullptr; currentScope = currentScope->parentScope) {
+					if(currentScope != scope) {
+						if(currentScope->isBreakable())
 							return true;
+					} else {
+						return false;
 					}
-					return false;
-				}()) {
-					if(hasLabel)
-						scope->makeLabel();
 				}
 
-		virtual string toString(const StringifyContext&) const override {
-			return hasLabel ? "break " + scope->getLabel() : "break";
-		}
+				return false;
+			}
+
+		public:
+			BreakOperation(const DecompilationContext& context, const Scope* scope):
+					scope(scope), hasLabel(mustHaveLabel(context)) {
+						if(hasLabel)
+							scope->makeLabel();
+					}
+
+			virtual string toString(const StringifyContext&) const override {
+				return hasLabel ? "break " + scope->getLabel() : "break";
+			}
 	};
 }
 

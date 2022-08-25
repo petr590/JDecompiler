@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_CAST_OPERATIONS_CPP
 #define JDECOMPILER_CAST_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct CastOperation: Operation {
 		public:
@@ -28,7 +28,6 @@ namespace jdecompiler::operations {
 
 			CastOperation(const DecompilationContext& context, const Type* requiredType, const Type* type, bool required):
 					CastOperation(context.stack.popAs(requiredType), type, required) {
-				//log(typenameof(value), value->getReturnType(), requiredType);
 			}
 
 			virtual const Type* getReturnType() const override {

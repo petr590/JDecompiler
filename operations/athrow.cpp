@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_ATHROW_OPERATION_CPP
 #define JDECOMPILER_ATHROW_OPERATION_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct AThrowOperation: VoidOperation {
 		const Operation* const exception;

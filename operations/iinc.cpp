@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_IINC_OPERATION_CPP
 #define JDECOMPILER_IINC_OPERATION_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct IIncOperation: Operation {
 		public:

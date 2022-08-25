@@ -5,6 +5,8 @@
 
 namespace jdecompiler {
 
+	using namespace util;
+
 	struct ClassInputStream final: BinaryInputStream {
 
 		private:
@@ -13,10 +15,10 @@ namespace jdecompiler {
 		public:
 			const string fileName;
 
-			ClassInputStream(BinaryInputStream& instream, const string& fileName):
+			explicit ClassInputStream(BinaryInputStream& instream, const string& fileName):
 					instream(instream), fileName(fileName) {}
 
-			ClassInputStream(FileBinaryInputStream& instream):
+			explicit ClassInputStream(FileBinaryInputStream& instream):
 					ClassInputStream(instream, instream.path) {}
 
 			inline virtual const streampos& getPos() const override {

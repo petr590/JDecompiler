@@ -9,7 +9,7 @@
 #include "enum-class.cpp"
 #endif
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	template<class T = Type>
 	struct ReturnableOperation: Operation { // ReturnableOperation is an operation which returns specified type
@@ -117,7 +117,6 @@ namespace jdecompiler::operations {
 namespace jdecompiler {
 
 	void StaticInitializerScope::addOperation(const Operation* operation, const DecompilationContext& context) const {
-		using namespace operations;
 
 		if(!fieldsInitialized) {
 			const PutStaticFieldOperation* putOperation = dynamic_cast<const PutStaticFieldOperation*>(operation);

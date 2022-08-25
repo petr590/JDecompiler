@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_DUP_OPERATION_CPP
 #define JDECOMPILER_DUP_OPERATION_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	template<TypeSize size>
 	struct AbstractDupOperation: Operation, TypeSizeTemplatedOperation<size> {

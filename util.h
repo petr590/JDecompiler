@@ -17,42 +17,58 @@
 #include "util/class-input-stream.cpp"
 #include "util/format-string.cpp"
 #include "util/file-binary-output-stream.cpp"
-#include "util/stack.cpp"
 #include "util/type-traits.cpp"
 #include "util/strutil.cpp"
 #include "util/maputil.cpp"
 #include "util/instanceof.cpp"
+#include "util/safe-cast.cpp"
 
-#define LOG_POINT "[ jdecompiler/" __FILE__ " ]:"
+#define LOG_POINT "[ " __FILE__ " ]: "
 #define log(...) logFunc<cout>(LOG_POINT, __VA_ARGS__)
 #define logerr(...) logFunc<cerr>(LOG_POINT, __VA_ARGS__)
-#define logf(pattern, ...) printf(LOG_POINT pattern, __VA_ARGS__)
+#define logf(pattern, ...) printf(LOG_POINT pattern "\n", __VA_ARGS__)
 
 namespace jdecompiler {
 
-	template<ostream& out, typename Arg, typename... Args>
-	inline void logFunc(const Arg& arg, const Args&... args) {
-		out << arg;
-		if constexpr(sizeof...(Args) > 0) {
+	static bool isLastSpaceLogged = true;
+
+	template<ostream& out, typename Arg1, typename... Args>
+	inline void logFunc(const Arg1& arg1, const Args&... args) {
+		if(!isLastSpaceLogged)
 			out << ' ';
+
+		out << arg1;
+
+		if constexpr(is_same<Arg1, string>()) {
+			if(!arg1.empty())
+				isLastSpaceLogged = isspace(arg1.back());
+
+		} else if constexpr(is_same<Arg1, const char*>()) {
+			size_t len = strlen(arg1);
+			if(len > 0)
+				isLastSpaceLogged = isspace(arg1[len - 1]);
+
+		} else if constexpr(is_array<Arg1>() && is_same<array_element_type<Arg1>, char>()) {
+			if(array_size<Arg1> > 1)
+				isLastSpaceLogged = isspace(arg1[array_size<Arg1> - 2]);
+
+		} else if constexpr(is_same<Arg1, char>() || is_same<Arg1, wchar_t>()) {
+			isLastSpaceLogged = isspace(arg1);
+
+		} else {
+			isLastSpaceLogged = false;
+		}
+
+		if constexpr(sizeof...(Args) > 0) {
 			logFunc<out>(args...);
 		} else {
 			out << endl;
+			isLastSpaceLogged = true;
 		}
 	}
 
 
 	static inline const string EMPTY_STRING {};
-
-
-	template<class T, class B>
-	static inline T safe_cast(B o) {
-		T t = dynamic_cast<T>(o);
-		if(t == nullptr && o != nullptr)
-			throw CastException((string)"cannot cast " + typenameof(o) + " to " + typenameof<T>());
-		return t;
-	}
-
 
 
 	extern string toLowerCamelCase(const string&);
@@ -94,12 +110,12 @@ namespace jdecompiler {
 	}
 
 
-	template<typename Arg, typename... Args>
-	static inline constexpr size_t total_length_of(Arg arg, Args... args) {
+	template<typename Arg1, typename... Args>
+	static inline constexpr size_t total_length_of(Arg1 arg1, Args... args) {
 		if constexpr(sizeof...(Args) > 0)
-			return length_of(arg) + total_length_of(args...);
+			return length_of(arg1) + total_length_of(args...);
 		else
-			return length_of(arg);
+			return length_of(arg1);
 	}
 
 
@@ -113,9 +129,9 @@ namespace jdecompiler {
 	}
 
 
-	template<typename Arg, typename... Args>
-	static inline constexpr char* strs_copy(char* dest, Arg arg, Args... args) {
-		dest = str_copy(dest, arg);
+	template<typename Arg1, typename... Args>
+	static inline constexpr char* strs_copy(char* dest, Arg1 arg1, Args... args) {
+		dest = str_copy(dest, arg1);
 
 		if constexpr(sizeof...(Args) > 0)
 			return strs_copy(dest, args...);
@@ -229,14 +245,27 @@ namespace jdecompiler {
 		return equal_values(vector<T*>(v1), vector<T*>(v2));
 	}
 
-	/* The function works as usual, only a delimiter is added at the end of each line */
+	/* This function works as usual, only a delimiter is added at the end of each line */
 	extern vector<string> splitAndAddDelimiter(const string&, char);
 
 	extern bool stringStartsWith(const string&, const string&);
+	extern bool stringEndsWith(const string&, const string&);
 
-	template<typename T, typename = enable_if_t<is_integral_v<T>>>
-	static inline bool isPowerOfTwo(T x) {
+	template<typename T>
+	static inline enable_if_t<is_integral_v<T>, bool> isPowerOfTwo(T x) {
 		return (x & (x - 1)) == 0;
+	}
+
+	template<class InputIterator, class OutputIterator, class UnaryPredicate, class UnaryOperator>
+	OutputIterator transform_if(InputIterator first, InputIterator last, OutputIterator res, UnaryPredicate pred, UnaryOperator op) {
+
+		while(first != last) {
+			if(pred(*first))
+				*res = op(*first);
+			++first, ++res;
+		}
+
+		return res;
 	}
 }
 

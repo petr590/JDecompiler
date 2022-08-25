@@ -1,28 +1,14 @@
-#ifndef STACK_CPP
-#define STACK_CPP
+#ifndef UTIL_STACK_CPP
+#define UTIL_STACK_CPP
 
 #include <stdint.h>
 #include <ostream>
-#include "index-out-of-bounds-exception.cpp"
+#include "stack-index-out-of-bounds-exception.cpp"
+#include "empty-stack-exception.cpp"
 
 namespace util {
 
 	using std::ostream;
-
-
-	struct StackIndexOutOfBoundsException: IndexOutOfBoundsException {
-		StackIndexOutOfBoundsException(uint32_t index, uint32_t length): IndexOutOfBoundsException(index, length, "stack") {}
-	};
-
-	struct IllegalStackStateException: Exception {
-		IllegalStackStateException() {}
-		IllegalStackStateException(const string& message): Exception(message) {}
-	};
-
-	struct EmptyStackException: IllegalStackStateException {
-		EmptyStackException() {}
-		EmptyStackException(const string& message): IllegalStackStateException(message) {}
-	};
 
 
 	template<typename T>
@@ -90,7 +76,7 @@ namespace util {
 
 
 			entry* firstEntry;
-			uint16_t length;
+			size_t length;
 
 			iterator beginIterator;
 
@@ -135,14 +121,14 @@ namespace util {
 				return firstEntry->value;
 			}
 
-			T lookup(uint16_t index) const {
+			T lookup(size_t index) const {
 				checkEmptyStack();
 
 				if(index >= length)
 					throw StackIndexOutOfBoundsException(index, length);
 
 				const entry* currentEntry = firstEntry;
-				for(uint16_t i = 0; i < index; i++)
+				for(size_t i = 0; i < index; i++)
 					currentEntry = currentEntry->next;
 				return currentEntry->value;
 			}
@@ -154,7 +140,7 @@ namespace util {
 				return false;
 			}
 
-			inline uint16_t size() const {
+			inline size_t size() const {
 				return length;
 			}
 

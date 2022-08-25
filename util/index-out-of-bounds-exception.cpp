@@ -1,5 +1,5 @@
-#ifndef INDEX_OUT_OF_BOUNDS_EXCEPTION_CPP
-#define INDEX_OUT_OF_BOUNDS_EXCEPTION_CPP
+#ifndef UTIL_INDEX_OUT_OF_BOUNDS_EXCEPTION_CPP
+#define UTIL_INDEX_OUT_OF_BOUNDS_EXCEPTION_CPP
 
 #include "exception.cpp"
 
@@ -11,11 +11,11 @@ namespace util {
 		public:
 			IndexOutOfBoundsException(const string& message): Exception(message) {}
 
-			IndexOutOfBoundsException(uint32_t index, uint32_t length):
+			IndexOutOfBoundsException(size_t index, size_t length):
 					Exception("Index " + to_string(index) + " is out of bounds for length " + to_string(length)) {}
 
 		protected:
-			IndexOutOfBoundsException(uint32_t index, uint32_t length, const string& name):
+			IndexOutOfBoundsException(size_t index, size_t length, const string& name):
 					Exception(name + " index " + to_string(index) + " is out of bounds for length " + to_string(length)) {}
 	};
 }

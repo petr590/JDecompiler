@@ -51,7 +51,7 @@ namespace jdecompiler {
 		private:
 			template<class T>
 			static constexpr void checkType() noexcept {
-				static_assert(is_base_of<Type, T>::value, "Class T must be subclass of class Type");
+				static_assert(is_base_of<Type, T>(), "Class T must be subclass of class Type");
 			}
 
 		protected:
@@ -173,19 +173,19 @@ namespace jdecompiler {
 			}
 
 		public:
-			inline friend bool operator== (const Type& type1, const Type& type2) {
+			inline friend bool operator==(const Type& type1, const Type& type2) {
 				return &type1 == &type2 || (typeid(type1) == typeid(type2) && type1.getEncodedName() == type2.getEncodedName());
 			}
 
-			inline friend bool operator!= (const Type& type1, const Type& type2) {
+			inline friend bool operator!=(const Type& type1, const Type& type2) {
 				return !(type1 == type2);
 			}
 
-			inline friend ostream& operator<< (ostream& out, const Type* type) {
+			inline friend ostream& operator<<(ostream& out, const Type* type) {
 				return out << (type != nullptr ? type->toString() : "null");
 			}
 
-			inline friend ostream& operator<< (ostream& out, const Type& type) {
+			inline friend ostream& operator<<(ostream& out, const Type& type) {
 				return out << &type;
 			}
 
@@ -1193,7 +1193,7 @@ namespace jdecompiler {
 
 
 	IncopatibleTypesException::IncopatibleTypesException(const Type* type1, const Type* type2):
-			DecompilationException("incopatible types: " + type1->toString() + " and " + type2->toString()) {}
+			DecompilationException("Incopatible types: " + type1->toString() + " and " + type2->toString()) {}
 
 
 	static bool typesEquals(const vector<const Type*>& types1, const vector<const Type*>& types2) {

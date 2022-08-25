@@ -29,7 +29,7 @@ namespace jdecompiler {
 
 	struct Operation {
 		protected:
-			constexpr Operation() noexcept {}
+			explicit constexpr Operation() noexcept {}
 
 		public:
 			virtual ~Operation() {}
@@ -92,17 +92,7 @@ namespace jdecompiler {
 
 			virtual bool canAddToCode() const;
 
-		private:
-			mutable bool removed = false;
-
-		public:
-			inline void remove() const {
-				removed = true;
-			}
-
-			inline bool isRemoved() const {
-				return removed;
-			}
+			void remove(const DecompilationContext&) const;
 
 			virtual bool canStringify() const;
 
@@ -123,8 +113,16 @@ namespace jdecompiler {
 				return false;
 			}
 
-			virtual bool isIncrement() const { // For IIncOperation, *StoreOperation
+			virtual bool isIncrement() const { // For IIncOperation, store operations
 				return false;
+			}
+
+			virtual bool isAbstractConstOperation() const { // For AbstractConstOperation
+				return false;
+			}
+
+			virtual string toString(const StringifyContext&, const ConstantDecompilationContext&) const { // For AbstractConstOperation
+				throw IllegalStateException("Can call this function only for AbstractConstOperation");
 			}
 
 		private:

@@ -1,7 +1,7 @@
 #ifndef JDECOMPILER_LOAD_OPERATIONS_CPP
 #define JDECOMPILER_LOAD_OPERATIONS_CPP
 
-namespace jdecompiler::operations {
+namespace jdecompiler {
 
 	struct LoadOperation: Operation {
 		public:
@@ -27,7 +27,7 @@ namespace jdecompiler::operations {
 			}
 
 			virtual void onCastReturnType(const Type* newType) const override {
-				variable.setType(newType);
+				variable.setTypeShrinking(newType);
 			}
 
 			virtual void addVariableName(const string& name) const override {
